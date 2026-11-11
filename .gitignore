@@ -1,0 +1,15 @@
+# Dependencies
+**/node_modules/
+
+# Bughunter runtime state (secrets, gate copies, large artifacts)
+.qwen/bughunter/state/runs/
+.qwen/bughunter/state/auth/
+.kimi-code/bughunter/state/runs/
+.kimi-code/bughunter/state/auth/
+
+# Generated Playwright output in fixtures
+**/.playwright-output/
+
+# Env / local overrides
+.env
+.env.*

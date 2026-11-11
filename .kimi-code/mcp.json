@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "bughunter": {
+      "command": "node",
+      "args": [".kimi-code/bughunter/server/src/index.ts"],
+      "startupTimeoutMs": 30000,
+      "toolTimeoutMs": 600000
+    }
+  }
+}

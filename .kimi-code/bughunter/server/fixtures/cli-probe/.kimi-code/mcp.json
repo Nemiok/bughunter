@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "probe-cwd": {
+      "command": "node",
+      "args": ["probe-mcp-sdk.js"]
+    }
+  }
+}

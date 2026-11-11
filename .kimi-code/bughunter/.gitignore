@@ -1,0 +1,5 @@
+server/node_modules/
+server/fixtures/*/node_modules/
+server/fixtures/*/.playwright-output/
+state/runs/
+state/auth/

@@ -1,0 +1,51 @@
+{
+  "baseUrl": "http://127.0.0.1:4173",
+  "allowedOrigins": [
+    "http://127.0.0.1:4173"
+  ],
+  "routes": [
+    "/",
+    "/orders",
+    "/orders/new",
+    "/profile"
+  ],
+  "routeMap": {
+    "src/pages/orders/**": [
+      "/orders",
+      "/orders/new"
+    ]
+  },
+  "baseBranch": "main",
+  "limits": {
+    "stepsPerSession": 60,
+    "candidatesPerRun": 20
+  },
+  "safety": {
+    "forbiddenActionText": [
+      "удалить",
+      "delete",
+      "оплатить"
+    ],
+    "readOnly": false
+  },
+  "testDataPrefix": "bh_",
+  "detectors": {
+    "ignoreConsole": [],
+    "ignoreRequests": [],
+    "anomalyTexts": [
+      "undefined",
+      "NaN",
+      "[object Object]",
+      "Invalid Date"
+    ],
+    "errorBoundarySelector": "[data-error-boundary]"
+  },
+  "tests": {
+    "unit": {
+      "command": null
+    },
+    "e2e": {
+      "dir": "e2e/bughunter"
+    }
+  }
+}
