@@ -12,6 +12,7 @@ const configSchema: z.ZodType<Config> = z.strictObject({
   routes: z.array(z.string().startsWith('/')).min(1),
   routeMap: z.record(z.string(), z.array(z.string().startsWith('/'))),
   baseBranch: z.string().min(1),
+  profile: z.string().min(1).optional(),
   limits: z.strictObject({
     stepsPerSession: z.number().int().positive(),
     candidatesPerRun: z.number().int().positive(),

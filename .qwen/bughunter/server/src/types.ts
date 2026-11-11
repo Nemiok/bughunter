@@ -6,6 +6,7 @@ export type Config = {
   routes: string[];
   routeMap: Record<string, string[]>;
   baseBranch: string;
+  profile?: string;
   limits: {
     stepsPerSession: number;
     candidatesPerRun: number;
