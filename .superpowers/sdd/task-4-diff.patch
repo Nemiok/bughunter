@@ -1,0 +1,742 @@
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/browser/elements.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/browser/elements.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/browser/elements.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/browser/elements.ts	2026-11-10 16:03:19
+@@ -0,0 +1,207 @@
++import { randomUUID } from 'node:crypto';
++import type { Locator, Page } from 'playwright-core';
++import type { ElementSnapshot, SemanticLocator } from '../types.ts';
++
++export type { ElementSnapshot, SemanticLocator } from '../types.ts';
++
++const interactiveSelector = [
++  'button',
++  'a[href]',
++  'input:not([type="hidden"])',
++  'textarea',
++  'select',
++  '[role="button"]',
++  '[role="link"]',
++  '[role="textbox"]',
++  '[role="checkbox"]',
++  '[role="combobox"]',
++  '[role="radio"]',
++  '[role="slider"]',
++  '[role="spinbutton"]',
++  '[role="searchbox"]',
++  '[role="switch"]',
++  '[tabindex]',
++  '[onclick]',
++  '[contenteditable="true"]',
++].join(',');
++
++type RawElement = {
++  position: number;
++  role: string;
++  type: string;
++  testid?: string;
++  testidIndex?: number;
++  testidCount?: number;
++  fallbackName: string;
++  text: string;
++  css: string;
++  semanticRole: boolean;
++  formControl: boolean;
++};
++
++function locatorKey(locator: SemanticLocator): string {
++  return JSON.stringify(locator);
++}
++
++async function accessibleName(locator: Locator, fallback: string): Promise<string> {
++  const snapshot = await locator.ariaSnapshot();
++  const firstLine = snapshot.split('\n')[0] ?? '';
++  const quoted = firstLine.match(/"(?:[^"\\]|\\.)*/)?.[0];
++  if (!quoted) return fallback.trim();
++  try {
++    return JSON.parse(quoted) as string;
++  } catch {
++    return fallback.trim();
++  }
++}
++
++export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
++  const rawElements = await page.evaluate((selector): RawElement[] => {
++    function inferredRole(element: Element): string | null {
++      const explicit = element.getAttribute('role');
++      if (explicit) return explicit;
++      if (element instanceof HTMLAnchorElement) return 'link';
++      if (element instanceof HTMLButtonElement) return 'button';
++      if (element instanceof HTMLSelectElement) return 'combobox';
++      if (element instanceof HTMLTextAreaElement) return 'textbox';
++      if (element instanceof HTMLInputElement) {
++        if (element.type === 'checkbox') return 'checkbox';
++        if (element.type === 'radio') return 'radio';
++        if (element.type === 'range') return 'slider';
++        if (element.type === 'number') return 'spinbutton';
++        if (['text', 'search', 'email', 'tel', 'url'].includes(element.type) && element.hasAttribute('list')) return 'combobox';
++        if (element.type === 'search') return 'searchbox';
++        if (['button', 'submit', 'reset', 'image'].includes(element.type)) return 'button';
++        if (['text', 'email', 'tel', 'url', 'password'].includes(element.type)) return 'textbox';
++        return null;
++      }
++      return 'generic';
++    }
++
++    function inferredName(element: HTMLElement): string {
++      const ariaLabel = element.getAttribute('aria-label');
++      if (ariaLabel) return ariaLabel;
++      const labelledBy = element.getAttribute('aria-labelledby');
++      if (labelledBy) {
++        return labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
++      }
++      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
++        const labels = Array.from(element.labels ?? []).map((label) => label.textContent ?? '').join(' ');
++        if (labels) return labels;
++      }
++      return element.textContent ?? element.getAttribute('placeholder') ?? element.getAttribute('title') ?? '';
++    }
++
++    function cssSelector(element: HTMLElement): string {
++      if (element.id) return `#${CSS.escape(element.id)}`;
++      const parts: string[] = [];
++      let current: HTMLElement | null = element;
++      while (current && current.tagName !== 'BODY') {
++        const tag = current.tagName.toLowerCase();
++        const siblings = current.parentElement
++          ? Array.from(current.parentElement.children).filter((sibling) => sibling.tagName === current!.tagName)
++          : [];
++        parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${siblings.indexOf(current) + 1})` : tag);
++        current = current.parentElement;
++      }
++      return ['body', ...parts].join(' > ');
++    }
++
++    const testIdGroups = new Map<string, HTMLElement[]>();
++    for (const element of document.querySelectorAll<HTMLElement>('[data-testid]')) {
++      const testid = element.dataset.testid!;
++      const group = testIdGroups.get(testid) ?? [];
++      group.push(element);
++      testIdGroups.set(testid, group);
++    }
++
++    return Array.from(document.querySelectorAll<HTMLElement>(selector)).flatMap((element, position) => {
++      const role = inferredRole(element);
++      if (role === null) return [];
++      const testid = element.dataset.testid;
++      const testIdGroup = testid === undefined ? [] : testIdGroups.get(testid)!;
++      return [{
++        position,
++        role,
++        type: element instanceof HTMLInputElement ? element.type : element.tagName.toLowerCase(),
++        ...(testid === undefined ? {} : {
++          testid,
++          testidIndex: testIdGroup.indexOf(element),
++          testidCount: testIdGroup.length,
++        }),
++        fallbackName: inferredName(element),
++        text: (element.textContent ?? '').replace(/\s+/g, ' ').trim(),
++        css: cssSelector(element),
++        semanticRole: role !== 'generic',
++        formControl: element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement,
++      }];
++    });
++  }, interactiveSelector);
++
++  const visible: Array<Omit<ElementSnapshot, 'id' | 'name'> & { fullName: string }> = [];
++  const candidates = page.locator(interactiveSelector);
++  for (const raw of rawElements) {
++    const locator = candidates.nth(raw.position);
++    if (!await locator.isVisible()) continue;
++    const fullName = await accessibleName(locator, raw.fallbackName);
++    let semanticLocator: SemanticLocator;
++    if (raw.testid !== undefined) {
++      semanticLocator = {
++        kind: 'testid',
++        value: raw.testid,
++        ...((raw.testidCount ?? 0) > 1 ? { index: raw.testidIndex! } : {}),
++      };
++    } else if (raw.semanticRole) {
++      semanticLocator = { kind: 'role', role: raw.role, name: fullName };
++    } else if (raw.text) {
++      semanticLocator = { kind: 'text', value: raw.text };
++    } else {
++      semanticLocator = { kind: 'css', value: raw.css };
++    }
++    visible.push({
++      role: raw.role,
++      type: raw.type,
++      fullName,
++      locator: semanticLocator,
++      ...(raw.formControl ? { value: await locator.inputValue() } : {}),
++      disabled: await locator.isDisabled(),
++    });
++  }
++
++  const counts = new Map<string, number>();
++  for (const element of visible) {
++    const key = locatorKey(element.locator);
++    counts.set(key, (counts.get(key) ?? 0) + 1);
++  }
++  const indexes = new Map<string, number>();
++  return visible.map(({ fullName, ...element }) => {
++    const key = locatorKey(element.locator);
++    const index = indexes.get(key) ?? 0;
++    indexes.set(key, index + 1);
++    return {
++      ...element,
++      id: randomUUID(),
++      name: fullName.slice(0, 80),
++      locator: (counts.get(key) ?? 0) > 1 ? { ...element.locator, index } : element.locator,
++    };
++  });
++}
++
++export function toPlaywrightLocator(locator: SemanticLocator): string {
++  let expression: string;
++  switch (locator.kind) {
++    case 'testid':
++      expression = `page.getByTestId(${JSON.stringify(locator.value)})`;
++      break;
++    case 'role':
++      expression = `page.getByRole(${JSON.stringify(locator.role)}, { name: ${JSON.stringify(locator.name)}, exact: true })`;
++      break;
++    case 'text':
++      expression = `page.getByText(${JSON.stringify(locator.value)}, { exact: true })`;
++      break;
++    case 'css':
++      expression = `page.locator(${JSON.stringify(locator.value)})`;
++      break;
++  }
++  return locator.index === undefined ? expression : `${expression}.nth(${locator.index})`;
++}
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/detectors/index.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/detectors/index.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/detectors/index.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/detectors/index.ts	2026-11-10 15:34:24
+@@ -0,0 +1,2 @@
++export { findAnomalyTexts, normalizeMessage, scanSignals, signalSignature } from './signals.ts';
++export type { SignatureInput } from './signals.ts';
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/detectors/signals.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/detectors/signals.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/detectors/signals.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/detectors/signals.ts	2026-11-10 15:56:40
+@@ -0,0 +1,188 @@
++import { createHash, randomUUID } from 'node:crypto';
++import type { Page } from 'playwright-core';
++import type { Config, Signal } from '../types.ts';
++
++export type SignatureInput = {
++  kind: string;
++  message: string;
++  route: string;
++  stack?: string;
++};
++
++type PageState = {
++  signals: Signal[];
++  activeAnomalies: Set<string>;
++  activeBoundaries: Set<string>;
++  listenersInstalled: boolean;
++};
++
++const pageStates = new WeakMap<Page, PageState>();
++
++export function normalizeMessage(message: string): string {
++  return message
++    .replace(/([?&][^=\s&]+)=([^&\s]*)/g, '$1=<value>')
++    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '<uuid>')
++    .replace(/\d+(?:\.\d+)?/g, '<number>')
++    .replace(/\s+/g, ' ')
++    .trim();
++}
++
++export function signalSignature(input: SignatureInput): string {
++  const topFrame = input.stack?.split('\n').find((line) => /^\s*at\s+/.test(line)) ?? '';
++  const value = [
++    input.kind,
++    normalizeMessage(input.message),
++    normalizeMessage(input.route),
++    normalizeMessage(topFrame),
++  ].join('\n');
++  return createHash('sha256').update(value).digest('hex');
++}
++
++export function findAnomalyTexts(text: string, anomalies: string[]): string[] {
++  return anomalies.filter((anomaly) => {
++    if (anomaly.length === 0) return false;
++    const escaped = anomaly.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++    return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'u').test(text);
++  });
++}
++
++function currentRoute(page: Page): string {
++  try {
++    return new URL(page.url()).pathname;
++  } catch {
++    return page.url();
++  }
++}
++
++function addSignal(page: Page, config: Config, input: Omit<SignatureInput, 'route'> & Partial<Signal>): Signal {
++  const route = currentRoute(page);
++  const signal: Signal = {
++    id: randomUUID(),
++    kind: input.kind,
++    message: input.message,
++    signature: signalSignature({ ...input, route }),
++    route,
++    timestamp: new Date().toISOString(),
++    ...(input.stack === undefined ? {} : { stack: input.stack }),
++    ...(input.url === undefined ? {} : { url: input.url }),
++    ...(input.status === undefined ? {} : { status: input.status }),
++  };
++  pageStates.get(page)!.signals.push(signal);
++  return signal;
++}
++
++function ignored(value: string, patterns: string[]): boolean {
++  return patterns.some((pattern) => value.includes(pattern));
++}
++
++async function installListeners(page: Page, config: Config, state: PageState): Promise<void> {
++  if (state.listenersInstalled) return;
++  state.listenersInstalled = true;
++
++  page.on('console', (message) => {
++    if (message.type() !== 'error') return;
++    const text = message.text();
++    if (!ignored(text, config.detectors.ignoreConsole)) {
++      addSignal(page, config, { kind: 'console', message: text });
++    }
++  });
++  page.on('pageerror', (error) => {
++    addSignal(page, config, { kind: 'pageerror', message: error.message, stack: error.stack });
++  });
++  page.on('requestfailed', (request) => {
++    const url = request.url();
++    if (ignored(url, config.detectors.ignoreRequests)) return;
++    const reason = request.failure()?.errorText ?? 'Request failed';
++    addSignal(page, config, {
++      kind: 'requestfailed',
++      message: `${request.method()} ${url}: ${reason}`,
++      url,
++    });
++  });
++  page.on('response', (response) => {
++    if (response.status() < 400 || ignored(response.url(), config.detectors.ignoreRequests)) return;
++    addSignal(page, config, {
++      kind: 'response',
++      message: `${response.request().method()} ${response.url()}: HTTP ${response.status()}`,
++      url: response.url(),
++      status: response.status(),
++    });
++  });
++
++  await page.exposeFunction('__bughunterReportBoundary', (texts: string[]) => {
++    reconcileErrorBoundaries(page, config, state, new Set(texts));
++  });
++  await observeErrorBoundary(page, config.detectors.errorBoundarySelector);
++}
++
++function reconcileErrorBoundaries(page: Page, config: Config, state: PageState, visibleTexts: Set<string>): void {
++  for (const text of visibleTexts) {
++    if (!state.activeBoundaries.has(text)) {
++      addSignal(page, config, { kind: 'errorBoundary', message: text || config.detectors.errorBoundarySelector });
++    }
++  }
++  state.activeBoundaries = visibleTexts;
++}
++
++async function observeErrorBoundary(page: Page, selector: string): Promise<void> {
++  await page.evaluate((boundarySelector) => {
++    const target = window as unknown as Window & {
++      __bughunterBoundaryObserver?: MutationObserver;
++      __bughunterReportBoundary: (texts: string[]) => void;
++    };
++    if (target.__bughunterBoundaryObserver) return;
++    const report = () => {
++      const visibleTexts: string[] = [];
++      for (const element of document.querySelectorAll(boundarySelector)) {
++        const style = getComputedStyle(element);
++        const bounds = element.getBoundingClientRect();
++        if (style.display !== 'none' && style.visibility !== 'hidden' && bounds.width > 0 && bounds.height > 0) {
++          visibleTexts.push(element.textContent?.trim() ?? '');
++        }
++      }
++      target.__bughunterReportBoundary(visibleTexts);
++    };
++    target.__bughunterBoundaryObserver = new MutationObserver(report);
++    target.__bughunterBoundaryObserver.observe(document.documentElement, {
++      attributes: true,
++      characterData: true,
++      childList: true,
++      subtree: true,
++    });
++    report();
++  }, selector);
++}
++
++async function scanBodyText(page: Page, config: Config, state: PageState): Promise<void> {
++  const bodyText = await page.locator('body').innerText();
++  const found = new Set(findAnomalyTexts(bodyText, config.detectors.anomalyTexts));
++  for (const anomaly of found) {
++    if (!state.activeAnomalies.has(anomaly)) {
++      addSignal(page, config, { kind: 'anomaly', message: anomaly });
++    }
++  }
++  state.activeAnomalies = found;
++}
++
++async function scanErrorBoundaries(page: Page, config: Config, state: PageState): Promise<void> {
++  const boundaries = page.locator(config.detectors.errorBoundarySelector);
++  const visibleTexts = new Set<string>();
++  for (let index = 0; index < await boundaries.count(); index++) {
++    const boundary = boundaries.nth(index);
++    if (await boundary.isVisible()) visibleTexts.add((await boundary.innerText()).trim());
++  }
++  reconcileErrorBoundaries(page, config, state, visibleTexts);
++}
++
++export async function scanSignals(page: Page, config: Config): Promise<Signal[]> {
++  let state = pageStates.get(page);
++  if (!state) {
++    state = { signals: [], activeAnomalies: new Set(), activeBoundaries: new Set(), listenersInstalled: false };
++    pageStates.set(page, state);
++  }
++  await installListeners(page, config, state);
++  await observeErrorBoundary(page, config.detectors.errorBoundarySelector);
++  await scanBodyText(page, config, state);
++  await scanErrorBoundaries(page, config, state);
++  return state.signals.splice(0);
++}
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/types.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/types.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/src/types.ts	2026-11-10 14:58:27
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/types.ts	2026-11-10 15:38:12
+@@ -55,6 +55,22 @@
+   status?: number;
+ };
+ 
++export type SemanticLocator =
++  | { kind: 'testid'; value: string; index?: number }
++  | { kind: 'role'; role: string; name: string; index?: number }
++  | { kind: 'text'; value: string; index?: number }
++  | { kind: 'css'; value: string; index?: number };
++
++export type ElementSnapshot = {
++  id: string;
++  role: string;
++  name: string;
++  type: string;
++  value?: string;
++  disabled?: boolean;
++  locator: SemanticLocator;
++};
++
+ export type Step = {
+   id: string;
+   kind: 'act' | 'navigate' | 'probe';
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/test/elements.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/elements.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/test/elements.bhtest.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/elements.bhtest.ts	2026-11-10 16:02:01
+@@ -0,0 +1,129 @@
++import assert from 'node:assert/strict';
++import { after, before, test } from 'node:test';
++import { chromium, type Browser, type Page } from 'playwright-core';
++import { collectElements, toPlaywrightLocator } from '../src/browser/elements.ts';
++
++let browser: Browser;
++let page: Page;
++const longName = `Long ${'accessible name '.repeat(6)}end`;
++
++before(async () => {
++  browser = await chromium.launch({ channel: 'chrome', headless: true });
++  page = await browser.newPage();
++  await page.setContent(`
++    <button style="display: none">Hidden</button>
++    <button>Save</button>
++    <button>Save</button>
++    <button data-testid="primary-save" aria-label="Accessible Save">Ignored fallback</button>
++    <label for="profile-name">Profile name</label>
++    <input id="profile-name" value="Alice">
++    <label for="blocked">Blocked</label>
++    <input id="blocked" value="Cannot edit" disabled>
++    <label><input type="checkbox" checked> Accept terms</label>
++    <label for="choice">Choice</label>
++    <select id="choice"><option selected>Second</option></select>
++    <a href="/long">${longName}</a>
++  `);
++});
++
++after(async () => {
++  await browser?.close();
++});
++
++test('collectElements returns only visible interactive elements with semantic data', async () => {
++  const elements = await collectElements(page);
++  assert.equal(elements.length, 8);
++  assert.ok(elements.every((element) => element.name !== 'Hidden'));
++  assert.ok(elements.every((element) => element.id.length > 0));
++
++  const saves = elements.filter((element) => element.role === 'button' && element.name === 'Save');
++  assert.deepEqual(saves.map((element) => element.locator), [
++    { kind: 'role', role: 'button', name: 'Save', index: 0 },
++    { kind: 'role', role: 'button', name: 'Save', index: 1 },
++  ]);
++
++  const testid = elements.find((element) => element.locator.kind === 'testid');
++  assert.equal(testid?.name, 'Accessible Save');
++  assert.deepEqual(testid?.locator, { kind: 'testid', value: 'primary-save' });
++
++  const input = elements.find((element) => element.name === 'Profile name');
++  assert.equal(input?.role, 'textbox');
++  assert.equal(input?.type, 'text');
++  assert.equal(input?.value, 'Alice');
++  assert.equal(input?.disabled, false);
++  assert.equal(elements.find((element) => element.name === 'Blocked')?.disabled, true);
++  assert.equal(elements.find((element) => element.role === 'checkbox')?.value, 'on');
++  assert.equal(elements.find((element) => element.role === 'combobox')?.value, 'Second');
++
++  const long = elements.find((element) => element.role === 'link');
++  assert.equal(long?.name.length, 80);
++  assert.equal(long?.name, longName.slice(0, 80));
++  assert.deepEqual(long?.locator, { kind: 'role', role: 'link', name: longName });
++});
++
++test('semantic locator expressions preserve exact names and zero-based indexes', () => {
++  assert.equal(
++    toPlaywrightLocator({ kind: 'role', role: 'button', name: 'Say "Hello"', index: 1 }),
++    'page.getByRole("button", { name: "Say \\"Hello\\"", exact: true }).nth(1)',
++  );
++  assert.equal(toPlaywrightLocator({ kind: 'testid', value: 'save' }), 'page.getByTestId("save")');
++  assert.equal(toPlaywrightLocator({ kind: 'text', value: 'Exact text' }), 'page.getByText("Exact text", { exact: true })');
++  assert.equal(toPlaywrightLocator({ kind: 'css', value: '.item', index: 0 }), 'page.locator(".item").nth(0)');
++});
++
++test('collectElements applies testid, role, text, and CSS priority to real visible elements', async () => {
++  await page.setContent(`
++    <div tabindex="0" data-testid="custom-action">Custom testid</div>
++    <button>Role action</button>
++    <div tabindex="0">Text action</div>
++    <div tabindex="0" id="empty-action" style="width: 20px; height: 20px"></div>
++    <div>Not interactive</div>
++  `);
++  const elements = await collectElements(page);
++  assert.deepEqual(elements.map((element) => element.locator), [
++    { kind: 'testid', value: 'custom-action' },
++    { kind: 'role', role: 'button', name: 'Role action' },
++    { kind: 'text', value: 'Text action' },
++    { kind: 'css', value: '#empty-action' },
++  ]);
++  assert.deepEqual(elements.map((element) => element.role), ['generic', 'button', 'generic', 'generic']);
++  assert.deepEqual(elements.map((element) => toPlaywrightLocator(element.locator)), [
++    'page.getByTestId("custom-action")',
++    'page.getByRole("button", { name: "Role action", exact: true })',
++    'page.getByText("Text action", { exact: true })',
++    'page.locator("#empty-action")',
++  ]);
++});
++
++test('native inputs use their actual ARIA roles and unsupported types are excluded', async () => {
++  await page.setContent(`
++    <label><input type="radio" name="choice" value="a"> Radio choice</label>
++    <label>Range choice<input type="range" value="4"></label>
++    <label>Datalist choice<input type="text" list="choices" value="Alpha"></label>
++    <label>Search datalist choice<input type="search" list="choices" value="Alpha"></label>
++    <datalist id="choices"><option value="Alpha"></option></datalist>
++    <label>Unsupported date<input type="date"></label>
++  `);
++  const elements = await collectElements(page);
++  assert.deepEqual(elements.map((element) => ({ role: element.role, name: element.name })), [
++    { role: 'radio', name: 'Radio choice' },
++    { role: 'slider', name: 'Range choice' },
++    { role: 'combobox', name: 'Datalist choice' },
++    { role: 'combobox', name: 'Search datalist choice' },
++  ]);
++  assert.ok(elements.every((element) => element.type !== 'date'));
++});
++
++test('duplicate testid indexes include hidden matches before the visible target', async () => {
++  await page.setContent(`
++    <button data-testid="duplicate-action" style="display: none">Hidden duplicate</button>
++    <button data-testid="duplicate-action">Visible target</button>
++  `);
++  const elements = await collectElements(page);
++  assert.equal(elements.length, 1);
++  assert.deepEqual(elements[0]?.locator, { kind: 'testid', value: 'duplicate-action', index: 1 });
++  assert.equal(toPlaywrightLocator(elements[0]!.locator), 'page.getByTestId("duplicate-action").nth(1)');
++  const resolved = page.getByTestId('duplicate-action').nth(1);
++  assert.equal(await resolved.isVisible(), true);
++  assert.equal(await resolved.textContent(), 'Visible target');
++});
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/test/signals.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/signals.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-4-before/.kimi-code/bughunter/server/test/signals.bhtest.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/signals.bhtest.ts	2026-11-10 15:52:43
+@@ -0,0 +1,170 @@
++import assert from 'node:assert/strict';
++import { createServer, type Server } from 'node:http';
++import { after, before, test } from 'node:test';
++import { chromium, type Browser } from 'playwright-core';
++import { findAnomalyTexts, normalizeMessage, scanSignals, signalSignature } from '../src/detectors/index.ts';
++import type { Config } from '../src/types.ts';
++
++let browser: Browser;
++let server: Server;
++let origin: string;
++
++before(async () => {
++  browser = await chromium.launch({ channel: 'chrome', headless: true });
++  server = createServer((request, response) => {
++    if (request.url?.startsWith('/missing')) {
++      response.writeHead(404).end('missing');
++      return;
++    }
++    response.writeHead(200, { 'Content-Type': 'text/html' }).end('<main>Total NaN today</main>');
++  });
++  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
++  const address = server.address();
++  assert.ok(address && typeof address === 'object');
++  origin = `http://127.0.0.1:${address.port}`;
++});
++
++after(async () => {
++  await browser?.close();
++  if (server?.listening) {
++    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
++  }
++});
++
++function configTemplate(): Config {
++  return {
++    baseUrl: 'http://127.0.0.1',
++    allowedOrigins: ['http://127.0.0.1'],
++    routes: ['/'],
++    routeMap: {},
++    baseBranch: 'main',
++    limits: { stepsPerSession: 60, candidatesPerRun: 20 },
++    safety: { forbiddenActionText: [], readOnly: false },
++    testDataPrefix: 'bh_',
++    detectors: {
++      ignoreConsole: ['Ignore me'],
++      ignoreRequests: ['/ignored'],
++      anomalyTexts: ['NaN', 'undefined', '[object Object]'],
++      errorBoundarySelector: '[data-error-boundary]',
++    },
++    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
++  };
++}
++
++test('normalization replaces numbers, UUIDs, URL query values, and whitespace', () => {
++  assert.equal(
++    normalizeMessage('  Order 42 for 550e8400-e29b-41d4-a716-446655440000 failed at /orders/42?page=2&q=abc\nagain  '),
++    'Order <number> for <uuid> failed at /orders/<number>?page=<value>&q=<value> again',
++  );
++});
++
++test('normalization replaces numbers embedded in dynamic identifiers', () => {
++  assert.equal(normalizeMessage('Missing orderABC123 in chunk456.js'), 'Missing orderABC<number> in chunk<number>.js');
++});
++
++test('signatures ignore dynamic IDs but include signal type and top stack frame', () => {
++  const first = signalSignature({
++    kind: 'pageerror',
++    message: 'Order 42 failed for 550e8400-e29b-41d4-a716-446655440000',
++    route: '/orders/42',
++    stack: 'Error: Order 42 failed\n    at save (/app.js:10:2)\n    at click (/app.js:20:3)',
++  });
++  const changedIds = signalSignature({
++    kind: 'pageerror',
++    message: 'Order 99 failed for 123e4567-e89b-42d3-a456-426614174000',
++    route: '/orders/99',
++    stack: 'Error: Order 99 failed\n    at save (/app.js:10:2)\n    at other (/other.js:30:4)',
++  });
++  assert.equal(first, changedIds);
++  assert.match(first, /^[a-f0-9]{64}$/);
++  assert.notEqual(first, signalSignature({
++    kind: 'console',
++    message: 'Order 42 failed for 550e8400-e29b-41d4-a716-446655440000',
++    route: '/orders/42',
++    stack: 'Error: Order 42 failed\n    at save (/app.js:10:2)',
++  }));
++  assert.notEqual(first, signalSignature({
++    kind: 'pageerror',
++    message: 'Order 42 failed for 550e8400-e29b-41d4-a716-446655440000',
++    route: '/orders/42',
++    stack: 'Error: Order 42 failed\n    at submit (/app.js:10:2)',
++  }));
++});
++
++test('anomaly matching respects token boundaries and escapes literal tokens', () => {
++  assert.deepEqual(findAnomalyTexts('Total NaN today', ['NaN']), ['NaN']);
++  assert.deepEqual(findAnomalyTexts('NaNagus undefinedValue', ['NaN', 'undefined']), []);
++  assert.deepEqual(findAnomalyTexts('literal [object Object]', ['[object Object]']), ['[object Object]']);
++  assert.deepEqual(findAnomalyTexts('a+b and aXb', ['a+b']), ['a+b']);
++});
++
++test('scanSignals captures browser, network, text, and boundary signals and applies ignores', async () => {
++  const page = await browser.newPage();
++  try {
++    await page.goto(origin);
++    const config = configTemplate();
++    const initial = await scanSignals(page, config);
++    assert.deepEqual(initial.map((signal) => signal.kind), ['anomaly']);
++    assert.equal(initial[0]?.message, 'NaN');
++    assert.notEqual(initial[0]?.id, '');
++
++    const consoleEvent = page.waitForEvent('console', (message) => message.text().includes('Order 123 failed'));
++    const errorEvent = page.waitForEvent('pageerror');
++    const responseEvent = page.waitForEvent('response', (response) => response.status() === 404);
++    const failedEvent = page.waitForEvent('requestfailed');
++    await page.route('**/failed*', (route) => route.abort());
++    await page.route('**/ignored*', (route) => route.abort());
++    await page.evaluate(() => {
++      console.error('Ignore me 123');
++      console.error('Order 123 failed');
++      setTimeout(() => { throw new Error('Profile 42 exploded'); }, 0);
++      void fetch('/missing?id=42');
++      void fetch('/failed?id=42').catch(() => undefined);
++      void fetch('/ignored?id=42').catch(() => undefined);
++    });
++    await Promise.all([consoleEvent, errorEvent, responseEvent, failedEvent]);
++    await page.evaluate(() => {
++      const boundary = document.createElement('div');
++      boundary.dataset.errorBoundary = '';
++      boundary.textContent = 'Something went wrong 42';
++      document.body.append(boundary);
++    });
++
++    const signals = await scanSignals(page, config);
++    assert.ok(signals.some((signal) => signal.kind === 'console' && signal.message === 'Order 123 failed'));
++    assert.ok(signals.some((signal) => signal.kind === 'pageerror' && signal.message.includes('Profile 42 exploded')));
++    assert.ok(signals.some((signal) => signal.kind === 'response' && signal.status === 404));
++    assert.ok(signals.some((signal) => signal.kind === 'requestfailed' && signal.url?.includes('/failed')));
++    assert.ok(signals.some((signal) => signal.kind === 'errorBoundary' && signal.message.includes('Something went wrong')));
++    assert.ok(signals.every((signal) => !signal.message.includes('Ignore me') && !signal.url?.includes('/ignored')));
++    assert.ok(signals.every((signal) => signal.signature.length === 64 && signal.route === '/'));
++    assert.deepEqual(await scanSignals(page, config), []);
++  } finally {
++    await page.close();
++  }
++});
++
++test('error boundary hide and show between scans emits exactly one new appearance', async () => {
++  const page = await browser.newPage();
++  try {
++    await page.setContent('<div data-error-boundary>Recovered failure</div>');
++    const config = configTemplate();
++    config.detectors.anomalyTexts = [];
++    const initial = await scanSignals(page, config);
++    assert.equal(initial.filter((signal) => signal.kind === 'errorBoundary').length, 1);
++
++    await page.evaluate(async () => {
++      const boundary = document.querySelector<HTMLElement>('[data-error-boundary]')!;
++      boundary.style.display = 'none';
++      await new Promise((resolve) => setTimeout(resolve, 0));
++      boundary.style.display = '';
++      await new Promise((resolve) => setTimeout(resolve, 0));
++    });
++
++    const signals = await scanSignals(page, config);
++    assert.equal(signals.filter((signal) => signal.kind === 'errorBoundary').length, 1);
++    assert.deepEqual(await scanSignals(page, config), []);
++  } finally {
++    await page.close();
++  }
++});

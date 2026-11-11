@@ -1,0 +1,253 @@
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/agents/bh-explorer.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-explorer.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/agents/bh-explorer.md	2026-11-10 22:46:51
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-explorer.md	2026-11-11 02:33:37
+@@ -13,7 +13,7 @@
+ subagents: []
+ ---
+ 
+-Получи от вызывающего агента `runId`, маршрут и персону. Вызови `bh_open` для этого маршрута и персоны, затем исследуй страницу в рамках её сценариев.
++Получи от вызывающего агента `runId`, маршрут и персону. Вызови Skill `bughunter-oracles` и применяй его критерии при исследовании и регистрации кандидатов. Вызови `bh_open` для этого маршрута и персоны, затем исследуй страницу в рамках её сценариев.
+ 
+ Работай циклом: `bh_state` → ровно одно действие (`bh_act`, `bh_navigate` или `bh_probe`) → оценка новых сигналов из ответа действия → обязательный `bh_state` для проверки видимого состояния. После каждого `bh_act`, `bh_navigate` или `bh_probe` вызови `bh_state` перед любым следующим браузерным действием, даже если действие уже вернуло сигналы. Не выполняй два действия между чтениями состояния. Используй только идентификаторы элементов из последнего состояния.
+ 
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/agents/bh-reviewer.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-reviewer.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/agents/bh-reviewer.md	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-reviewer.md	2026-11-11 02:33:32
+@@ -0,0 +1,19 @@
++---
++name: bh-reviewer
++description: Проверяет воспроизведённых кандидатов и подтверждает только детерминированные баги приложения.
++tools:
++  - Read
++  - Grep
++  - Glob
++  - mcp__bughunter__bh_triage
++  - Skill
++subagents: []
++---
++
++Получи `runId` и `candidateId`. Вызови Skill `bughunter-oracles` и применяй его критерии. Читай только файлы внутри `.kimi-code/bughunter/state/runs/`: данные этого кандидата, его журнал и при необходимости другие данные прогонов для сравнения. Не читай код приложения или другие пути.
++
++Проверь, что `reproduction.status` равен `reproduced`, минимальные шаги действительно приводят к тому же expected/actual, а сигнал или check относится к приложению, а не к дев-стенду, расширению браузера или стороннему скрипту. Проверь по доступным данным прогонов, что кандидат не дублирует известный баг. Не считай ожидаемый ответ или разовый сетевой сбой багом.
++
++Вызови `bh_triage` один раз: `confirmed` только при воспроизводимом баге приложения с конкретным расхождением; `duplicate` при доказанном дубле; иначе `rejected`. Любое сомнение отклоняй и записывай конкретную причину в `reason`. Не изменяй файлы и не создавай тесты.
++
++Последнее сообщение — полный самостоятельный результат для вызывающего агента: `candidateId`, вердикт и однострочная причина. Не включай журналы чтения или сырые ответы инструментов.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/agents/bh-test-writer.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-test-writer.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/agents/bh-test-writer.md	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-test-writer.md	2026-11-11 02:33:32
+@@ -0,0 +1,23 @@
++---
++name: bh-test-writer
++description: Создаёт красные e2e и при очевидной причине unit-тесты только для подтверждённых багов.
++tools:
++  - Read
++  - Grep
++  - Glob
++  - Edit
++  - Write
++  - mcp__bughunter__bh_detect_tests
++  - mcp__bughunter__bh_export_e2e
++  - mcp__bughunter__bh_verify_red
++  - Skill
++subagents: []
++---
++
++Получи `runId` и `candidateId` подтверждённого воспроизведённого бага. Перед написанием теста вызови Skill `bughunter-red-test` и соблюдай его правила. Код приложения не меняй никогда; создавай и редактируй только тестовые файлы. Не используй Bash: запускает тесты только `bh_verify_red`.
++
++Сначала вызови `bh_export_e2e`. Если результат содержит `placedInProject: true`, сразу проверь созданный файл через `bh_verify_red` с runId, candidateId и `kind: e2e`; нужен вердикт `red`. Если `placedInProject: false`, сохрани путь к экспортированному файлу в итоге и не запускай его как проектный тест.
++
++Затем найди причину по стеку, маршруту и коду. Если место причины найдено уверенно, вызови `bh_detect_tests` для исходного файла, прочти соседние примеры и напиши unit-тест рядом с существующими тестами модуля в их стиле. Проверяй его через `bh_verify_red` с runId, candidateId и `kind: unit`; исправляй только сам тест и добейся `red` не более чем за 3 итерации. Если после трёх итераций вердикт не `red`, остановись и укажи последний вердикт и причину. Если причина не найдена уверенно, unit-тест не пиши и укажи это в итоге.
++
++Последнее сообщение — полный самостоятельный результат для вызывающего агента: candidateId, пути созданных файлов, вердикты проверок и причина пропуска unit-теста либо неудачи. Не включай журналы действий или сырые ответы инструментов.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/bughunter/server/test/prompts.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/prompts.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/bughunter/server/test/prompts.bhtest.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/prompts.bhtest.ts	2026-11-11 02:33:53
+@@ -0,0 +1,130 @@
++import assert from 'node:assert/strict';
++import { readFile } from 'node:fs/promises';
++import { join } from 'node:path';
++import { test } from 'node:test';
++
++const projectRoot = join(import.meta.dirname, '../../../..');
++const finalResultInstruction = 'последнее сообщение — полный самостоятельный результат для вызывающего агента';
++
++type Frontmatter = Record<string, string | string[]>;
++
++function parseFrontmatter(source: string): { data: Frontmatter; body: string } {
++  const match = source.match(/^---\n([\s\S]*?)\n---\n?/);
++  assert.ok(match, 'frontmatter is required');
++  const data: Frontmatter = {};
++  let listKey: string | undefined;
++  for (const line of match[1].split('\n')) {
++    const item = line.match(/^  - (.+)$/);
++    if (item) {
++      assert.ok(listKey, `list item without a key: ${line}`);
++      (data[listKey] as string[]).push(item[1]);
++      continue;
++    }
++    const field = line.match(/^([A-Za-z][A-Za-z0-9]*):(?: (.*))?$/);
++    assert.ok(field, `unsupported frontmatter line: ${line}`);
++    const [, key, value = ''] = field;
++    if (value === '[]') data[key] = [];
++    else data[key] = value;
++    listKey = value === '' ? key : undefined;
++    if (listKey) data[key] = [];
++  }
++  return { data, body: source.slice(match[0].length) };
++}
++
++async function readPrompt(relativePath: string): Promise<{ data: Frontmatter; body: string }> {
++  return parseFrontmatter(await readFile(join(projectRoot, relativePath), 'utf8'));
++}
++
++const agents = {
++  'bh-explorer': [
++    'mcp__bughunter__bh_open',
++    'mcp__bughunter__bh_state',
++    'mcp__bughunter__bh_act',
++    'mcp__bughunter__bh_navigate',
++    'mcp__bughunter__bh_probe',
++    'mcp__bughunter__bh_report_candidate',
++    'mcp__bughunter__bh_close',
++    'Skill',
++  ],
++  'bh-reviewer': [
++    'Read',
++    'Grep',
++    'Glob',
++    'mcp__bughunter__bh_triage',
++    'Skill',
++  ],
++  'bh-test-writer': [
++    'Read',
++    'Grep',
++    'Glob',
++    'Edit',
++    'Write',
++    'mcp__bughunter__bh_detect_tests',
++    'mcp__bughunter__bh_export_e2e',
++    'mcp__bughunter__bh_verify_red',
++    'Skill',
++  ],
++} as const;
++
++for (const [name, tools] of Object.entries(agents)) {
++  test(`${name} declares its exact standalone agent contract`, async () => {
++    const { data, body } = await readPrompt(`.kimi-code/agents/${name}.md`);
++    assert.equal(data.name, name);
++    assert.equal(typeof data.description, 'string');
++    assert.ok((data.description as string).trim().length > 0);
++    assert.deepEqual(data.tools, tools);
++    assert.deepEqual(data.subagents, []);
++    assert.equal(data.model, undefined);
++    assert.equal(data.override, undefined);
++    assert.ok(!body.includes('${base_prompt}'));
++    assert.match(body, new RegExp(finalResultInstruction, 'i'));
++  });
++}
++
++test('entry skill is manual, argument-driven, and orchestrates the complete run', async () => {
++  const { data, body } = await readPrompt('.kimi-code/skills/bughunter/SKILL.md');
++  assert.equal(data.name, 'bughunter');
++  assert.equal(typeof data.description, 'string');
++  assert.ok((data.description as string).trim().length > 0);
++  assert.equal(data.disableModelInvocation, 'true');
++  assert.equal(data.model, undefined);
++  assert.equal(data.override, undefined);
++  for (const required of [
++    '$ARGUMENTS', 'diff', 'full', 'route <path>', 'resume <runId>',
++    'bh_start_run', 'bh_resume_run', 'bh_reproduce', 'bh_finish_run',
++    'Agent', 'bh-explorer', 'bh-reviewer', 'bh-test-writer',
++  ]) assert.ok(body.includes(required), `missing entry contract: ${required}`);
++  assert.match(body, /последовательно/i);
++  assert.match(body, /не в фоне/i);
++  assert.match(body, /не открывай браузер/i);
++  assert.match(body, /невоспроизвед/i);
++  assert.match(body, /ничего не коммить/i);
++});
++
++const skills = {
++  'bughunter-oracles': 'при исследовании страницы и разборе кандидатов в баги',
++  'bughunter-red-test': 'при написании теста на найденный баг',
++} as const;
++
++for (const [name, whenToUse] of Object.entries(skills)) {
++  test(`${name} declares its exact skill metadata`, async () => {
++    const { data } = await readPrompt(`.kimi-code/skills/${name}/SKILL.md`);
++    assert.equal(data.name, name);
++    assert.equal(typeof data.description, 'string');
++    assert.ok((data.description as string).trim().length > 0);
++    assert.equal(data.whenToUse, whenToUse);
++    assert.equal(data.model, undefined);
++    assert.equal(data.override, undefined);
++  });
++}
++
++test('agents invoke their reusable skills and reviewer/writer keep their boundaries', async () => {
++  const explorer = (await readPrompt('.kimi-code/agents/bh-explorer.md')).body;
++  const reviewer = (await readPrompt('.kimi-code/agents/bh-reviewer.md')).body;
++  const writer = (await readPrompt('.kimi-code/agents/bh-test-writer.md')).body;
++  assert.ok(explorer.includes('bughunter-oracles'));
++  assert.ok(reviewer.includes('.kimi-code/bughunter/state/runs/'));
++  assert.ok(writer.includes('bughunter-red-test'));
++  assert.match(writer, /не более (?:чем )?(?:за )?(?:3|тр[её]х)/i);
++  assert.match(writer, /код приложения не (?:меняй|изменяй)/i);
++});
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/skills/bughunter/SKILL.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter/SKILL.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/skills/bughunter/SKILL.md	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter/SKILL.md	2026-11-11 02:33:32
+@@ -0,0 +1,15 @@
++---
++name: bughunter
++description: Исследует веб-приложение, воспроизводит и проверяет баги, создаёт регрессионные тесты и отчёт.
++disableModelInvocation: true
++---
++
++Разбери `$ARGUMENTS`: пустой аргумент означает `diff`; прими `diff`, `full`, `route <path>` или `resume <runId>`. При другом вводе остановись и кратко покажи форматы запуска. Не открывай браузер сам и ничего не коммить.
++
++Для нового прогона вызови `bh_start_run` с выбранным scope и, для route, путём. Для возобновления вызови `bh_resume_run` с runId; продолжи только незавершённые этапы и учитывай возвращённых необработанных кандидатов, не повторяя завершённую работу. Если по состоянию этапов нужно продолжить исследование, прочти маршруты и routeStages из `run.json` этого прогона.
++
++Для каждого незавершённого маршрута последовательно запусти персоны «новичок», «нетерпеливый» и «граничный ввод». Делегируй каждую пару маршрут–персона через `Agent` субагенту `bh-explorer`, передав runId, маршрут и персону. Выполняй вызовы только в foreground, не в фоне, по одному; дождись результата и собери candidateId.
++
++Для каждого кандидата, который ещё не воспроизведён, вызови `bh_reproduce`. Невоспроизведённые кандидаты исключаются из дальнейшей обработки: не передавай их reviewer или test-writer. Каждого воспроизведённого кандидата без вердикта передай через отдельный foreground `Agent` субагенту `bh-reviewer`, дождись вердикта и причины. Передавай через foreground `Agent` субагенту `bh-test-writer` только подтверждённые баги, по одному; отклонённые, дубли и невоспроизведённые не передавай.
++
++Вызови `bh_finish_run` с runId. Верни краткую сводку: сколько кандидатов найдено, сколько багов подтверждено, какие файлы тестов созданы и путь к отчёту. Укажи ошибки обработки, не выдавая неподтверждённых кандидатов за баги.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/skills/bughunter-oracles/SKILL.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter-oracles/SKILL.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/skills/bughunter-oracles/SKILL.md	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter-oracles/SKILL.md	2026-11-11 02:33:32
+@@ -0,0 +1,17 @@
++---
++name: bughunter-oracles
++description: Задаёт детерминированные критерии отбора кандидатов в баги и отсева ложных срабатываний.
++whenToUse: при исследовании страницы и разборе кандидатов в баги
++---
++
++Формулируй каждый кандидат парой «ожидалось / получено»: конкретный наблюдаемый результат пользователя, а не предположение о коде. Используй поля `expected` и `actual`; регистрируй только расхождение, которое можно проверить повторно.
++
++Доверяй сигналам в порядке убывания надёжности:
++1. Проверенный инвариант интерфейса через `check`: конкретный текст, отсутствие текста или число элементов после действия.
++2. Необработанное исключение страницы или error boundary, связанное с действием пользователя.
++3. Ошибочный ответ API приложения или ошибка консоли с трассировкой в код приложения.
++4. Аномальный видимый текст (`undefined`, `NaN`, `[object Object]`, `Invalid Date`) только при нарушении сценария.
++
++Не полагайся на одно подозрение, задержку, внешний вид без проверяемого инварианта или сообщение без связи с действием. Для инварианта заранее определи ожидаемое значение и сравни фактическое состояние после действия.
++
++Отклоняй ожидаемые 401 при неавторизованном доступе и 404 при запросе отсутствующего ресурса или переходе на заведомо несуществующий путь. Отклоняй ошибки сторонних скриптов, расширений браузера и разовые сетевые сбои дев-стенда: DNS, обрыв соединения, недоступность внешнего сервиса. Не выдавай их за баги приложения без воспроизводимого нарушения собственного сценария приложения.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/skills/bughunter-red-test/SKILL.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter-red-test/SKILL.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-14-before/.kimi-code/skills/bughunter-red-test/SKILL.md	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter-red-test/SKILL.md	2026-11-11 02:33:32
+@@ -0,0 +1,13 @@
++---
++name: bughunter-red-test
++description: Задаёт правила изолированных красных регрессионных тестов для Jest и Vitest.
++whenToUse: при написании теста на найденный баг
++---
++
++Проверяй одним тестом один симптом бага. Дай тесту конкретное имя и используй точные assertions: ожидаемый текст, значение, число вызовов или элементов. Не заменяй проверку симптома на `toBeTruthy`, отсутствие исключения или общий snapshot.
++
++Не используй фиксированные `sleep` и `setTimeout` для ожидания. Жди наблюдаемого условия через возможности фреймворка. Не завись от текущего времени, случайных или внешних данных и порядка элементов: фиксируй время и входные данные, сравнивай множества без учёта порядка, если порядок не относится к багу.
++
++Изолируй тест от других тестов и очищай созданное состояние, моки, таймеры и подписки. Используй существующие helpers проекта; не меняй код приложения, чтобы сделать тест зелёным. Красный тест должен падать именно на конкретном assertion симптома, а не из-за импорта, окружения или таймаута.
++
++В Jest используй `jest.fn`, `jest.mock`, `jest.useFakeTimers` и `jest.restoreAllMocks` согласно стилю проекта. В Vitest используй `vi.fn`, `vi.mock`, `vi.useFakeTimers` и `vi.restoreAllMocks`. Поднимай моки модулей с учётом hoisting выбранного фреймворка; после fake timers восстанавливай реальные таймеры.

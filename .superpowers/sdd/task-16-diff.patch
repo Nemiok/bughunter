@@ -1,0 +1,336 @@
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/.gitignore /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/.gitignore
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/.gitignore	2026-11-10 14:56:54
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/.gitignore	2026-11-11 07:46:17
+@@ -1,4 +1,5 @@
+ server/node_modules/
+ server/fixtures/*/node_modules/
++server/fixtures/*/.playwright-output/
+ state/runs/
+ state/auth/
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/README.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/README.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/README.md	2026-11-11 03:19:50
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/README.md	2026-11-11 08:00:06
+@@ -1,54 +1,176 @@
+ # Bughunter MVP
+ 
+-Local open-source bug-hunting assistant for Kimi Code CLI. This directory contains a portable `.kimi-code/` package: a deterministic MCP server, a `/bughunter` skill, and supporting agents.
++## 1. Сначала доверьте папке проекта
+ 
+-## Сверка с Kimi Code CLI
++**Первый шаг — интерактивное доверие папке (workspace trust).** Откройте терминал в корне целевого Git-проекта, запустите `kimi` и подтвердите доверие этой папке. Проектные MCP-серверы Kimi Code включаются только после этого подтверждения. Не заменяйте этот шаг постоянной установкой `KIMI_CODE_TRUST_WORKSPACE=1`: переменная использовалась только для автоматических headless-проб.
+ 
+-| Проверка | Статус | Фактический результат | Доказательство | Требуемая корректировка |
+-| --- | --- | --- | --- | --- |
+-| stdio MCP запускается с `cwd` = корень проекта | checked | `process.cwd()` MCP-сервера равен `<probe>/.kimi-code/bughunter/server/fixtures/cli-probe` — тому же каталогу, где лежит `.kimi-code/mcp.json` и `.git`. | `mcp3.stdout.jsonl`: вызов `mcp__probe-cwd__get_cwd` вернул путь к корню пробы. | Нет; при необходимости в `mcp.json` можно явно задать поле `cwd`, но по умолчанию оно не требуется. |
+-| `/bughunter` разрешается в `/skill:bughunter` | checked | Ввод `/bughunter` в `kimi -p` привёл к вызову `Skill("bughunter")` и возврату токена `BH-BUGHUNTER-ALIAS-OK`. | `alias.stdout.jsonl`: `Skill` с аргументом `{"skill":"bughunter"}`. | Нет; можно полагаться на механизм shorthand из документации. |
+-| Пользовательские агенты проекта обнаруживаются | checked | Агент `probe-agent` из `.kimi-code/agents/probe-agent.md` запущен через `--agent probe-agent` и успешно вызвал проектный скилл. | `agent.stdout.jsonl`: `Skill("probe-token")` → `BH-PROBE-TOKEN-42`. | Нет; агенты Bughunter располагаются в `.kimi-code/agents/`. |
+-| Проектный скилл доступен субагенту | checked | Главный агент по умолчанию вызвал `Agent(subagent_type="probe-agent")`; субагент вызвал `Skill("probe-token")` и вернул `BH-PROBE-TOKEN-42`. | `subagent.stdout.jsonl` + `agents/agent-0/wire.jsonl` сессии `session_6bbafb37-63a1-45b0-8e2d-887b19916412`: виден вызов `Skill` с `source="project"`. | Нет; скиллы Bughunter в `.kimi-code/skills/` видны субагентам проекта. |
+-| Интерактивное доверие папке (workspace trust) | pending | Не проверено вручную; все пробы шли в headless-режиме с `KIMI_CODE_TRUST_WORKSPACE=1`. | Нет интерактивного запуска `kimi` из каталога пробы. | Пользователь должен сам доверить папке при первом интерактивном запуске; этот шаг должен быть первым пунктом установки. |
++Интерактивный диалог trust пока **не проверен вручную**; это остаётся обязательным ручным действием пользователя.
+ 
+-## Проверка гипотезы: минимальный explorer
++## 2. Честный статус проверки: MVP пока не готов
+ 
+-2026-11-10 выполнен реальный прогон установленного `kimi` 2.5.2 с проектным агентом `bh-explorer`, настоящим MCP-сервером и Vite-демо на `http://127.0.0.1:4173`. Использован свежий run `20261110T183903.629Z-a7b6a6ff29a9`; все четыре настроенных маршрута последовательно проверены тремя MVP-персонами в отдельных CLI-сессиях. По прямому указанию контроллера `baseUrl` и `allowedOrigins` в `state/config.json` изменены с шаблонного origin на `http://127.0.0.1:4173`, чтобы конфигурация соответствовала запущенной фикстуре.
++**Автоматические проверки проходят, но MVP нельзя считать полностью готовым.** Последний полный `npm test` и `npm run typecheck` проходят; переносимая копия также проверяет `npm ci`, настоящий MCP stdio handshake, все 15 инструментов, экспорт и red-вердикт без шага сборки.
+ 
+-**Gate: PASS.** Модель создала 33 кандидата, покрывающие 4 разных засеянных бага из 5: №1 (`pageerror` профиля), №2 (HTTP 500 при нулевом количестве), №3 (два заказа после double click) и №5 (сброс фильтра). Кандидата для №4 (`NaN` при пустом списке) нет. Это кандидаты, а не подтверждённые баги: воспроизведение и triage на этом этапе не выполнялись; в общее число также входят повторы и наблюдения вне пяти засеянных багов.
++Ручные и модельные gates имеют другой результат:
+ 
+-| Маршрут | Персона | Candidate IDs | Типы сигналов | Последнее успешное браузерное действие; `stepsLeft` | Ошибка / точка остановки |
+-| --- | --- | --- | --- | --- | --- |
+-| `/` | новичок | `da35e99c-d86e-4b72-bec3-3766812c8842`, `f0d0406d-ad42-442c-9be6-7081894841c1`, `fceed4c6-620e-4098-9589-dcd7b48c3d52`, `7d134806-f7aa-4130-a8fd-9c6537c321d5` | console, response | `bh_navigate /orders?page=2`; 40 | Нет; идеи исчерпаны |
+-| `/` | нетерпеливый | `66c1fe04-52a6-436e-852f-ae5cad6743cc`, `4da53734-632b-45f2-8c0f-847dce852ed0`, `2c49758f-4064-46d7-a9c7-0e49f6094e85`, `51e5d69b-8d1b-4134-8509-1139fdb935cf` | console, pageerror, response | `bh_probe reload`; 31 | Нет; идеи исчерпаны |
+-| `/` | граничный ввод | `0e649bc1-6679-416c-b549-4114b03e50a5`, `287f9ac8-3e87-41af-b13d-e12efb525e03`, `ec13dc66-1423-46b0-b994-7cacce8f1e06`, `37e2dc0b-0341-46c0-b730-bd493092b52d` | response, console, pageerror | `bh_act click`; 26 | 3 retry API провайдера, восстановлено; exit 0 |
+-| `/orders` | новичок | `3e8eba90-fa35-4dbe-bcf6-7017e1de8ee9`, `17ffea05-786f-4f6a-a8f7-c9d5051de76b` | console, response | `bh_navigate /orders?page=abc`; 45 | Нет; идеи исчерпаны |
+-| `/orders` | нетерпеливый | `fd6266b2-1984-4e3d-9c8f-c4e744732429`, `64d1688d-1cd9-4394-b625-e8f6e89d6c41` | console, response | `bh_act click`; 37 | 4 retry API провайдера, восстановлено; exit 0 |
+-| `/orders` | граничный ввод | `25f384a7-1cb4-48b8-bfe1-531211409f31`, `5c972d13-4a69-4054-b72f-43fe86d25357` | response, console | `bh_probe mobile_viewport`; 37 | 2 retry API провайдера, восстановлено; exit 0 |
+-| `/orders/new` | новичок | `0a70f75a-197f-4e25-be73-e62d7486d4d8` | console, response | `bh_probe reload`; 47 | Нет; идеи исчерпаны |
+-| `/orders/new` | нетерпеливый | `c4e964ee-5e23-4097-a972-bd49d297c0e0`, `f6262e30-93f1-456d-b26c-2619242d4ee2`, `69462aa6-b281-48d3-8951-53ce022b1ad7`, `163ce78e-fba6-4411-919a-bec3d91523f7` | console, response | `bh_act click`; 33 | Один recovered invalid-args `bh_report_candidate`: `check.expected: true`, ожидался string/number; повтор без `expected` успешен; exit 0 |
+-| `/orders/new` | граничный ввод | `02c93fb3-9de2-4f81-86ba-ad3359b86e9c`, `b3dab839-7ff4-4c31-b8a3-632b25c6db8a` | response, console | `bh_act click`; 42 | 11 retry API провайдера, восстановлено; exit 0 |
+-| `/profile` | новичок | `9e09581e-d562-48df-b2fa-0c31a043421a`, `d66fc3ed-0e19-40aa-aaca-fb75831320fa`, `3313c7a0-f1b3-4a02-9236-dcfd4be1cb4f` | pageerror | `bh_act click`; 47 | Нет; идеи исчерпаны |
+-| `/profile` | нетерпеливый | `de6dc8f5-d7dc-4105-aaf7-6d492bd6740e`, `88f31949-273a-4b0e-a2c7-eeb21fbe7c53` | pageerror | `bh_act click`; 49 | Нет; идеи исчерпаны |
+-| `/profile` | граничный ввод | `1e48f556-f3bb-4ca9-89dc-360956129ff1`, `16a43f94-58c9-43f4-8b01-68f0f615e1a6`, `f69b86d5-26e7-40b5-ae94-f33cc7fa7206` | pageerror | `bh_probe mobile_viewport`; 35 | Нет; идеи исчерпаны |
++- **Full, попытка 2:** числовой gate прошёл — 4/5 засеянных багов подтверждены, 0 подтверждённых ложных срабатываний, для всех четырёх есть red e2e. Но обязательная оркестрация через custom agents **не пройдена**: в JSONL нет ни одного вызова custom `Agent`; triage/export/verification выполнялись главным агентом batch-вызовами.
++- **Full, попытка 3:** **FAIL**. Одно сообщение модели содержало четыре одновременных `Agent(subagent_type="bh-explorer")` вместо последовательных вызовов. Тестовый процесс был остановлен; прогон остался незавершённым, без report/finish. Это действующий архитектурный блокер: три реальных full-прогона не показали требуемую последовательную оркестрацию custom agents.
++- **Финальный resume с двумя кандидатами** (один полностью обработанный и один необработанный) **не запускался и не проверен**. Более ранний one-candidate resume прошёл, но он предшествует финальному route guard и не заменяет этот gate.
++- **Interactive workspace trust:** **PENDING / NOT VERIFIED**. Все модельные пробы были headless с `KIMI_CODE_TRUST_WORKSPACE=1`.
+ 
+-Все 12 CLI-процессов завершились с кодом 0, все браузерные сессии получили успешный `bh_close`. В сессии 08 была одна восстановленная ошибка валидации аргументов `bh_report_candidate` (`check.expected: true` вместо string/number); нерешённых ошибок MCP и `LIMIT_REACHED` не было. В исходном прогоне также наблюдались отдельные `bh_act`/`bh_probe`/`bh_navigate` без промежуточного `bh_state`; это задокументированное ограничение runtime. После прогона prompt explorer уточнён: теперь он требует `bh_state` после каждого действия перед следующим браузерным действием, сохраняя оценку сигналов из ответа действия. Сырые JSONL, stderr и коды выхода сохранены в `.kimi-code/bughunter/state/runs/20261110T183903.629Z-a7b6a6ff29a9/manual-gate/`. Прогон был headless с `KIMI_CODE_TRUST_WORKSPACE=1`: интерактивный диалог trust и возможные интерактивные подтверждения этим не проверены.
++Сырые состояния, JSONL и отчёты сохранены в `.kimi-code/bughunter/state/runs/`. Полная история и точные пути доказательств — в Task 15 report; финальные команды и результаты Task 16 вынесены в отдельный report. Никакой числовой результат не отменяет провал delegation gate.
+ 
+-## Ограничения и расхождения
++## 3. Установка в проект
+ 
+-1. **Документация не декларирует default `cwd` для stdio MCP.** Страница MCP указывает поле `cwd` как опциональное, но не говорит, от какого каталога по умолчанию запускается сервер. Фактическое значение установлено runtime-пробой.
+-2. **Интерактивный trust не пройден.** `KIMI_CODE_TRUST_WORKSPACE=1` — это обход для headless-проб, а не доказательство того, что пользователь увидит и подтвердит диалог доверия.
+-3. **Делегирование через `Agent` проверено в headless-режиме.** Результат доказывает, что субагент видит проектный скилл и может его вызвать, но в интерактивном режиме dispatch субагента может потребовать подтверждения.
+-4. **Главная страница документации недоступна.** `https://www.kimi.com/code/docs/en/kimi-code-cli/` вернула HTTP 403; нужные сведения получены из конкретных внутренних страниц.
+-5. **Первоначальная ручная реализация stdio-сервера не прошла инициализацию.** Сервер на чистом Node.js буферизовал первый ответ, и Kimi Code CLI отключал его по таймауту 30 с. Проба переписана на `@modelcontextprotocol/sdk`; это ограничение реализации пробы, а не продуктовый баг.
++Требования: Git, Node.js **≥ 22.18**, npm и установленный Google Chrome. Сервер выполняет TypeScript напрямую через Node type stripping; сборка не нужна.
+ 
+-## Переносимая копия и изоляция инструментов проекта
++1. Выполните интерактивный trust из раздела 1.
++2. Скопируйте из дистрибутива в `.kimi-code/` целевого проекта:
++   - `bughunter/` целиком;
++   - `skills/bughunter/`, `skills/bughunter-oracles/`, `skills/bughunter-red-test/`;
++   - `agents/bh-explorer.md`, `agents/bh-reviewer.md`, `agents/bh-test-writer.md`.
++3. **Не перезаписывайте существующий `.kimi-code/mcp.json`.** Объедините его `mcpServers` с записью ниже, сохранив остальные серверы и поля:
+ 
+-Автоматическая проверка: `cd .kimi-code/bughunter/server && node --test test/portable.bhtest.ts`. Она копирует демо и `.kimi-code/` без `node_modules`, `state/runs` и `state/auth`, выполняет `git init` и `npm ci` в обеих частях копии, запускает скопированное демо и проходит полный цикл кандидата через все 15 инструментов по настоящему stdio MCP. Временная копия и её процессы удаляются после проверки. Это автоматизированная проверка переносимости, а не доказательство интерактивного trust.
++```json
++{
++  "mcpServers": {
++    "bughunter": {
++      "command": "node",
++      "args": [".kimi-code/bughunter/server/src/index.ts"],
++      "startupTimeoutMs": 30000,
++      "toolTimeoutMs": 600000
++    }
++  }
++}
++```
+ 
+-У демо TypeScript включает только `src` и `vite.config.ts`; Jest и ESLint не настроены. Стандартный шаблон Vitest обнаруживает тестовые фикстуры внутри `.kimi-code/`, поэтому **только в одноразовой копии проекта** нужен `vitest.config.ts`:
++`cwd` не нужен: установленный CLI 2.5.2 запускает stdio MCP из корня проекта. `toolTimeoutMs` оставляет время на воспроизведение и запуск тестов.
+ 
++4. Установите только зависимости сервера из lockfile:
++
++```sh
++cd .kimi-code/bughunter/server
++npm ci
++```
++
++5. В пользовательский `config.toml` Kimi Code добавьте точное правило, чтобы каждый MCP-вызов не требовал подтверждения:
++
++```toml
++[[permission.rules]]
++decision = "allow"
++pattern = "mcp__bughunter__*"
++```
++
++Правило разрешает только MCP Bughunter. Ограничения origin, запрещённых действий, read-only форм и лимитов находятся в коде сервера, а не только в prompt.
++
++6. Отредактируйте `.kimi-code/bughunter/state/config.json` под целевой стенд. Поставляемый конфиг указывает на локальное демо `http://127.0.0.1:4173`. Если файла нет, первый `bh_start_run` создаст шаблон и вернёт `CONFIG_CREATED`; после заполнения конфига запустите команду заново.
++7. Перезапустите `kimi` из корня проекта, чтобы он заново прочитал MCP/config, и проверьте доступность `mcp__bughunter__*`.
++
++## 4. Chrome и авторизация
++
++Bughunter использует **только Google Chrome** через Playwright `channel: "chrome"`; другие браузеры не поддерживаются. Установите Chrome штатным способом ОС. `playwright-core` не скачивает браузер в postinstall. Если Chrome не найден, установите его и повторите запуск; для воспроизведения артефактов video также должен быть доступен Playwright FFmpeg.
++
++Если стенд требует входа:
++
++```sh
++cd .kimi-code/bughunter/server
++npm run auth
++```
++
++Откроется обычный (headed) Chrome на `baseUrl`. Войдите вручную, вернитесь в терминал и нажмите Enter. Сессия сохраняется в `.kimi-code/bughunter/state/auth/storage-state.json` и автоматически используется новыми браузерными контекстами. Этот файл содержит секреты сессии, игнорируется Git и не должен передаваться или коммититься. Автоматические тесты не выполняли реальный интерактивный login.
++
++## 5. Конфигурация `state/config.json`
++
++JSON строго валидируется: неизвестные поля отклоняются. Все поля обязательны; `tests.unit.command` может быть `null`.
++
++| Поле | Назначение |
++| --- | --- |
++| `baseUrl` | Абсолютный URL дев-стенда; начальная точка auth, навигации и экспортированных тестов. |
++| `allowedOrigins` | Непустой список разрешённых абсолютных origin. Прямые, клиентские и popup-переходы за их пределы блокируются. |
++| `routes` | Непустой список маршрутов, начинающихся с `/`; полный набор для `full` и допустимых `route`. |
++| `routeMap` | Отображение glob-путей исходников на маршруты для `diff`, например `"src/pages/orders/**": ["/orders", "/orders/new"]`. |
++| `baseBranch` | Базовая ветка для `git diff --name-only <baseBranch>...HEAD`. |
++| `limits.stepsPerSession` | Положительный целый общий лимит действий, переходов и probes в одной сессии. |
++| `limits.candidatesPerRun` | Положительное целое для лимита кандидатов на прогон. В текущем MVP поле валидируется, но отдельное enforcement этого лимита ещё не реализовано. |
++| `safety.forbiddenActionText` | Строки запрещённого текста/имени элемента; сравнение нечувствительно к регистру до выполнения действия. |
++| `safety.readOnly` | При `true` дополнительно блокирует explicit/implicit submit и связанные Enter/NumpadEnter. |
++| `testDataPrefix` | Префикс автоматически генерируемых тестовых значений, например `bh_`. |
++| `detectors.ignoreConsole` | Строки-исключения для console-сигналов. |
++| `detectors.ignoreRequests` | Строки-исключения для network request/response-сигналов. |
++| `detectors.anomalyTexts` | Токены аномального видимого текста, например `undefined`, `NaN`, `[object Object]`, `Invalid Date`. |
++| `detectors.errorBoundarySelector` | Непустой CSS selector error boundary. |
++| `tests.unit.command` | Явная команда project-local Jest/Vitest или `null` для автодетекции; verifier добавляет один файл и обязательные reporter-аргументы. |
++| `tests.e2e.dir` | Каталог экспорта Playwright-тестов относительно ближайшего project root с `@playwright/test`. |
++
++Для изолированных тестов сервер принимает `BUGHUNTER_STATE_DIR`; без него состояние всегда вычисляется от расположения `server/`, а не от текущего каталога.
++
++## 6. Запуск и возобновление
++
++Команды вводятся внутри уже запущенной интерактивной сессии `kimi` из корня целевого проекта:
++
++| Команда | Поведение |
++| --- | --- |
++| `/bughunter` или `/bughunter diff` | Scope по умолчанию. Сопоставляет изменённые относительно `baseBranch` файлы с `routeMap`; если совпадений нет, проверяет все `routes`. |
++| `/bughunter full` | Последовательно проверяет все настроенные `routes` тремя персонами. |
++| `/bughunter route /orders` | Проверяет один маршрут; он должен присутствовать в `routes`. |
++| `/bughunter resume <runId>` | Продолжает существующий прогон по сохранённым route/stage/candidate state, не создавая новый run и не повторяя завершённую работу. |
++
++`/bughunter` — shorthand для `/skill:bughunter`. Entry skill вызывается только вручную. Требуемый workflow: один foreground custom agent на маршрут–персону, воспроизведение каждого кандидата, отдельный reviewer, затем test-writer только для подтверждённых багов и `bh_finish_run` без pending работы. Реальное несоответствие этому workflow зафиксировано в разделе 2.
++
++Bughunter не должен коммитить или менять код приложения. Для headless CLI нельзя комбинировать `kimi -p` с `--auto`/`--yolo`; такая попытка в installed CLI 2.5.2 завершилась с ошибкой. Это не рекомендуемый обход интерактивной установки.
++
++## 7. Артефакты и состояние
++
++Все рабочие данные находятся в `.kimi-code/bughunter/state/`:
++
++- `config.json`, `known-bugs.json`, `suppressions.json` — конфигурация и общая signature-память; предназначены для совместного version control.
++- `runs/<runId>/run.json` — scope, выбранные маршруты, статусы run/stage/route для resume.
++- `runs/<runId>/candidates/<candidateId>.json` — кандидаты, reproduction/review и пути созданных тестов.
++- `runs/<runId>/journals/<sessionId>.json` — семантические действия и сигналы.
++- `runs/<runId>/artifacts/<candidateId>/` — `trace.zip`, `screenshot.png`, `video.webm`; у reproduction могут быть подкаталоги `replay-*`.
++- `runs/<runId>/e2e/` — экспорт, если в проекте не найден `@playwright/test`; иначе файлы попадают в `tests.e2e.dir`.
++- `runs/<runId>/report.md` — confirmed/rejected/duplicates/unreproduced/pending, минимальные шаги, артефакты и тесты.
++- `auth/storage-state.json` — локальная auth-сессия.
++
++`state/runs/` и `state/auth/` игнорируются локальным `.kimi-code/bughunter/.gitignore`. Их нельзя удалять при обычном обновлении: там могут быть незавершённые прогоны, доказательства gates и auth. Fixture Playwright output `.playwright-output/` также игнорируется.
++
++## 8. Перенос и обновление без потери состояния
++
++При переносе на другую машину/репозиторий копируйте `bughunter/`, три skill-каталога и три agent-файла, затем заново объедините `mcp.json` и выполните `npm ci`. Скопируйте существующий `state/` отдельно, если нужны общая память и resume; `auth/` лучше создать заново через `npm run auth`, а не переносить секреты.
++
++**Для обновления сервера заменяйте только `.kimi-code/bughunter/server/`.** Не удаляйте и не перезаписывайте соседний `.kimi-code/bughunter/state/`. После замены выполните `cd .kimi-code/bughunter/server && npm ci`. Не копируйте новый `bughunter/` поверх установки целиком: это может затереть config, known/suppressions, runs и auth.
++
++## 9. Изоляция от инструментов целевого проекта
++
++Проверьте, что build/typecheck/lint/test целевого проекта не захватывают `.kimi-code/`. Тесты сервера имеют суффикс `.bhtest.ts`, но фикстуры содержат обычные `.test.*`, поэтому одного суффикса недостаточно.
++
++- **TypeScript:** предпочтителен узкий `include`. В проверенном демо он ровно такой:
++
++```json
++{
++  "include": ["src", "vite.config.ts"]
++}
++```
++
++TypeScript `--listFiles` в переносимой копии не содержал файлов проекта из `.kimi-code/`. Если широкий `include` всё же захватывает служебные файлы, добавьте в `tsconfig.json` ровно `".kimi-code"` в `exclude` (и сохраните существующие исключения).
++
++- **ESLint flat config:** если lint видит `.kimi-code`, добавьте ignore-объект:
++
++```js
++{ ignores: ['.kimi-code/**'] }
++```
++
++В демо ESLint не установлен, поэтому этот snippet является конфигурационной инструкцией, а не результатом прогона ESLint.
++
++- **Jest:** если discovery видит `.kimi-code`, добавьте:
++
++```js
++testPathIgnorePatterns: ['<rootDir>/.kimi-code/']
++```
++
++В демо Jest не установлен. Отдельная Jest-фикстура Bughunter используется только для verifier matrix.
++
++- **Vitest:** стандартный discovery демо действительно нашёл fixture-тесты внутри `.kimi-code/`. Проверенный в одноразовой копии `vitest.config.ts`:
++
+ ```ts
+ import { configDefaults, defineConfig } from 'vitest/config';
+ 
+@@ -57,8 +179,65 @@
+ });
+ ```
+ 
+-Точный добавленный glob: `**/.kimi-code/**`. После появления проектных Playwright-тестов в одноразовой копии демо в тот же `exclude` также добавляется `**/e2e/**`, чтобы Vitest не загружал Playwright-файлы; их запускает только Playwright/`bh_verify_red`. Исходное демо этой проверкой не изменяется.
++Точный добавленный glob: `**/.kimi-code/**`. После появления project Playwright e2e в одноразовой копии в тот же массив добавляется `**/e2e/**`, чтобы Vitest не загружал Playwright specs; их запускает только Playwright/`bh_verify_red`. Не удаляйте `configDefaults.exclude` и существующие project excludes.
+ 
+-## Остальные разделы README
++## 10. Разработка и проверка самого Bughunter
+ 
+-Заполняются по мере реализации этапов 1–5 MVP.
++Зависимости каждой фикстуры не входят в dependencies сервера и ставятся отдельно только для разработки:
++
++```sh
++cd .kimi-code/bughunter/server
++npm ci
++for fixture in buggy-app jest-project vitest-project cli-probe; do
++  (cd "fixtures/$fixture" && npm ci)
++done
++```
++
++Основные команды из `.kimi-code/bughunter/server`:
++
++```sh
++npm test
++npm run typecheck
++node --test test/portable.bhtest.ts
++```
++
++`npm test` последовательно запускает `test/*.bhtest.ts` через `node:test`; отдельный build не требуется. Portable test копирует демо и `.kimi-code/` без `node_modules`, `state/runs` и `state/auth`, делает `git init`, выполняет `npm ci` в copied server/demo, проверяет project-tool isolation, поднимает скопированное демо и проходит candidate lifecycle через все 15 инструментов настоящего stdio MCP (`node src/index.ts`). Он также проверяет exported e2e red и удаляет только свою временную копию и процессы.
++
++Не запускайте `node src/index.ts` как обычный CLI с ожиданием текстового ответа: это долгоживущий MCP stdio-сервер, stdout зарезервирован для протокола. Подключение выполняет Kimi Code через `mcp.json`.
++
++## 11. Проверенная совместимость Kimi Code CLI
++
++Проверки выполнялись на installed `kimi` **2.5.2**:
++
++| Проверка | Статус | Фактический результат |
++| --- | --- | --- |
++| stdio MCP `cwd` | PASS (headless) | По умолчанию `process.cwd()` равен project root с `.git` и `.kimi-code/mcp.json`; явный `cwd` не требуется. |
++| `/bughunter` shorthand | PASS (headless) | `/bughunter` разрешился в `Skill("bughunter")`. |
++| Discovery project agents | PASS (headless) | Agent из `.kimi-code/agents/` доступен по имени. |
++| Project skill внутри custom subagent | PASS (headless) | Настоящий `Agent` dispatch вызвал project `Skill`; это не доказывает соблюдение полным прогоном всей оркестрации. |
++| Interactive trust | PENDING | Требуется ручной запуск и подтверждение доверия пользователем. |
++| Минимальный explorer gate | PASS, исторический | 12/12 CLI exit 0, 12/12 close, 33 кандидата, 4/5 seeded bugs; кандидаты не были автоматически подтверждёнными багами. |
++
++Доказательства Task 1 и manual explorer сохранены в fixture/run evidence. Подробные результаты автоматических этапов и финальных full/resume attempts находятся в SDD reports.
++
++## 12. Ограничения MVP и сведённые расхождения CLI
++
++### Границы MVP
++
++- Только локальный запуск, Chrome и веб-приложение на настроенном дев-стенде; нет CI, npm-публикации, plugins, Cypress или других браузеров.
++- Нет source maps, visual/performance checks, network-fault injection, AgentSwarm/background/parallel explorers, secondary/model overrides, автоматических commits/MR/Jira/GitLab-задач.
++- Детекторы и экспорт не доказывают общую семантическую корректность приложения. Кандидат становится подтверждённым только после reproduction и review; rejected/duplicate/unreproduced не являются confirmed bugs.
++- Replay изолирован свежим browser context, но общая изоляция данных приложения между повторами остаётся специфичной для приложения.
++- Экспортированные signal-тесты могут зависеть от времени появления ответа/аномалии; `red` нужно проверять через `bh_verify_red`, а не считать сам факт генерации достаточным.
++- Атомарность записи — per-file; нет общей транзакции или cross-process lock для одновременных writers.
++- Windows `taskkill`-ветка verifier реализована, но не проверялась на текущем macOS host.
++- **Главный блокер готовности:** реальная модель не соблюла требуемую последовательную custom-agent оркестрацию, а финальный two-candidate resume и interactive trust не проверены.
++
++### Расхождения и оговорки Task 1 / installed CLI
++
++1. **Default `cwd` stdio MCP не описан явно в документации.** Поле `cwd` опционально; фактический project-root default установлен runtime-пробой.
++2. **Interactive trust не пройден.** `KIMI_CODE_TRUST_WORKSPACE=1` — механизм headless-проб, а не доказательство диалога доверия.
++3. **Task 1 Agent delegation проверен только headless.** Project skill внутри subagent работает, но интерактивный dispatch может требовать подтверждения; поздние full runs отдельно показали prompt/orchestration failure.
++4. **Главная страница документации вернула HTTP 403.** Использовались конкретные внутренние страницы документации.
++5. **Первоначальный ручной stdio probe буферизовал первый ответ и попадал в 30-секундный timeout.** Probe переписан на `@modelcontextprotocol/sdk`; это была ошибка реализации probe, не подтверждённый продуктовый баг CLI.
++6. **Installed CLI 2.5.2 отклоняет `kimi -p` вместе с `--auto` или `--yolo`.** Для записанных headless probes использовались `-p`, `--output-format stream-json` и test-scoped trust env, без `--auto`/`--yolo`.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json	2026-11-11 06:10:31
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json	1970-01-01 03:00:00
+@@ -1,6 +0,0 @@
+-{
+-  "status": "failed",
+-  "failedTests": [
+-    "557d9a8a2e45cc802b03-dfef8ec5c6b0db6cd382"
+-  ]
+-}
+\ No newline at end of file
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-16-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md	2026-11-11 06:10:31
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md	1970-01-01 03:00:00
+@@ -1,26 +0,0 @@
+-# Instructions
+-
+-- Following Playwright test failed.
+-- Explain why, be concise, respect Playwright best practices.
+-- Provide a snippet of code with the fix, if possible.
+-
+-# Test info
+-
+-- Name: bughunter/verdict-dHKBrK/broken.spec.ts >> broken assertion
+-- Location: e2e/bughunter/verdict-dHKBrK/broken.spec.ts:3:1
+-
+-# Error details
+-
+-```
+-Error: setup exploded
+-```
+-
+-# Test source
+-
+-```ts
+-  1 | import { expect, test } from '@playwright/test';
+-  2 | 
+-> 3 | test('broken assertion', () => { throw new Error("setup exploded"); });
+-    |                                        ^ Error: setup exploded
+-  4 | 
+-```
+\ No newline at end of file

@@ -1,0 +1,1130 @@
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth --exclude=state/runs /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/server/src/browser/session.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/browser/session.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/server/src/browser/session.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/browser/session.ts	2026-11-10 16:53:39
+@@ -0,0 +1,618 @@
++import { createHash, randomUUID } from 'node:crypto';
++import { access, mkdir, readFile, rm } from 'node:fs/promises';
++import { join, relative, sep } from 'node:path';
++import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
++import { scanSignals } from '../detectors/index.ts';
++import { writeJsonAtomic } from '../run-store.ts';
++import type {
++  Candidate,
++  Check,
++  Config,
++  ElementSnapshot,
++  Journal,
++  SemanticLocator,
++  Signal,
++  Step,
++} from '../types.ts';
++import { collectElements, toPlaywrightLocator } from './elements.ts';
++
++export type StateResult = {
++  url: string;
++  title: string;
++  elements: ElementSnapshot[];
++  signals: Signal[];
++  stepsLeft: number;
++};
++
++export type ActInput = {
++  elementId: string;
++  action: NonNullable<Step['action']>;
++  value?: string;
++};
++
++export type ActResult = {
++  ok: boolean;
++  error?: string;
++  navigated: boolean;
++  signals: Signal[];
++};
++
++export type ProbeKind = NonNullable<Step['probe']>;
++
++export type CandidateInput = {
++  title: string;
++  expected: string;
++  actual: string;
++  signalIds: string[];
++  check?: Check;
++};
++
++type Session = {
++  id: string;
++  runId: string;
++  context: BrowserContext;
++  page: Page;
++  journal: Journal;
++  elements: Map<string, ElementSnapshot>;
++  signals: Map<string, Signal>;
++  candidateIds: string[];
++  mediaDir: string;
++};
++
++type SharedMemoryEntry = {
++  id?: string;
++  candidateId?: string;
++  sourceCandidate?: string;
++  signature?: string;
++};
++
++function errorMessage(error: unknown): string {
++  return error instanceof Error ? error.message : String(error);
++}
++
++function validateRunId(runId: string): void {
++  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId) || runId === '.' || runId === '..') {
++    throw new Error(`RUN_ID_INVALID: ${runId}`);
++  }
++}
++
++export function resolveSemanticLocator(page: Page, locator: SemanticLocator): Locator {
++  let resolved: Locator;
++  switch (locator.kind) {
++    case 'testid':
++      resolved = page.getByTestId(locator.value);
++      break;
++    case 'role':
++      resolved = page.getByRole(locator.role as Parameters<Page['getByRole']>[0], { name: locator.name, exact: true });
++      break;
++    case 'text':
++      resolved = page.getByText(locator.value, { exact: true });
++      break;
++    case 'css':
++      resolved = page.locator(locator.value);
++      break;
++  }
++  return locator.index === undefined ? resolved : resolved.nth(locator.index);
++}
++
++export class SessionManager {
++  private browser?: Browser;
++  private browserPromise?: Promise<Browser>;
++  private readonly sessions = new Map<string, Session>();
++  private readonly blockedNavigations = new Set<Page>();
++  private readonly blockedPopups = new WeakSet<BrowserContext>();
++  private readonly config: Config;
++  private readonly stateDir: string;
++
++  constructor(config: Config, stateDir: string) {
++    this.config = config;
++    this.stateDir = stateDir;
++  }
++
++  async open(runId: string, route: string, persona: string): Promise<{ sessionId: string }> {
++    validateRunId(runId);
++    const target = this.navigationUrl(route);
++    const sessionId = randomUUID();
++    const browser = await this.getBrowser();
++    const mediaDir = join(this.stateDir, 'runs', runId, 'artifacts', `.${sessionId}-media`);
++    await mkdir(mediaDir, { recursive: true });
++    const storageStatePath = join(this.stateDir, 'auth', 'storage-state.json');
++    let context: BrowserContext | undefined;
++    try {
++      let storageState: string | undefined;
++      try {
++        await access(storageStatePath);
++        storageState = storageStatePath;
++      } catch (error) {
++        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
++      }
++      context = await browser.newContext({
++        ...(storageState === undefined ? {} : { storageState }),
++        recordVideo: { dir: mediaDir },
++      });
++      await this.installNavigationGuard(context);
++      await context.tracing.start({ screenshots: true, snapshots: true });
++      const page = await context.newPage();
++      const journal: Journal = {
++        sessionId,
++        runId,
++        route,
++        persona,
++        steps: [],
++        createdAt: new Date().toISOString(),
++      };
++      const session: Session = {
++        id: sessionId,
++        runId,
++        context,
++        page,
++        journal,
++        elements: new Map(),
++        signals: new Map(),
++        candidateIds: [],
++        mediaDir,
++      };
++      this.sessions.set(sessionId, session);
++      await scanSignals(page, this.config);
++      await page.goto(target, { waitUntil: 'domcontentloaded' });
++      await this.settle(page);
++      await this.writeJournal(session);
++      return { sessionId };
++    } catch (error) {
++      this.sessions.delete(sessionId);
++      await context?.close().catch(() => undefined);
++      await rm(mediaDir, { recursive: true, force: true });
++      throw error;
++    }
++  }
++
++  async state(sessionId: string): Promise<StateResult> {
++    return this.readState(this.session(sessionId));
++  }
++
++  async act(sessionId: string, input: ActInput): Promise<ActResult> {
++    const session = this.session(sessionId);
++    if (this.stepsLeft(session) <= 0) {
++      return { ok: false, error: 'LIMIT_REACHED', navigated: false, signals: [] };
++    }
++    const element = session.elements.get(input.elementId);
++    if (!element) {
++      return { ok: false, error: `ELEMENT_NOT_FOUND: ${input.elementId}`, navigated: false, signals: [] };
++    }
++    const locator = resolveSemanticLocator(session.page, element.locator);
++    if (await this.isForbidden(element, locator)) {
++      return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [] };
++    }
++    if (await this.isReadOnlySubmission(locator, input)) {
++      return { ok: false, error: 'FORM_SUBMISSION_BLOCKED', navigated: false, signals: [] };
++    }
++
++    const beforeUrl = session.page.url();
++    const value = input.action === 'fill' && input.value === undefined
++      ? `${this.config.testDataPrefix}${randomUUID().slice(0, 8)}`
++      : input.value;
++    let actionError: unknown;
++    try {
++      await this.executeAction(locator, input.action, value);
++    } catch (error) {
++      actionError = error;
++    }
++    const navigationBlocked = this.blockedNavigations.delete(session.page);
++    if (navigationBlocked) {
++      await session.page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => undefined);
++      if (session.page.url() !== beforeUrl) {
++        await session.page.goto(beforeUrl, { waitUntil: 'domcontentloaded' });
++      }
++      actionError ??= new Error('NAVIGATION_NOT_ALLOWED');
++    }
++    const popupBlocked = this.blockedPopups.delete(session.context);
++    if (popupBlocked) actionError ??= new Error('FORBIDDEN_ORIGIN');
++    await this.settle(session.page);
++    const signals = await this.collectSignals(session);
++    if (actionError !== undefined) {
++      return {
++        ok: false,
++        error: navigationBlocked ? 'NAVIGATION_NOT_ALLOWED' : popupBlocked ? 'FORBIDDEN_ORIGIN' : `ACTION_FAILED: ${errorMessage(actionError)}`,
++        navigated: beforeUrl !== session.page.url(),
++        signals,
++      };
++    }
++
++    await this.appendStep(session, {
++      id: randomUUID(),
++      kind: 'act',
++      timestamp: new Date().toISOString(),
++      routeTemplate: this.currentRoute(session.page),
++      action: input.action,
++      elementId: input.elementId,
++      ...(value === undefined ? {} : { value }),
++      locator: toPlaywrightLocator(element.locator),
++      signalIds: signals.map((signal) => signal.id),
++    });
++    return { ok: true, navigated: beforeUrl !== session.page.url(), signals };
++  }
++
++  async navigate(sessionId: string, path: string): Promise<StateResult> {
++    const session = this.session(sessionId);
++    this.assertStepsRemain(session);
++    const target = this.navigationUrl(path);
++    await session.page.goto(target, { waitUntil: 'domcontentloaded' });
++    const result = await this.readState(session);
++    await this.appendStep(session, {
++      id: randomUUID(),
++      kind: 'navigate',
++      timestamp: new Date().toISOString(),
++      routeTemplate: this.currentRoute(session.page),
++      path,
++      signalIds: result.signals.map((signal) => signal.id),
++    });
++    result.stepsLeft = this.stepsLeft(session);
++    return result;
++  }
++
++  async probe(sessionId: string, kind: ProbeKind): Promise<StateResult> {
++    const session = this.session(sessionId);
++    this.assertStepsRemain(session);
++    switch (kind) {
++      case 'reload':
++        await session.page.reload({ waitUntil: 'domcontentloaded' });
++        break;
++      case 'back':
++        await session.page.goBack({ waitUntil: 'domcontentloaded' });
++        break;
++      case 'mobile_viewport':
++        await session.page.setViewportSize({ width: 390, height: 844 });
++        break;
++    }
++    const result = await this.readState(session);
++    await this.appendStep(session, {
++      id: randomUUID(),
++      kind: 'probe',
++      timestamp: new Date().toISOString(),
++      routeTemplate: this.currentRoute(session.page),
++      probe: kind,
++      signalIds: result.signals.map((signal) => signal.id),
++    });
++    result.stepsLeft = this.stepsLeft(session);
++    return result;
++  }
++
++  async reportCandidate(sessionId: string, input: CandidateInput): Promise<{ candidateId: string; duplicateOf?: string }> {
++    const session = this.session(sessionId);
++    const referencedSignals = input.signalIds.map((id) => {
++      const signal = session.signals.get(id);
++      if (!signal) throw new Error(`SIGNAL_NOT_FOUND: ${id}`);
++      return signal;
++    });
++    const route = this.currentRoute(session.page);
++    let signature: string;
++    if (referencedSignals.length > 0) {
++      signature = referencedSignals[0]!.signature;
++    } else if (input.check) {
++      const canonical = JSON.stringify([
++        input.check.kind,
++        input.check.target,
++        input.check.expected ?? null,
++        route,
++      ]);
++      signature = createHash('sha256').update(canonical).digest('hex');
++    } else {
++      throw new Error('CANDIDATE_ORACLE_REQUIRED');
++    }
++
++    const candidateId = randomUUID();
++    const duplicateOf = await this.findDuplicate(signature);
++    const candidate: Candidate = {
++      id: candidateId,
++      runId: session.runId,
++      sessionId,
++      route,
++      title: input.title,
++      expected: input.expected,
++      actual: input.actual,
++      signalIds: [...input.signalIds],
++      signature,
++      steps: session.journal.steps.map((step) => ({ ...step, ...(step.signalIds ? { signalIds: [...step.signalIds] } : {}) })),
++      artifacts: [],
++      status: 'unprocessed',
++      createdAt: new Date().toISOString(),
++      ...(input.check === undefined ? {} : { check: input.check }),
++      ...(duplicateOf === undefined ? {} : { duplicateOf }),
++      reproduction: { status: 'unreproduced', attempts: 0 },
++    };
++    await writeJsonAtomic(this.candidatePath(session.runId, candidateId), candidate);
++    session.candidateIds.push(candidateId);
++    return { candidateId, ...(duplicateOf === undefined ? {} : { duplicateOf }) };
++  }
++
++  async close(sessionId: string): Promise<void> {
++    const session = this.sessions.get(sessionId);
++    if (!session) return;
++    this.sessions.delete(sessionId);
++    const artifactId = session.candidateIds[0] ?? session.id;
++    const artifactDir = join(this.stateDir, 'runs', session.runId, 'artifacts', artifactId);
++    const tracePath = join(artifactDir, 'trace.zip');
++    const screenshotPath = join(artifactDir, 'screenshot.png');
++    const videoPath = join(artifactDir, 'video.webm');
++    const video = session.page.video();
++    const errors: unknown[] = [];
++    try {
++      await mkdir(artifactDir, { recursive: true });
++      try {
++        await session.page.screenshot({ path: screenshotPath, fullPage: true });
++      } catch (error) {
++        errors.push(error);
++      }
++      try {
++        await session.context.tracing.stop({ path: tracePath });
++      } catch (error) {
++        errors.push(error);
++      }
++    } finally {
++      try {
++        await session.context.close();
++      } catch (error) {
++        errors.push(error);
++      }
++    }
++
++    try {
++      if (video) await video.saveAs(videoPath);
++      const artifacts = [tracePath, screenshotPath, videoPath]
++        .map((path) => relative(this.stateDir, path).split(sep).join('/'));
++      for (const candidateId of session.candidateIds) {
++        const path = this.candidatePath(session.runId, candidateId);
++        const candidate = JSON.parse(await readFile(path, 'utf8')) as Candidate;
++        await writeJsonAtomic(path, { ...candidate, artifacts });
++      }
++    } catch (error) {
++      errors.push(error);
++    } finally {
++      await rm(session.mediaDir, { recursive: true, force: true });
++    }
++    if (errors.length > 0) {
++      throw new AggregateError(errors, `SESSION_CLOSE_FAILED: ${sessionId}: ${errors.map(errorMessage).join('; ')}`);
++    }
++  }
++
++  async closeAll(): Promise<void> {
++    const errors: unknown[] = [];
++    for (const sessionId of [...this.sessions.keys()]) {
++      try {
++        await this.close(sessionId);
++      } catch (error) {
++        errors.push(error);
++      }
++    }
++    try {
++      await this.browser?.close();
++    } catch (error) {
++      errors.push(error);
++    } finally {
++      this.browser = undefined;
++      this.browserPromise = undefined;
++    }
++    if (errors.length > 0) throw new AggregateError(errors, 'SESSION_CLOSE_ALL_FAILED');
++  }
++
++  private async getBrowser(): Promise<Browser> {
++    if (this.browser?.isConnected()) return this.browser;
++    if (!this.browserPromise) {
++      this.browserPromise = chromium.launch({ channel: 'chrome', headless: true }).then((browser) => {
++        this.browser = browser;
++        return browser;
++      });
++    }
++    try {
++      return await this.browserPromise;
++    } catch (error) {
++      this.browserPromise = undefined;
++      throw error;
++    }
++  }
++
++  private session(sessionId: string): Session {
++    const session = this.sessions.get(sessionId);
++    if (!session) throw new Error(`SESSION_NOT_FOUND: ${sessionId}`);
++    return session;
++  }
++
++  private navigationUrl(path: string): string {
++    let target: URL;
++    try {
++      target = new URL(path, this.config.baseUrl);
++    } catch {
++      throw new Error(`NAVIGATION_NOT_ALLOWED: ${path}`);
++    }
++    if (!this.isAllowed(target)) throw new Error(`NAVIGATION_NOT_ALLOWED: ${path}`);
++    return target.href;
++  }
++
++  private isAllowed(target: URL): boolean {
++    if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) return false;
++    return this.config.allowedOrigins.some((origin) => {
++      try {
++        const allowed = new URL(origin);
++        return !allowed.username && !allowed.password && allowed.origin === target.origin;
++      } catch {
++        return false;
++      }
++    });
++  }
++
++  private async installNavigationGuard(context: BrowserContext): Promise<void> {
++    await context.route('**/*', async (route) => {
++      const request = route.request();
++      let allowed = false;
++      try {
++        allowed = this.isAllowed(new URL(request.url()));
++      } catch {
++        allowed = false;
++      }
++      if (allowed) {
++        await route.continue();
++        return;
++      }
++
++      let page: Page | undefined;
++      try {
++        page = request.frame().page();
++      } catch {
++        page = undefined;
++      }
++      const isMainPage = [...this.sessions.values()].some((session) => session.page === page);
++      if (request.isNavigationRequest() && page && isMainPage) this.blockedNavigations.add(page);
++      const popupPage = request.isNavigationRequest() && !isMainPage && !page
++        ? context.waitForEvent('page', { timeout: 5000 }).catch(() => undefined)
++        : undefined;
++      await route.abort('blockedbyclient').catch(() => undefined);
++      if (request.isNavigationRequest() && !isMainPage) {
++        this.blockedPopups.add(context);
++        let pages = (page ? [page] : context.pages())
++          .filter((candidate) => ![...this.sessions.values()].some((session) => session.page === candidate));
++        if (pages.length === 0 && popupPage) {
++          const popup = await popupPage;
++          if (popup) pages = [popup];
++        }
++        await Promise.all(pages.map((candidate) => candidate.close().catch(() => undefined)));
++      }
++    });
++    context.on('page', (page) => {
++      page.on('framenavigated', (frame) => {
++        if (frame !== page.mainFrame()) return;
++        let allowed = frame.url() === 'about:blank';
++        if (!allowed) {
++          try {
++            allowed = this.isAllowed(new URL(frame.url()));
++          } catch {
++            allowed = false;
++          }
++        }
++        const isMainPage = [...this.sessions.values()].some((session) => session.page === page);
++        if (!allowed && !isMainPage) void page.close().catch(() => undefined);
++      });
++    });
++  }
++
++  private async isForbidden(element: ElementSnapshot, locator: Locator): Promise<boolean> {
++    const text = await locator.textContent().catch(() => '') ?? '';
++    const searchable = `${element.name}\n${text}`.toLocaleLowerCase();
++    return this.config.safety.forbiddenActionText.some((forbidden) =>
++      forbidden.length > 0 && searchable.includes(forbidden.toLocaleLowerCase()),
++    );
++  }
++
++  private async isReadOnlySubmission(locator: Locator, input: ActInput): Promise<boolean> {
++    if (!this.config.safety.readOnly) return false;
++    if (!['click', 'dblclick', 'press'].includes(input.action)) return false;
++    return locator.evaluate((element, action) => {
++      if (!(element instanceof HTMLButtonElement || element instanceof HTMLInputElement) || !element.form) return false;
++      if (action.action !== 'press') return ['submit', 'image'].includes(element.type);
++      return ['Enter', 'NumpadEnter'].includes(action.value ?? '');
++    }, input);
++  }
++
++  private async executeAction(locator: Locator, action: NonNullable<Step['action']>, value?: string): Promise<void> {
++    switch (action) {
++      case 'click':
++        await locator.click();
++        break;
++      case 'dblclick':
++        await locator.dblclick();
++        break;
++      case 'fill':
++        await locator.fill(value ?? '');
++        break;
++      case 'select':
++        if (value === undefined) throw new Error('VALUE_REQUIRED: select');
++        await locator.selectOption(value);
++        break;
++      case 'press':
++        if (value === undefined) throw new Error('VALUE_REQUIRED: press');
++        await locator.press(value);
++        break;
++      case 'check':
++        await locator.check();
++        break;
++      case 'hover':
++        await locator.hover();
++        break;
++    }
++  }
++
++  private async settle(page: Page): Promise<void> {
++    await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => undefined);
++    await page.locator('body').waitFor({ state: 'visible', timeout: 5000 });
++    await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
++  }
++
++  private async readState(session: Session): Promise<StateResult> {
++    await this.settle(session.page);
++    const elements = await collectElements(session.page);
++    session.elements = new Map(elements.map((element) => [element.id, element]));
++    const signals = await this.collectSignals(session);
++    return {
++      url: session.page.url(),
++      title: await session.page.title(),
++      elements,
++      signals,
++      stepsLeft: this.stepsLeft(session),
++    };
++  }
++
++  private async collectSignals(session: Session): Promise<Signal[]> {
++    const signals = await scanSignals(session.page, this.config);
++    for (const signal of signals) session.signals.set(signal.id, signal);
++    return signals;
++  }
++
++  private stepsLeft(session: Session): number {
++    return Math.max(0, this.config.limits.stepsPerSession - session.journal.steps.length);
++  }
++
++  private assertStepsRemain(session: Session): void {
++    if (this.stepsLeft(session) <= 0) throw new Error('LIMIT_REACHED');
++  }
++
++  private async appendStep(session: Session, step: Step): Promise<void> {
++    session.journal.steps.push(step);
++    await this.writeJournal(session);
++  }
++
++  private journalPath(runId: string, sessionId: string): string {
++    return join(this.stateDir, 'runs', runId, 'journals', `${sessionId}.json`);
++  }
++
++  private candidatePath(runId: string, candidateId: string): string {
++    return join(this.stateDir, 'runs', runId, 'candidates', `${candidateId}.json`);
++  }
++
++  private async writeJournal(session: Session): Promise<void> {
++    await writeJsonAtomic(this.journalPath(session.runId, session.id), session.journal);
++  }
++
++  private currentRoute(page: Page): string {
++    try {
++      return new URL(page.url()).pathname;
++    } catch {
++      return page.url();
++    }
++  }
++
++  private async findDuplicate(signature: string): Promise<string | undefined> {
++    for (const file of ['known-bugs.json', 'suppressions.json']) {
++      let entries: SharedMemoryEntry[];
++      try {
++        entries = JSON.parse(await readFile(join(this.stateDir, file), 'utf8')) as SharedMemoryEntry[];
++      } catch (error) {
++        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
++        throw error;
++      }
++      if (!Array.isArray(entries)) throw new Error(`SHARED_MEMORY_INVALID: ${file}`);
++      const match = entries.find((entry) => entry.signature === signature);
++      const id = match?.id ?? match?.candidateId ?? match?.sourceCandidate;
++      if (id) return id;
++    }
++    return undefined;
++  }
++}
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth --exclude=state/runs /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/server/src/types.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/types.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/server/src/types.ts	2026-11-10 15:38:12
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/types.ts	2026-11-10 16:50:32
+@@ -75,6 +75,7 @@
+   id: string;
+   kind: 'act' | 'navigate' | 'probe';
+   timestamp: string;
++  routeTemplate: string;
+   action?: 'click' | 'dblclick' | 'fill' | 'select' | 'press' | 'check' | 'hover';
+   elementId?: string;
+   value?: string;
+@@ -105,8 +106,12 @@
+   signature: string;
+   steps: Step[];
+   artifacts: string[];
+-  status: 'new' | 'confirmed' | 'rejected' | 'duplicate';
++  status: 'new' | 'unprocessed' | 'confirmed' | 'rejected' | 'duplicate';
+   createdAt: string;
+   check?: Check;
+   duplicateOf?: string;
++  reproduction?: {
++    status: 'unreproduced' | 'reproduced';
++    attempts: number;
++  };
+ };
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth --exclude=state/runs /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/server/test/session.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/session.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/server/test/session.bhtest.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/session.bhtest.ts	2026-11-10 16:48:24
+@@ -0,0 +1,424 @@
++import assert from 'node:assert/strict';
++import { spawn, type ChildProcess } from 'node:child_process';
++import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
++import { createServer, type Server } from 'node:http';
++import { tmpdir } from 'node:os';
++import { join, resolve } from 'node:path';
++import { after, before, test } from 'node:test';
++import { SessionManager } from '../src/browser/session.ts';
++import type { ActInput, CandidateInput, ProbeKind } from '../src/browser/session.ts';
++import { writeJsonAtomic } from '../src/run-store.ts';
++import type { Config, Journal, Step } from '../src/types.ts';
++
++const demoOrigin = 'http://127.0.0.1:4173';
++const temporaryDirectories: string[] = [];
++const managers: SessionManager[] = [];
++let demoProcess: ChildProcess | undefined;
++let controlsServer: Server;
++let controlsOrigin: string;
++
++before(async () => {
++  try {
++    await fetch(demoOrigin, { signal: AbortSignal.timeout(1000) });
++  } catch {
++    const demoRoot = resolve(import.meta.dirname, '../fixtures/buggy-app');
++    demoProcess = spawn(process.execPath, [join(demoRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '4173', '--strictPort'], {
++      cwd: demoRoot,
++      stdio: 'ignore',
++    });
++    for (let attempt = 0; attempt < 100; attempt++) {
++      try {
++        await fetch(demoOrigin, { signal: AbortSignal.timeout(500) });
++        break;
++      } catch {
++        await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
++      }
++    }
++    await fetch(demoOrigin, { signal: AbortSignal.timeout(1000) });
++  }
++
++  controlsServer = createServer((request, response) => {
++    response.writeHead(200, { 'Content-Type': 'text/html' });
++    if (request.url?.startsWith('/other')) {
++      response.end('<title>Other</title><main><a href="/controls">Controls</a></main>');
++      return;
++    }
++    response.end(`<title>Controls</title><script>document.title=localStorage.getItem('saved') ?? 'Controls'</script><main>
++      <button data-testid="click">Click me</button>
++      <button data-testid="double" onclick="document.title='Doubled'">Double me</button>
++      <label>Name <input data-testid="name"></label>
++      <label for="choice">Choice</label><select id="choice"><option value="a">A</option><option value="b">B</option></select>
++      <label><input type="checkbox"> Accept terms</label>
++      <a href="/other">Other</a>
++      <button>DeLeTe account</button>
++      <button onclick="console.error('drain-test')">Emit signal</button>
++      <form action="/other" method="get"><label>Query <input name="q"></label><button>Submit form</button></form>
++      <form id="associated-form" action="/other" method="get"></form>
++      <button form="associated-form">Associated submit</button>
++      <label>Associated input <input form="associated-form" name="associated"></label>
++      <input type="image" form="associated-form" aria-label="Image submit" alt="Image submit" width="24" height="24" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">
++      <a href="https://example.com/">External link</a>
++      <button onclick="location.href='https://example.com/'">Client external</button>
++      <button onclick="window.testPopup=window.open('https://example.com/')">Popup external</button>
++      <button onclick="document.title=window.testPopup?.closed?'Popup closed':'Popup open'">Check popup</button>
++    </main>`);
++  });
++  await new Promise<void>((resolveListen) => controlsServer.listen(0, '127.0.0.1', resolveListen));
++  const address = controlsServer.address();
++  assert.ok(address && typeof address === 'object');
++  controlsOrigin = `http://127.0.0.1:${address.port}`;
++});
++
++after(async () => {
++  await Promise.all(managers.map((manager) => manager.closeAll()));
++  if (controlsServer?.listening) {
++    await new Promise<void>((resolveClose, reject) => controlsServer.close((error) => error ? reject(error) : resolveClose()));
++  }
++  const spawnedDemo = demoProcess;
++  if (spawnedDemo && spawnedDemo.exitCode === null) {
++    const exited = new Promise<void>((resolveExit) => spawnedDemo.once('exit', () => resolveExit()));
++    spawnedDemo.kill('SIGTERM');
++    await exited;
++  }
++  await Promise.all(temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })));
++});
++
++function configTemplate(baseUrl: string): Config {
++  return {
++    baseUrl,
++    allowedOrigins: [demoOrigin, controlsOrigin].filter((origin, index, origins) => origins.indexOf(origin) === index),
++    routes: ['/', '/profile', '/orders', '/orders/new', '/clean', '/controls', '/other'],
++    routeMap: {},
++    baseBranch: 'main',
++    limits: { stepsPerSession: 60, candidatesPerRun: 20 },
++    safety: { forbiddenActionText: ['delete'], readOnly: false },
++    testDataPrefix: 'bh_',
++    detectors: {
++      ignoreConsole: [],
++      ignoreRequests: ['https://example.com'],
++      anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
++      errorBoundarySelector: '[data-error-boundary]',
++    },
++    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
++  };
++}
++
++async function createManager(baseUrl = demoOrigin, patch?: (config: Config) => void): Promise<{ manager: SessionManager; stateDir: string }> {
++  const stateDir = await mkdtemp(join(tmpdir(), 'bh-session-'));
++  temporaryDirectories.push(stateDir);
++  await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
++  await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
++  const config = configTemplate(baseUrl);
++  patch?.(config);
++  const manager = new SessionManager(config, stateDir);
++  managers.push(manager);
++  return { manager, stateDir };
++}
++
++async function journal(stateDir: string, runId: string, sessionId: string): Promise<Journal> {
++  return JSON.parse(await readFile(join(stateDir, 'runs', runId, 'journals', `${sessionId}.json`), 'utf8')) as Journal;
++}
++
++async function actNamed(manager: SessionManager, sessionId: string, name: string, input: Omit<ActInput, 'elementId'>) {
++  const state = await manager.state(sessionId);
++  const element = state.elements.find((candidate) => candidate.name === name);
++  assert.ok(element, `Missing element ${name}`);
++  return manager.act(sessionId, { elementId: element.id, ...input });
++}
++
++async function probe(manager: SessionManager, sessionId: string, kind: ProbeKind) {
++  return manager.probe(sessionId, kind);
++}
++
++function checkCandidate(): CandidateInput {
++  return {
++    title: 'Saved value is visible',
++    expected: 'Saved profile is shown',
++    actual: 'Saved profile is not shown',
++    signalIds: [],
++    check: { kind: 'visibleText', target: 'Saved', expected: 'Saved' },
++  };
++}
++
++test('real demo session persists candidate journal prefix and non-empty close artifacts', async () => {
++  const { manager, stateDir } = await createManager();
++  try {
++    const { sessionId } = await manager.open('run-lifecycle', '/profile', 'newbie');
++    const initial = await manager.state(sessionId);
++    assert.equal(initial.stepsLeft, 60);
++    assert.equal(initial.url, `${demoOrigin}/profile`);
++    assert.match(initial.title, /Vite|React|Bughunter/i);
++    assert.ok(initial.elements.some((element) => element.name === 'Name'));
++
++    const filled = await actNamed(manager, sessionId, 'Name', { action: 'fill' });
++    assert.equal(filled.ok, true);
++    assert.equal(filled.navigated, false);
++    const afterFill = await manager.state(sessionId);
++    const generated = afterFill.elements.find((element) => element.name === 'Name')?.value;
++    assert.match(generated ?? '', /^bh_[a-f0-9]{8}$/);
++    assert.equal(afterFill.stepsLeft, 59);
++
++    const clicked = await actNamed(manager, sessionId, 'Save', { action: 'click' });
++    assert.equal(clicked.ok, true);
++    const reported = await manager.reportCandidate(sessionId, checkCandidate());
++    assert.match(reported.candidateId, /^[a-f0-9-]{36}$/);
++    await manager.navigate(sessionId, '/clean');
++
++    const savedJournal = await journal(stateDir, 'run-lifecycle', sessionId);
++    assert.deepEqual(savedJournal.steps.map((step) => step.action), ['fill', 'click', undefined]);
++    assert.equal(savedJournal.steps[0]?.locator, 'page.getByTestId("profile-name")');
++    assert.equal(savedJournal.steps[0]?.value, generated);
++    assert.equal(savedJournal.steps[2]?.kind, 'navigate');
++    assert.equal(savedJournal.steps[2]?.path, '/clean');
++    assert.deepEqual(savedJournal.steps.map((step) => step.routeTemplate), ['/profile', '/profile', '/clean']);
++
++    const candidatePath = join(stateDir, 'runs', 'run-lifecycle', 'candidates', `${reported.candidateId}.json`);
++    const candidate = JSON.parse(await readFile(candidatePath, 'utf8'));
++    assert.equal(candidate.status, 'unprocessed');
++    assert.deepEqual(candidate.reproduction, { status: 'unreproduced', attempts: 0 });
++    assert.equal(candidate.route, '/profile');
++    assert.equal(candidate.steps.length, 2);
++    assert.deepEqual(candidate.steps.map((step: Step) => step.action), ['fill', 'click']);
++
++    await manager.close(sessionId);
++    const artifactDirectory = join(stateDir, 'runs', 'run-lifecycle', 'artifacts', reported.candidateId);
++    const artifactSizes = await Promise.all(['trace.zip', 'screenshot.png', 'video.webm'].map(async (name) => (await stat(join(artifactDirectory, name))).size));
++    assert.ok(artifactSizes.every((size) => size > 0), `Empty artifacts: ${artifactSizes.join(',')}`);
++    const closedCandidate = JSON.parse(await readFile(candidatePath, 'utf8'));
++    assert.equal(closedCandidate.artifacts.length, 3);
++    assert.ok(closedCandidate.artifacts.every((file: string) => file.startsWith(`runs/run-lifecycle/artifacts/${reported.candidateId}/`)));
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('all action and probe kinds are replayable journal steps with shared step accounting', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin);
++  try {
++    const { sessionId } = await manager.open('run-actions', '/controls', 'impatient');
++    assert.equal((await actNamed(manager, sessionId, 'Click me', { action: 'click' })).ok, true);
++    assert.equal((await actNamed(manager, sessionId, 'Double me', { action: 'dblclick' })).ok, true);
++    assert.equal((await actNamed(manager, sessionId, 'Name', { action: 'fill', value: 'Alice' })).ok, true);
++    assert.equal((await actNamed(manager, sessionId, 'Choice', { action: 'select', value: 'b' })).ok, true);
++    assert.equal((await actNamed(manager, sessionId, 'Name', { action: 'press', value: 'Backspace' })).ok, true);
++    assert.equal((await actNamed(manager, sessionId, 'Accept terms', { action: 'check' })).ok, true);
++    assert.equal((await actNamed(manager, sessionId, 'Other', { action: 'hover' })).ok, true);
++
++    const mobile = await probe(manager, sessionId, 'mobile_viewport');
++    assert.equal(mobile.url, `${controlsOrigin}/controls`);
++    assert.equal(mobile.stepsLeft, 52);
++    const reloaded = await probe(manager, sessionId, 'reload');
++    assert.equal(reloaded.stepsLeft, 51);
++    const navigated = await manager.navigate(sessionId, '/other');
++    assert.equal(navigated.stepsLeft, 50);
++    const back = await probe(manager, sessionId, 'back');
++    assert.equal(back.url, `${controlsOrigin}/controls`);
++    assert.equal(back.stepsLeft, 49);
++
++    const savedJournal = await journal(stateDir, 'run-actions', sessionId);
++    assert.deepEqual(savedJournal.steps.map((step) => step.action), [
++      'click', 'dblclick', 'fill', 'select', 'press', 'check', 'hover',
++      undefined, undefined, undefined, undefined,
++    ]);
++    assert.deepEqual(savedJournal.steps.slice(7).map((step) => [step.kind, step.probe ?? step.path]), [
++      ['probe', 'mobile_viewport'], ['probe', 'reload'], ['navigate', '/other'], ['probe', 'back'],
++    ]);
++    assert.deepEqual(savedJournal.steps.map((step) => step.routeTemplate), [
++      ...Array.from({ length: 9 }, () => '/controls'), '/other', '/controls',
++    ]);
++    assert.ok(savedJournal.steps.filter((step) => step.kind === 'act').every((step) => step.locator && step.timestamp));
++    assert.equal((await manager.state(sessionId)).stepsLeft, 49);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('navigation guards reject external URL tricks before network and allow same-origin control', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin);
++  try {
++    await assert.rejects(manager.open('run-bad-open', 'https://example.com/', 'newbie'), /NAVIGATION_NOT_ALLOWED/);
++    const { sessionId } = await manager.open('run-navigation', '/controls', 'newbie');
++    for (const target of ['https://example.com/', '//example.com/path', `${controlsOrigin.replace('http://', 'http://user:pass@')}/other`]) {
++      await assert.rejects(manager.navigate(sessionId, target), /NAVIGATION_NOT_ALLOWED/);
++    }
++    const allowed = await manager.navigate(sessionId, '/other');
++    assert.equal(allowed.url, `${controlsOrigin}/other`);
++    await manager.navigate(sessionId, '/controls');
++
++    const before = (await journal(stateDir, 'run-navigation', sessionId)).steps;
++    const external = await actNamed(manager, sessionId, 'External link', { action: 'click' });
++    assert.equal(external.error, 'NAVIGATION_NOT_ALLOWED');
++    assert.equal((await manager.state(sessionId)).url, `${controlsOrigin}/controls`);
++    const client = await actNamed(manager, sessionId, 'Client external', { action: 'click' });
++    assert.equal(client.error, 'NAVIGATION_NOT_ALLOWED');
++    assert.equal((await manager.state(sessionId)).url, `${controlsOrigin}/controls`);
++    const popup = await actNamed(manager, sessionId, 'Popup external', { action: 'click' });
++    assert.equal(popup.error, 'FORBIDDEN_ORIGIN');
++    assert.equal((await manager.state(sessionId)).url, `${controlsOrigin}/controls`);
++    assert.deepEqual((await journal(stateDir, 'run-navigation', sessionId)).steps, before);
++    const context = (manager as unknown as {
++      sessions: Map<string, { context: { pages(): unknown[] } }>;
++    }).sessions.get(sessionId)?.context;
++    assert.equal(context?.pages().length, 1);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('forbidden action text and read-only form submission are rejected before journaling', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin, (config) => { config.safety.readOnly = true; });
++  try {
++    const { sessionId } = await manager.open('run-safety', '/controls', 'newbie');
++    const forbidden = await actNamed(manager, sessionId, 'DeLeTe account', { action: 'click' });
++    assert.equal(forbidden.ok, false);
++    assert.match(forbidden.error ?? '', /FORBIDDEN_ACTION/);
++    const submission = await actNamed(manager, sessionId, 'Submit form', { action: 'click' });
++    assert.equal(submission.error, 'FORM_SUBMISSION_BLOCKED');
++    const associatedClick = await actNamed(manager, sessionId, 'Associated submit', { action: 'click' });
++    assert.equal(associatedClick.error, 'FORM_SUBMISSION_BLOCKED');
++    const associatedEnter = await actNamed(manager, sessionId, 'Associated input', { action: 'press', value: 'Enter' });
++    assert.equal(associatedEnter.error, 'FORM_SUBMISSION_BLOCKED');
++    const imageSubmit = await actNamed(manager, sessionId, 'Image submit', { action: 'click' });
++    assert.equal(imageSubmit.error, 'FORM_SUBMISSION_BLOCKED');
++    assert.equal((await manager.state(sessionId)).url, `${controlsOrigin}/controls`);
++    assert.deepEqual((await journal(stateDir, 'run-safety', sessionId)).steps, []);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('step limit covers actions and probes without executing or journaling excess work', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin, (config) => { config.limits.stepsPerSession = 2; });
++  try {
++    const { sessionId } = await manager.open('run-limit', '/controls', 'impatient');
++    assert.equal((await actNamed(manager, sessionId, 'Click me', { action: 'click' })).ok, true);
++    const finalProbe = await probe(manager, sessionId, 'mobile_viewport');
++    assert.equal(finalProbe.stepsLeft, 0);
++    const limited = await actNamed(manager, sessionId, 'Double me', { action: 'dblclick' });
++    assert.equal(limited.ok, false);
++    assert.equal(limited.error, 'LIMIT_REACHED');
++    await assert.rejects(probe(manager, sessionId, 'reload'), /LIMIT_REACHED/);
++    assert.equal((await manager.state(sessionId)).title, 'Controls');
++    assert.equal((await manager.state(sessionId)).stepsLeft, 0);
++    assert.equal((await journal(stateDir, 'run-limit', sessionId)).steps.length, 2);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('candidate signatures deduplicate against known bugs and suppressions', async () => {
++  const { manager, stateDir } = await createManager();
++  try {
++    const first = await manager.open('run-dedup', '/profile', 'newbie');
++    const original = await manager.reportCandidate(first.sessionId, checkCandidate());
++    const candidatePath = join(stateDir, 'runs', 'run-dedup', 'candidates', `${original.candidateId}.json`);
++    const signature = JSON.parse(await readFile(candidatePath, 'utf8')).signature as string;
++    await manager.close(first.sessionId);
++
++    await writeJsonAtomic(join(stateDir, 'known-bugs.json'), [{ id: 'known-1', signature }]);
++    const knownSession = await manager.open('run-dedup', '/profile', 'newbie');
++    const known = await manager.reportCandidate(knownSession.sessionId, checkCandidate());
++    assert.equal(known.duplicateOf, 'known-1');
++    await manager.close(knownSession.sessionId);
++
++    await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
++    await writeJsonAtomic(join(stateDir, 'suppressions.json'), [{ id: 'suppressed-1', signature }]);
++    const suppressedSession = await manager.open('run-dedup', '/profile', 'newbie');
++    const suppressed = await manager.reportCandidate(suppressedSession.sessionId, checkCandidate());
++    assert.equal(suppressed.duplicateOf, 'suppressed-1');
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++
++test('navigate returns zero steps left after the final allowed step', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin, (config) => { config.limits.stepsPerSession = 1; });
++  try {
++    const { sessionId } = await manager.open('run-final-navigate', '/controls', 'newbie');
++    const result = await manager.navigate(sessionId, '/other');
++    assert.equal(result.stepsLeft, 0);
++    assert.equal((await journal(stateDir, 'run-final-navigate', sessionId)).steps.length, 1);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('storage state is loaded and emitted signals drain exactly once', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin);
++  try {
++    await mkdir(join(stateDir, 'auth'), { recursive: true });
++    await writeFile(join(stateDir, 'auth', 'storage-state.json'), JSON.stringify({
++      cookies: [],
++      origins: [{ origin: controlsOrigin, localStorage: [{ name: 'saved', value: 'Loaded storage' }] }],
++    }), 'utf8');
++    const { sessionId } = await manager.open('run-storage', '/controls', 'newbie');
++    assert.equal((await manager.state(sessionId)).title, 'Loaded storage');
++
++    const emitted = await actNamed(manager, sessionId, 'Emit signal', { action: 'click' });
++    assert.ok(emitted.signals.some((signal) => signal.kind === 'console' && signal.message === 'drain-test'));
++    assert.deepEqual((await manager.state(sessionId)).signals, []);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('storage probing failure removes temporary media after open mkdir', async () => {
++  const { manager, stateDir } = await createManager(controlsOrigin);
++  try {
++    await writeFile(join(stateDir, 'auth'), 'not a directory', 'utf8');
++    await assert.rejects(manager.open('run-open-failure', '/controls', 'newbie'));
++    const artifactsDir = join(stateDir, 'runs', 'run-open-failure', 'artifacts');
++    const remaining = await readdir(artifactsDir).catch((error: NodeJS.ErrnoException) => {
++      if (error.code === 'ENOENT') return [];
++      throw error;
++    });
++    assert.deepEqual(remaining, []);
++  } finally {
++    await manager.closeAll();
++  }
++});
++
++test('check-only signatures use fixed field order and preserve expected counts', async () => {
++  const { manager, stateDir } = await createManager();
++  try {
++    const { sessionId } = await manager.open('run-check-signatures', '/profile', 'newbie');
++    const input = (check: CandidateInput['check']): CandidateInput => ({
++      title: 'Order count', expected: 'Expected count', actual: 'Actual count', signalIds: [], check,
++    });
++    const signatureOf = async (candidateId: string): Promise<string> => JSON.parse(await readFile(
++      join(stateDir, 'runs', 'run-check-signatures', 'candidates', `${candidateId}.json`), 'utf8',
++    )).signature as string;
++
++    const original = await manager.reportCandidate(sessionId, input({
++      kind: 'elementCount', target: '[data-testid="order-row"]', expected: 1,
++    }));
++    const originalSignature = await signatureOf(original.candidateId);
++    const reordered = await manager.reportCandidate(sessionId, input({
++      expected: 1, target: '[data-testid="order-row"]', kind: 'elementCount',
++    }));
++    assert.equal(await signatureOf(reordered.candidateId), originalSignature);
++
++    await writeJsonAtomic(join(stateDir, 'known-bugs.json'), [{ id: 'known-check', signature: originalSignature }]);
++    const known = await manager.reportCandidate(sessionId, input({
++      expected: 1, target: '[data-testid="order-row"]', kind: 'elementCount',
++    }));
++    assert.equal(known.duplicateOf, 'known-check');
++
++    const different = await manager.reportCandidate(sessionId, input({
++      kind: 'elementCount', target: '[data-testid="order-row"]', expected: 2,
++    }));
++    assert.equal(different.duplicateOf, undefined);
++    const differentSignature = await signatureOf(different.candidateId);
++    assert.notEqual(differentSignature, originalSignature);
++
++    await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
++    await writeJsonAtomic(join(stateDir, 'suppressions.json'), [{ id: 'suppressed-check', signature: differentSignature }]);
++    const suppressed = await manager.reportCandidate(sessionId, input({
++      target: '[data-testid="order-row"]', expected: 2, kind: 'elementCount',
++    }));
++    assert.equal(suppressed.duplicateOf, 'suppressed-check');
++  } finally {
++    await manager.closeAll();
++  }
++});
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=state/auth --exclude=state/runs /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/state/config.json /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/state/config.json
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-5-before/.kimi-code/bughunter/state/config.json	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/state/config.json	2026-11-10 16:19:20
+@@ -0,0 +1,51 @@
++{
++  "baseUrl": "https://dev-stand.example.local",
++  "allowedOrigins": [
++    "https://dev-stand.example.local"
++  ],
++  "routes": [
++    "/",
++    "/orders",
++    "/orders/new",
++    "/profile"
++  ],
++  "routeMap": {
++    "src/pages/orders/**": [
++      "/orders",
++      "/orders/new"
++    ]
++  },
++  "baseBranch": "main",
++  "limits": {
++    "stepsPerSession": 60,
++    "candidatesPerRun": 20
++  },
++  "safety": {
++    "forbiddenActionText": [
++      "удалить",
++      "delete",
++      "оплатить"
++    ],
++    "readOnly": false
++  },
++  "testDataPrefix": "bh_",
++  "detectors": {
++    "ignoreConsole": [],
++    "ignoreRequests": [],
++    "anomalyTexts": [
++      "undefined",
++      "NaN",
++      "[object Object]",
++      "Invalid Date"
++    ],
++    "errorBoundarySelector": "[data-error-boundary]"
++  },
++  "tests": {
++    "unit": {
++      "command": null
++    },
++    "e2e": {
++      "dir": "e2e/bughunter"
++    }
++  }
++}

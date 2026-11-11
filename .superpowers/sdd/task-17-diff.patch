@@ -1,0 +1,883 @@
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/agents/bh-explorer.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-explorer.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/agents/bh-explorer.md	2026-11-11 02:33:37
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/agents/bh-explorer.md	2026-11-11 09:51:24
+@@ -13,12 +13,14 @@
+ subagents: []
+ ---
+ 
+-Получи от вызывающего агента `runId`, маршрут и персону. Вызови Skill `bughunter-oracles` и применяй его критерии при исследовании и регистрации кандидатов. Вызови `bh_open` для этого маршрута и персоны, затем исследуй страницу в рамках её сценариев.
++Получи от вызывающего агента `runId`, `leaseId`, маршрут и персону. Вызови Skill `bughunter-oracles` и применяй его критерии при исследовании и регистрации кандидатов. Вызови `bh_open` с полученными runId, маршрутом, персоной и `leaseId`, затем исследуй страницу в рамках её сценариев.
+ 
++Если `bh_open` вернул ошибку: при `EXPLORER_BUSY` повтори тот же вызов, но не более 3 раз. Если сессия так и не открылась, заверши работу и верни ровно одну строку: `RETRY_LATER: EXPLORER_BUSY` либо `FAILED: <код ошибки>`. Это не чистый маршрут и не отсутствие багов; `bh_close` без открытой сессии не вызывай.
++
+ Работай циклом: `bh_state` → ровно одно действие (`bh_act`, `bh_navigate` или `bh_probe`) → оценка новых сигналов из ответа действия → обязательный `bh_state` для проверки видимого состояния. После каждого `bh_act`, `bh_navigate` или `bh_probe` вызови `bh_state` перед любым следующим браузерным действием, даже если действие уже вернуло сигналы. Не выполняй два действия между чтениями состояния. Используй только идентификаторы элементов из последнего состояния.
+ 
+ Регистрируй кандидата через `bh_report_candidate` только при детерминированном сигнале либо при нарушении инварианта, которое выражено конкретным `check`. Передай фактические `signalIds`, а для нарушения без сигнала — проверяемый `check`; не регистрируй предположения и не выдумывай сигналы. В `expected` и `actual` кратко зафиксируй наблюдаемое расхождение.
+ 
+ Прекрати исследование при `LIMIT_REACHED`, исчерпании идей или после пяти кандидатов в этой сессии. Обязательно вызови `bh_close` перед завершением, в том числе после ошибки или остановки.
+ 
+-Последнее сообщение — полный самостоятельный результат для вызывающего агента: только список всех созданных `candidateId`, по одному на строку, с однострочным описанием каждого. Если кандидатов нет, выведи `Кандидатов нет`. Не включай журналы действий или сырые ответы инструментов.
++Последнее сообщение — полный самостоятельный результат для вызывающего агента: только список всех созданных `candidateId`, по одному на строку, с однострочным описанием каждого. Если сессия была реально открыта и исследована, но кандидатов нет, выведи `Кандидатов нет`; если исследование не состоялось, выведи только `RETRY_LATER: EXPLORER_BUSY` или `FAILED: <код ошибки>` и никогда вместо них `Кандидатов нет`. Не включай журналы действий или сырые ответы инструментов.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/README.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/README.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/README.md	2026-11-11 08:00:06
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/README.md	2026-11-11 10:09:12
+@@ -8,16 +8,18 @@
+ 
+ ## 2. Честный статус проверки: MVP пока не готов
+ 
+-**Автоматические проверки проходят, но MVP нельзя считать полностью готовым.** Последний полный `npm test` и `npm run typecheck` проходят; переносимая копия также проверяет `npm ci`, настоящий MCP stdio handshake, все 15 инструментов, экспорт и red-вердикт без шага сборки.
++**Автоматические проверки проходят, но MVP нельзя считать полностью готовым.** Последний полный `npm test` (164 теста) и `npm run typecheck` проходят; переносимая копия также проверяет `npm ci`, настоящий MCP stdio handshake, все **16** инструментов (включая `bh_explore_next`), экспорт и red-вердикт без шага сборки.
+ 
+-Ручные и модельные gates имеют другой результат:
++**Task 17 (2026-11-11):** добавлена серверная очередь исследования и lease: параллельные исследователи и «чистые» отчёты без открытой сессии блокируются на уровне MCP, а entry skill ведёт цикл `bh_explore_next` → один foreground `bh-explorer`. Это структурный ответ на провал delegation gate из Task 15; **повторные full/resume gates на установленном Kimi CLI пока не выполнялись** — недельная квота провайдера исчерпана (`provider.api_error` в `state/runs/task17-full/kimi-full.stderr.log`).
+ 
++Ручные и модельные gates до Task 17:
++
+ - **Full, попытка 2:** числовой gate прошёл — 4/5 засеянных багов подтверждены, 0 подтверждённых ложных срабатываний, для всех четырёх есть red e2e. Но обязательная оркестрация через custom agents **не пройдена**: в JSONL нет ни одного вызова custom `Agent`; triage/export/verification выполнялись главным агентом batch-вызовами.
+-- **Full, попытка 3:** **FAIL**. Одно сообщение модели содержало четыре одновременных `Agent(subagent_type="bh-explorer")` вместо последовательных вызовов. Тестовый процесс был остановлен; прогон остался незавершённым, без report/finish. Это действующий архитектурный блокер: три реальных full-прогона не показали требуемую последовательную оркестрацию custom agents.
++- **Full, попытка 3:** **FAIL**. Одно сообщение модели содержало четыре одновременных `Agent(subagent_type="bh-explorer")` вместо последовательных вызовов. Тестовый процесс был остановлен; прогон остался незавершённым, без report/finish.
+ - **Финальный resume с двумя кандидатами** (один полностью обработанный и один необработанный) **не запускался и не проверен**. Более ранний one-candidate resume прошёл, но он предшествует финальному route guard и не заменяет этот gate.
+ - **Interactive workspace trust:** **PENDING / NOT VERIFIED**. Все модельные пробы были headless с `KIMI_CODE_TRUST_WORKSPACE=1`.
+ 
+-Сырые состояния, JSONL и отчёты сохранены в `.kimi-code/bughunter/state/runs/`. Полная история и точные пути доказательств — в Task 15 report; финальные команды и результаты Task 16 вынесены в отдельный report. Никакой числовой результат не отменяет провал delegation gate.
++Сырые состояния, JSONL и отчёты сохранены в `.kimi-code/bughunter/state/runs/`. История Task 15/16 и детали Task 17 — в соответствующих SDD report. До успешного post-Task-17 full gate MVP остаётся **NOT READY**.
+ 
+ ## 3. Установка в проект
+ 
+@@ -114,7 +116,7 @@
+ | `/bughunter route /orders` | Проверяет один маршрут; он должен присутствовать в `routes`. |
+ | `/bughunter resume <runId>` | Продолжает существующий прогон по сохранённым route/stage/candidate state, не создавая новый run и не повторяя завершённую работу. |
+ 
+-`/bughunter` — shorthand для `/skill:bughunter`. Entry skill вызывается только вручную. Требуемый workflow: один foreground custom agent на маршрут–персону, воспроизведение каждого кандидата, отдельный reviewer, затем test-writer только для подтверждённых багов и `bh_finish_run` без pending работы. Реальное несоответствие этому workflow зафиксировано в разделе 2.
++`/bughunter` — shorthand для `/skill:bughunter`. Entry skill вызывается только вручную. Требуемый workflow: серверная очередь исследования выдаёт по одной паре маршрут–персона вместе с lease (`bh_explore_next`); главный агент делегирует каждую задачу одному foreground custom agent `bh-explorer`, затем воспроизводит каждого кандидата, вызывает отдельного reviewer и test-writer только для подтверждённых багов и завершает `bh_finish_run` без pending работы. `bh_open` без действующего lease отклоняется (`LEASE_REQUIRED`/`LEASE_UNKNOWN`/`LEASE_MISMATCH`), а одновременная сессия блокируется `EXPLORER_BUSY`, поэтому параллельные исследователи невозможны независимо от поведения модели. Реальное несоответствие этому workflow до введения очереди зафиксировано в разделе 2.
+ 
+ Bughunter не должен коммитить или менять код приложения. Для headless CLI нельзя комбинировать `kimi -p` с `--auto`/`--yolo`; такая попытка в installed CLI 2.5.2 завершилась с ошибкой. Это не рекомендуемый обход интерактивной установки.
+ 
+@@ -201,7 +203,7 @@
+ node --test test/portable.bhtest.ts
+ ```
+ 
+-`npm test` последовательно запускает `test/*.bhtest.ts` через `node:test`; отдельный build не требуется. Portable test копирует демо и `.kimi-code/` без `node_modules`, `state/runs` и `state/auth`, делает `git init`, выполняет `npm ci` в copied server/demo, проверяет project-tool isolation, поднимает скопированное демо и проходит candidate lifecycle через все 15 инструментов настоящего stdio MCP (`node src/index.ts`). Он также проверяет exported e2e red и удаляет только свою временную копию и процессы.
++`npm test` последовательно запускает `test/*.bhtest.ts` через `node:test`; отдельный build не требуется. Portable test копирует демо и `.kimi-code/` без `node_modules`, `state/runs` и `state/auth`, делает `git init`, выполняет `npm ci` в copied server/demo, проверяет project-tool isolation, поднимает скопированное демо и проходит candidate lifecycle через все 16 инструментов настоящего stdio MCP (`node src/index.ts`). Он также проверяет exported e2e red и удаляет только свою временную копию и процессы.
+ 
+ Не запускайте `node src/index.ts` как обычный CLI с ожиданием текстового ответа: это долгоживущий MCP stdio-сервер, stdout зарезервирован для протокола. Подключение выполняет Kimi Code через `mcp.json`.
+ 
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/src/index.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/index.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/src/index.ts	2026-11-11 06:02:52
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/index.ts	2026-11-11 09:57:41
+@@ -21,6 +21,7 @@
+   }
+   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
+   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
++  if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
+   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
+   if (message === 'NAVIGATION_NOT_ALLOWED' || message.startsWith('NAVIGATION_NOT_ALLOWED:') || message === 'FORBIDDEN_ORIGIN') {
+     return { code: 'FORBIDDEN_ORIGIN', message };
+@@ -54,7 +55,9 @@
+   const { ensureConfig, loadConfig } = await import('./config.ts');
+   const { findProjectRoot } = await import('./project.ts');
+   const {
+-    createRun, finishRun, recordCandidateTest, recordRouteExploration, recordRunStage, resumeRun, triageCandidate,
++    completeExplorationLease, createRun, finishRun, leaseNextExploration, readRun, reclaimExplorationLeases,
++    recordCandidateTest, recordRouteExploration, recordRunStage, releaseExplorationLease, resumeRun, triageCandidate,
++    validateExplorationLease,
+   } = await import('./run-store.ts');
+   const { reproduceCandidate } = await import('./reproduce.ts');
+   const { exportE2e } = await import('./export/playwright.ts');
+@@ -66,9 +69,35 @@
+     ? resolve(process.env.BUGHUNTER_STATE_DIR)
+     : resolve(import.meta.dirname, '../../state');
+   let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
+-  const explorations = new Map<string, { runId: string; route: string }>();
++  const explorations = new Map<string, { runId: string; route: string; leaseId?: string }>();
+   const activeExplorerRuns = new Set<string>();
++  const explorationQueueLocks = new Map<string, Promise<unknown>>();
+ 
++  // Серилизация read-modify-write очереди исследования внутри одного серверного процесса.
++  async function withExplorationQueueLock<T>(id: string, callback: () => Promise<T>): Promise<T> {
++    const previous = explorationQueueLocks.get(id) ?? Promise.resolve();
++    let release!: () => void;
++    const current = new Promise<void>((resolve) => { release = resolve; });
++    const tail = previous.then(() => current);
++    explorationQueueLocks.set(id, tail);
++    await previous;
++    try {
++      return await callback();
++    } finally {
++      release();
++      if (explorationQueueLocks.get(id) === tail) explorationQueueLocks.delete(id);
++    }
++  }
++
++  // Lease, за которыми стоят живые сессии этого процесса: reclaim их не трогает.
++  function liveLeaseIds(id: string): Set<string> {
++    const leases = new Set<string>();
++    for (const exploration of explorations.values()) {
++      if (exploration.runId === id && exploration.leaseId !== undefined) leases.add(exploration.leaseId);
++    }
++    return leases;
++  }
++
+   async function manager(): Promise<InstanceType<typeof SessionManager>> {
+     managerPromise ??= loadConfig(stateDir).then((config) => new SessionManager(config, stateDir));
+     try {
+@@ -142,6 +171,8 @@
+     description: 'Прочитать состояние существующего прогона',
+     inputSchema: z.strictObject({ runId }),
+   }, async ({ runId: id }) => invoke(async () => {
++    // Прерванные исследователи не вызывают bh_close: их lease возвращается в очередь здесь.
++    await withExplorationQueueLock(id, () => reclaimExplorationLeases(id, stateDir, liveLeaseIds(id)));
+     const { run, pendingCandidates } = await resumeRun(id, stateDir);
+     return {
+       runId: run.id,
+@@ -152,6 +183,13 @@
+     };
+   }));
+ 
++  server.registerTool('bh_explore_next', {
++    description: 'Получить следующую задачу исследования: маршрут, персону и lease для bh_open',
++    inputSchema: z.strictObject({ runId, route: z.string().min(1).optional() }),
++  }, async ({ runId: id, route }) => invoke(() => withExplorationQueueLock(id, () =>
++    leaseNextExploration(id, { ...(route === undefined ? {} : { route }), keepLeaseIds: liveLeaseIds(id) }, stateDir),
++  )));
++
+   server.registerTool('bh_finish_run', {
+     description: 'Записать отчёт и завершить существующий прогон',
+     inputSchema: z.strictObject({ runId }),
+@@ -159,21 +197,35 @@
+ 
+   server.registerTool('bh_open', {
+     description: 'Открыть маршрут в новой браузерной сессии',
+-    inputSchema: z.strictObject({ runId, route: z.string().min(1), persona: z.string().min(1) }),
+-  }, async ({ runId: id, route, persona }) => invoke(async () => {
++    inputSchema: z.strictObject({
++      runId, route: z.string().min(1), persona: z.string().min(1), leaseId: z.string().min(1).optional(),
++    }),
++  }, async ({ runId: id, route, persona, leaseId }) => invoke(async () => {
+     if (activeExplorerRuns.has(id)) throw new ToolError(`EXPLORER_BUSY: ${id}`);
+     activeExplorerRuns.add(id);
++    let validatedLease: string | undefined;
+     try {
++      const run = await readRun(id, stateDir);
++      if (run.exploreQueue) {
++        if (leaseId === undefined) throw new ToolError(`LEASE_REQUIRED: ${id}`);
++        await validateExplorationLease(id, leaseId, route, persona, stateDir);
++        validatedLease = leaseId;
++      }
+       const opened = await (await manager()).open(id, route, persona);
+       try {
+         await recordRouteExploration(id, route, 'exploring', stateDir);
+-        explorations.set(opened.sessionId, { runId: id, route });
++        explorations.set(opened.sessionId, { runId: id, route, ...(validatedLease === undefined ? {} : { leaseId: validatedLease }) });
+         return opened;
+       } catch (error) {
+         await (await manager()).close(opened.sessionId).catch(() => undefined);
+         throw error;
+       }
+     } catch (error) {
++      // Открытие не состоялось — задача возвращается в очередь для повторной выдачи.
++      if (validatedLease !== undefined) {
++        const leaseToRelease = validatedLease;
++        await withExplorationQueueLock(id, () => releaseExplorationLease(id, leaseToRelease, stateDir)).catch(() => undefined);
++      }
+       activeExplorerRuns.delete(id);
+       throw error;
+     }
+@@ -298,14 +350,27 @@
+     inputSchema: z.strictObject({ sessionId }),
+   }, async ({ sessionId: id }) => invoke(async () => {
+     const exploration = explorations.get(id);
++    let leaseSettled = false;
+     try {
+       await (await manager()).close(id);
+       if (exploration) {
+         await recordRouteExploration(exploration.runId, exploration.route, 'done', stateDir);
++        if (exploration.leaseId !== undefined) {
++          await withExplorationQueueLock(exploration.runId, () =>
++            completeExplorationLease(exploration.runId, exploration.leaseId!, stateDir),
++          );
++          leaseSettled = true;
++        }
+       }
+       return { ok: true };
+     } finally {
+       if (exploration) {
++        // Закрытие не удалось — задача не считается выполненной и возвращается в очередь.
++        if (exploration.leaseId !== undefined && !leaseSettled) {
++          await withExplorationQueueLock(exploration.runId, () =>
++            releaseExplorationLease(exploration.runId, exploration.leaseId!, stateDir),
++          ).catch(() => undefined);
++        }
+         activeExplorerRuns.delete(exploration.runId);
+         explorations.delete(id);
+       }
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/src/run-store.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/run-store.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/src/run-store.ts	2026-11-11 05:54:50
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/run-store.ts	2026-11-11 09:54:59
+@@ -1,9 +1,9 @@
+ import { execFile as execFileCallback } from 'node:child_process';
+-import { randomBytes } from 'node:crypto';
++import { randomBytes, randomUUID } from 'node:crypto';
+ import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+ import { promisify } from 'node:util';
+-import type { Candidate, Config, OperationStage, RouteStage, Run, Scope, Step } from './types.ts';
++import type { Candidate, Config, ExploreQueueItem, OperationStage, RouteStage, Run, Scope, Step } from './types.ts';
+ 
+ const execFile = promisify(execFileCallback);
+ const defaultStateDir = resolve(import.meta.dirname, '../../state');
+@@ -102,11 +102,141 @@
+     status: 'created',
+     stages: { explore: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' },
+     routeStages: Object.fromEntries(routes.map((route) => [route, 'pending'])),
++    exploreQueue: buildExploreQueue(routes),
+     createdAt: timestamp.toISOString(),
+     updatedAt: timestamp.toISOString(),
+   };
+   await writeJsonAtomic(runPath(id, deps.stateDir), run);
+   return run;
++}
++
++export const EXPLORER_PERSONAS = ['новичок', 'нетерпеливый', 'граничный ввод'] as const;
++
++function buildExploreQueue(routes: string[]): ExploreQueueItem[] {
++  return routes.flatMap((route) =>
++    EXPLORER_PERSONAS.map((persona) => ({
++      id: `${route}::${persona}`,
++      route,
++      persona,
++      status: 'pending' as const,
++    })),
++  );
++}
++
++export type ExploreNextResult =
++  | { status: 'done' }
++  | { status: 'busy'; activeRoute: string }
++  | { status: 'task'; leaseId: string; route: string; persona: string };
++
++const defaultStaleLeaseMs = 30 * 60 * 1000;
++
++function queueFor(run: Run): ExploreQueueItem[] {
++  // Прогоны, созданные до появления очереди, получают её лениво: уже завершённые маршруты не переисследуются.
++  return run.exploreQueue ?? buildExploreQueue(run.routes.filter((route) => run.routeStages[route] !== 'done'));
++}
++
++export async function leaseNextExploration(
++  runId: string,
++  options: { route?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
++  stateDir?: string,
++): Promise<ExploreNextResult> {
++  const run = await readRun(runId, stateDir);
++  const now = options.now?.() ?? Date.now();
++  const staleLeaseMs = options.staleLeaseMs ?? defaultStaleLeaseMs;
++  const keep = options.keepLeaseIds ?? new Set<string>();
++  let changed = run.exploreQueue === undefined;
++  const queue = queueFor(run).map((item) => {
++    // Lease живой в этом процессе сессии не является устаревшим, сколько бы он ни длился.
++    if (
++      item.status === 'leased' && item.leasedAt !== undefined && item.leaseId !== undefined
++      && !keep.has(item.leaseId) && now - Date.parse(item.leasedAt) >= staleLeaseMs
++    ) {
++      changed = true;
++      return { ...item, status: 'pending' as const, leaseId: undefined, leasedAt: undefined };
++    }
++    return item;
++  });
++
++  const active = queue.find((item) => item.status === 'leased');
++  if (active) {
++    if (changed) await updateRun(runId, { exploreQueue: queue }, stateDir);
++    return { status: 'busy', activeRoute: active.route };
++  }
++  const next = queue.find((item) =>
++    item.status === 'pending' && (options.route === undefined || item.route === options.route),
++  );
++  if (!next) {
++    if (changed) await updateRun(runId, { exploreQueue: queue }, stateDir);
++    return { status: 'done' };
++  }
++  const leased: ExploreQueueItem = {
++    ...next,
++    status: 'leased',
++    leaseId: randomUUID(),
++    leasedAt: new Date(now).toISOString(),
++  };
++  await updateRun(runId, { exploreQueue: queue.map((item) => (item.id === next.id ? leased : item)) }, stateDir);
++  return { status: 'task', leaseId: leased.leaseId!, route: leased.route, persona: leased.persona };
++}
++
++function findLease(run: Run, leaseId: string): ExploreQueueItem | undefined {
++  return run.exploreQueue?.find((item) => item.leaseId !== undefined && item.leaseId === leaseId);
++}
++
++export async function validateExplorationLease(
++  runId: string,
++  leaseId: string,
++  route: string,
++  persona: string,
++  stateDir?: string,
++): Promise<void> {
++  const run = await readRun(runId, stateDir);
++  const item = findLease(run, leaseId);
++  if (!item || item.status !== 'leased') throw new Error(`LEASE_UNKNOWN: ${leaseId}`);
++  if (item.route !== route || item.persona !== persona) {
++    throw new Error(`LEASE_MISMATCH: ${leaseId} ${item.route} ${item.persona}`);
++  }
++}
++
++async function settleLease(
++  runId: string,
++  leaseId: string,
++  status: 'done' | 'pending',
++  stateDir?: string,
++): Promise<void> {
++  const run = await readRun(runId, stateDir);
++  const item = findLease(run, leaseId);
++  if (!item) throw new Error(`LEASE_UNKNOWN: ${leaseId}`);
++  await updateRun(runId, {
++    exploreQueue: run.exploreQueue?.map((entry) =>
++      entry.id === item.id ? { ...entry, status, leaseId: undefined, leasedAt: undefined } : entry,
++    ),
++  }, stateDir);
++}
++
++export async function completeExplorationLease(runId: string, leaseId: string, stateDir?: string): Promise<void> {
++  await settleLease(runId, leaseId, 'done', stateDir);
++}
++
++export async function releaseExplorationLease(runId: string, leaseId: string, stateDir?: string): Promise<void> {
++  await settleLease(runId, leaseId, 'pending', stateDir);
++}
++
++export async function reclaimExplorationLeases(
++  runId: string,
++  stateDir?: string,
++  keepLeaseIds?: ReadonlySet<string>,
++): Promise<void> {
++  const run = await readRun(runId, stateDir);
++  const keep = keepLeaseIds ?? new Set<string>();
++  if (!run.exploreQueue?.some((item) => item.status === 'leased' && item.leaseId !== undefined && !keep.has(item.leaseId))) return;
++  await updateRun(runId, {
++    exploreQueue: run.exploreQueue.map((item) =>
++      item.status === 'leased' && item.leaseId !== undefined && !keep.has(item.leaseId)
++        ? { ...item, status: 'pending', leaseId: undefined, leasedAt: undefined }
++        : item,
++    ),
++  }, stateDir);
+ }
+ 
+ export async function readRun(runId: string, stateDir?: string): Promise<Run> {
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/src/types.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/types.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/src/types.ts	2026-11-11 00:45:33
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/types.ts	2026-11-11 09:50:14
+@@ -31,6 +31,15 @@
+ export type OperationStage = 'pending' | 'running' | 'done' | 'failed';
+ export type RouteStage = 'pending' | 'exploring' | 'done' | 'failed';
+ 
++export type ExploreQueueItem = {
++  id: string;
++  route: string;
++  persona: string;
++  status: 'pending' | 'leased' | 'done';
++  leaseId?: string;
++  leasedAt?: string;
++};
++
+ export type Run = {
+   id: string;
+   scope: Scope;
+@@ -38,6 +47,7 @@
+   status: RunStage;
+   stages: Record<'explore' | 'reproduce' | 'triage' | 'export', OperationStage>;
+   routeStages: Record<string, RouteStage>;
++  exploreQueue?: ExploreQueueItem[];
+   createdAt: string;
+   updatedAt: string;
+ };
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/core-integration.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/core-integration.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/core-integration.bhtest.ts	2026-11-11 06:03:45
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/core-integration.bhtest.ts	2026-11-11 09:51:02
+@@ -16,6 +16,7 @@
+ const coreToolNames = [
+   'bh_start_run',
+   'bh_resume_run',
++  'bh_explore_next',
+   'bh_open',
+   'bh_state',
+   'bh_act',
+@@ -143,6 +144,17 @@
+   return value as Record<string, unknown>;
+ }
+ 
++async function leaseFor(client: Client, runId: string, route: string): Promise<{ leaseId: string; route: string; persona: string }> {
++  const next = await callValue(client, 'bh_explore_next', { runId, route });
++  assert.equal(next.status, 'task', JSON.stringify(next));
++  return { leaseId: next.leaseId as string, route: next.route as string, persona: next.persona as string };
++}
++
++async function openLeased(client: Client, runId: string, route: string): Promise<Record<string, unknown>> {
++  const task = await leaseFor(client, runId, route);
++  return callValue(client, 'bh_open', { runId, route: task.route, persona: task.persona, leaseId: task.leaseId });
++}
++
+ test('real MCP stdio client validates strict schemas and compact core results', { timeout: 60_000 }, async () => {
+   const projectRoot = await mkdtemp(join(tmpdir(), 'bh-mcp-'));
+   const stateDir = join(projectRoot, 'state');
+@@ -182,6 +194,7 @@
+     const requiredInputs: Record<string, string[]> = {
+       bh_start_run: ['scope'],
+       bh_resume_run: ['runId'],
++      bh_explore_next: ['runId'],
+       bh_open: ['persona', 'route', 'runId'],
+       bh_state: ['sessionId'],
+       bh_act: ['action', 'elementId', 'sessionId'],
+@@ -221,7 +234,7 @@
+     assert.equal(typeof runId, 'string');
+     assert.deepEqual(started.routes, config.routes);
+ 
+-    const opened = await callValue(client, 'bh_open', { runId, route: '/profile', persona: 'scripted' });
++    const opened = await openLeased(client, runId as string, '/profile');
+     assert.deepEqual(Object.keys(opened), ['sessionId']);
+     const sessionId = opened.sessionId;
+     assert.equal(typeof sessionId, 'string');
+@@ -295,9 +308,10 @@
+     const closed = await callValue(client, 'bh_close', { sessionId });
+     assert.deepEqual(closed, { ok: true });
+ 
++    const raceTask = await leaseFor(client, runId as string, '/orders');
+     const contested = await Promise.all([
+-      client.callTool({ name: 'bh_open', arguments: { runId, route: '/orders', persona: 'race-a' } }),
+-      client.callTool({ name: 'bh_open', arguments: { runId, route: '/orders/new', persona: 'race-b' } }),
++      client.callTool({ name: 'bh_open', arguments: { runId, route: raceTask.route, persona: raceTask.persona, leaseId: raceTask.leaseId } }),
++      client.callTool({ name: 'bh_open', arguments: { runId, route: raceTask.route, persona: raceTask.persona, leaseId: raceTask.leaseId } }),
+     ]);
+     const succeeded = contested.filter((response) => response.isError !== true);
+     const busyResponses = contested.filter((response) => response.isError === true);
+@@ -314,7 +328,7 @@
+     const successContent = succeeded[0]?.content[0] as { type: string; text: string };
+     const contestedSession = (JSON.parse(successContent.text) as { sessionId: string }).sessionId;
+     await callValue(client, 'bh_close', { sessionId: contestedSession });
+-    const released = await callValue(client, 'bh_open', { runId, route: '/clean', persona: 'released' });
++    const released = await openLeased(client, runId as string, '/clean');
+     const failedCandidate = await callValue(client, 'bh_report_candidate', {
+       sessionId: released.sessionId, title: 'Close failure probe', expected: 'Clean page', actual: 'Clean page',
+       signalIds: [], check: { kind: 'visibleText', target: 'Clean page', expected: 'Clean page' },
+@@ -330,10 +344,10 @@
+     const failedCloseContent = failedClose.content[0] as { type: string; text: string };
+     assert.match((JSON.parse(failedCloseContent.text) as { message?: string }).message ?? '', /SESSION_CLOSE_FAILED/);
+     await rm(failedCandidatePath, { recursive: true });
+-    const reopened = await callValue(client, 'bh_open', { runId, route: '/', persona: 'close-failure-released' });
++    const reopened = await openLeased(client, runId as string, '/');
+     await callValue(client, 'bh_close', { sessionId: reopened.sessionId });
+     for (const route of ['/clean', '/orders', '/orders/new']) {
+-      const completed = await callValue(client, 'bh_open', { runId, route, persona: 'complete-route' });
++      const completed = await openLeased(client, runId as string, route);
+       await callValue(client, 'bh_close', { sessionId: completed.sessionId });
+     }
+ 
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/explore-queue.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/explore-queue.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/explore-queue.bhtest.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/explore-queue.bhtest.ts	2026-11-11 09:57:42
+@@ -0,0 +1,310 @@
++import assert from 'node:assert/strict';
++import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import { join, resolve } from 'node:path';
++import { after, test } from 'node:test';
++import { Client } from '@modelcontextprotocol/sdk/client/index.js';
++import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
++import {
++  completeExplorationLease,
++  createRun,
++  EXPLORER_PERSONAS,
++  leaseNextExploration,
++  readRun,
++  reclaimExplorationLeases,
++  releaseExplorationLease,
++  updateRun,
++  validateExplorationLease,
++} from '../src/run-store.ts';
++import type { Config, Run } from '../src/types.ts';
++
++const serverRoot = resolve(import.meta.dirname, '..');
++const temporaryDirectories: string[] = [];
++
++after(async () => {
++  await Promise.all(temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })));
++});
++
++async function temporaryDirectory(prefix: string): Promise<string> {
++  const directory = await mkdtemp(join(tmpdir(), prefix));
++  temporaryDirectories.push(directory);
++  return directory;
++}
++
++function queueConfig(): Config {
++  return {
++    baseUrl: 'http://127.0.0.1:4173',
++    allowedOrigins: ['http://127.0.0.1:4173'],
++    routes: ['/', '/orders', '/profile'],
++    routeMap: {},
++    baseBranch: 'main',
++    limits: { stepsPerSession: 60, candidatesPerRun: 20 },
++    safety: { forbiddenActionText: ['delete'], readOnly: false },
++    testDataPrefix: 'bh_',
++    detectors: {
++      ignoreConsole: [],
++      ignoreRequests: [],
++      anomalyTexts: ['undefined', 'NaN'],
++      errorBoundarySelector: '[data-error-boundary]',
++    },
++    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
++  };
++}
++
++test('createRun builds a route-major queue with the three MVP personas', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  assert.deepEqual(
++    run.exploreQueue?.map((item) => [item.route, item.persona, item.status]),
++    [
++      ['/', 'новичок', 'pending'],
++      ['/', 'нетерпеливый', 'pending'],
++      ['/', 'граничный ввод', 'pending'],
++      ['/orders', 'новичок', 'pending'],
++      ['/orders', 'нетерпеливый', 'pending'],
++      ['/orders', 'граничный ввод', 'pending'],
++      ['/profile', 'новичок', 'pending'],
++      ['/profile', 'нетерпеливый', 'pending'],
++      ['/profile', 'граничный ввод', 'pending'],
++    ],
++  );
++  assert.ok(run.exploreQueue?.every((item) => item.leaseId === undefined));
++  const persisted = await readRun(run.id, stateDir);
++  assert.deepEqual(persisted.exploreQueue, run.exploreQueue);
++});
++
++test('createRun for route scope queues only the selected route', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('route', '/orders', { config: queueConfig(), projectRoot: stateDir, stateDir });
++  assert.equal(run.exploreQueue?.length, EXPLORER_PERSONAS.length);
++  assert.ok(run.exploreQueue?.every((item) => item.route === '/orders'));
++});
++
++test('leaseNextExploration leases one item at a time and completes in order', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++
++  const first = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(first.status, 'task');
++  if (first.status !== 'task') return;
++  assert.equal(first.route, '/');
++  assert.equal(first.persona, 'новичок');
++  assert.ok(first.leaseId.length > 0);
++
++  const busy = await leaseNextExploration(run.id, {}, stateDir);
++  assert.deepEqual(busy, { status: 'busy', activeRoute: '/' });
++
++  await completeExplorationLease(run.id, first.leaseId, stateDir);
++  const second = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(second.status, 'task');
++  if (second.status !== 'task') return;
++  assert.equal(second.route, '/');
++  assert.equal(second.persona, 'нетерпеливый');
++  assert.notEqual(second.leaseId, first.leaseId);
++
++  const stored = await readRun(run.id, stateDir);
++  assert.deepEqual(
++    stored.exploreQueue?.map((item) => item.status),
++    ['done', 'leased', 'pending', 'pending', 'pending', 'pending', 'pending', 'pending', 'pending'],
++  );
++
++  await completeExplorationLease(run.id, second.leaseId, stateDir);
++  for (let index = 0; index < 7; index += 1) {
++    const next = await leaseNextExploration(run.id, {}, stateDir);
++    assert.equal(next.status, 'task');
++    if (next.status !== 'task') return;
++    await completeExplorationLease(run.id, next.leaseId, stateDir);
++  }
++  assert.deepEqual(await leaseNextExploration(run.id, {}, stateDir), { status: 'done' });
++});
++
++test('leaseNextExploration route filter leases the first pending item of that route only', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const task = await leaseNextExploration(run.id, { route: '/profile' }, stateDir);
++  assert.equal(task.status, 'task');
++  if (task.status !== 'task') return;
++  assert.equal(task.route, '/profile');
++  assert.equal(task.persona, 'новичок');
++  const filteredBusy = await leaseNextExploration(run.id, { route: '/orders' }, stateDir);
++  assert.deepEqual(filteredBusy, { status: 'busy', activeRoute: '/profile' });
++  await completeExplorationLease(run.id, task.leaseId, stateDir);
++  const again = await leaseNextExploration(run.id, { route: '/profile' }, stateDir);
++  assert.equal(again.status, 'task');
++  if (again.status !== 'task') return;
++  assert.equal(again.persona, 'нетерпеливый');
++});
++
++test('stale leases are reclaimed before a new task is handed out', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const first = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(first.status, 'task');
++  if (first.status !== 'task') return;
++  const stale = await leaseNextExploration(run.id, { staleLeaseMs: 0 }, stateDir);
++  assert.equal(stale.status, 'task', 'a zero-TTL lease must be reclaimed as stale');
++  if (stale.status !== 'task') return;
++  assert.equal(stale.route, first.route);
++  assert.equal(stale.persona, first.persona);
++  assert.notEqual(stale.leaseId, first.leaseId);
++  const stored = await readRun(run.id, stateDir);
++  assert.equal(stored.exploreQueue?.[0]?.leaseId, stale.leaseId);
++});
++
++test('live session leases are never reclaimed as stale or by resume', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const task = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(task.status, 'task');
++  if (task.status !== 'task') return;
++  const keep = new Set([task.leaseId]);
++  const busy = await leaseNextExploration(run.id, { staleLeaseMs: 0, keepLeaseIds: keep }, stateDir);
++  assert.deepEqual(busy, { status: 'busy', activeRoute: '/' }, 'a live lease must survive zero TTL');
++  await reclaimExplorationLeases(run.id, stateDir, keep);
++  const stored = await readRun(run.id, stateDir);
++  assert.equal(stored.exploreQueue?.[0]?.status, 'leased');
++  assert.equal(stored.exploreQueue?.[0]?.leaseId, task.leaseId);
++});
++
++test('validateExplorationLease accepts the exact task and rejects mismatches', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const task = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(task.status, 'task');
++  if (task.status !== 'task') return;
++  await validateExplorationLease(run.id, task.leaseId, task.route, task.persona, stateDir);
++  await assert.rejects(
++    validateExplorationLease(run.id, 'no-such-lease', task.route, task.persona, stateDir),
++    /LEASE_UNKNOWN/,
++  );
++  await assert.rejects(
++    validateExplorationLease(run.id, task.leaseId, '/orders', task.persona, stateDir),
++    /LEASE_MISMATCH/,
++  );
++  await assert.rejects(
++    validateExplorationLease(run.id, task.leaseId, task.route, 'другая персона', stateDir),
++    /LEASE_MISMATCH/,
++  );
++  await completeExplorationLease(run.id, task.leaseId, stateDir);
++  await assert.rejects(
++    validateExplorationLease(run.id, task.leaseId, task.route, task.persona, stateDir),
++    /LEASE_UNKNOWN/,
++  );
++});
++
++test('releaseExplorationLease returns the item to pending for retry', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const task = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(task.status, 'task');
++  if (task.status !== 'task') return;
++  await releaseExplorationLease(run.id, task.leaseId, stateDir);
++  const stored = await readRun(run.id, stateDir);
++  assert.equal(stored.exploreQueue?.[0]?.status, 'pending');
++  assert.equal(stored.exploreQueue?.[0]?.leaseId, undefined);
++  const retry = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(retry.status, 'task');
++  if (retry.status !== 'task') return;
++  assert.equal(retry.route, task.route);
++  assert.equal(retry.persona, task.persona);
++});
++
++test('reclaimExplorationLeases returns every leased item to pending', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const task = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(task.status, 'task');
++  if (task.status !== 'task') return;
++  await reclaimExplorationLeases(run.id, stateDir);
++  const stored = await readRun(run.id, stateDir);
++  assert.ok(stored.exploreQueue?.every((item) => item.status === 'pending' && item.leaseId === undefined));
++});
++
++test('legacy runs without a queue lazily build one and skip done routes', async () => {
++  const stateDir = await temporaryDirectory('bh-queue-');
++  const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
++  const legacy: Run = { ...run, exploreQueue: undefined };
++  legacy.routeStages = { '/': 'done', '/orders': 'pending', '/profile': 'pending' };
++  await updateRun(run.id, { exploreQueue: undefined, routeStages: legacy.routeStages }, stateDir);
++  assert.equal((await readRun(run.id, stateDir)).exploreQueue, undefined);
++
++  const task = await leaseNextExploration(run.id, {}, stateDir);
++  assert.equal(task.status, 'task');
++  if (task.status !== 'task') return;
++  assert.equal(task.route, '/orders', 'done routes must not be re-queued');
++  const stored = await readRun(run.id, stateDir);
++  assert.equal(stored.exploreQueue?.length, 2 * EXPLORER_PERSONAS.length);
++  assert.ok(stored.exploreQueue?.every((item) => item.route !== '/'));
++});
++
++async function callValue(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
++  const response = await client.callTool({ name, arguments: args });
++  assert.notEqual(response.isError, true, JSON.stringify(response.content));
++  assert.ok(Array.isArray(response.content));
++  const content = response.content[0] as { type: string; text: string };
++  return JSON.parse(content.text) as Record<string, unknown>;
++}
++
++async function callError(client: Client, name: string, args: Record<string, unknown>): Promise<{ code?: string; message?: string }> {
++  const response = await client.callTool({ name, arguments: args });
++  assert.equal(response.isError, true, JSON.stringify(response.content));
++  assert.ok(Array.isArray(response.content));
++  const content = response.content[0] as { type: string; text: string };
++  return JSON.parse(content.text) as { code?: string; message?: string };
++}
++
++test('MCP exploration queue hands out one lease, requires it on open, and survives parallel callers', { timeout: 60_000 }, async () => {
++  const projectRoot = await temporaryDirectory('bh-queue-mcp-');
++  const stateDir = join(projectRoot, 'state');
++  await mkdir(join(projectRoot, '.git'), { recursive: true });
++  await mkdir(stateDir, { recursive: true });
++  await writeFile(join(stateDir, 'config.json'), JSON.stringify(queueConfig()), 'utf8');
++  const environment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
++  const transport = new StdioClientTransport({
++    command: process.execPath,
++    args: [join(serverRoot, 'src/index.ts')],
++    cwd: projectRoot,
++    env: { ...environment, BUGHUNTER_STATE_DIR: stateDir },
++    stderr: 'pipe',
++  });
++  const client = new Client({ name: 'bughunter-queue', version: '1.0.0' });
++  try {
++    await client.connect(transport);
++
++    const missing = await callError(client, 'bh_explore_next', { runId: 'no-such-run' });
++    assert.match(missing.message ?? '', /RUN_NOT_FOUND/);
++
++    const started = await callValue(client, 'bh_start_run', { scope: 'full' });
++    const runId = started.runId as string;
++
++    const parallel = await Promise.all([
++      client.callTool({ name: 'bh_explore_next', arguments: { runId } }),
++      client.callTool({ name: 'bh_explore_next', arguments: { runId } }),
++      client.callTool({ name: 'bh_explore_next', arguments: { runId } }),
++    ]);
++    const payloads = parallel.map((response) => {
++      const content = (response.content as Array<{ type: string; text: string }>)[0];
++      return JSON.parse(content.text) as Record<string, unknown>;
++    });
++    const tasks = payloads.filter((payload) => payload.status === 'task');
++    const busies = payloads.filter((payload) => payload.status === 'busy');
++    assert.equal(tasks.length, 1, JSON.stringify(payloads));
++    assert.equal(busies.length, 2, JSON.stringify(payloads));
++    assert.deepEqual(busies, [{ status: 'busy', activeRoute: '/' }, { status: 'busy', activeRoute: '/' }]);
++
++    const task = tasks[0] as { leaseId: string; route: string; persona: string };
++
++    const noLease = await callError(client, 'bh_open', { runId, route: task.route, persona: task.persona });
++    assert.equal(noLease.code, 'LEASE_REQUIRED');
++    const wrongLease = await callError(client, 'bh_open', { runId, route: task.route, persona: task.persona, leaseId: 'wrong' });
++    assert.equal(wrongLease.code, 'LEASE_UNKNOWN');
++    const mismatch = await callError(client, 'bh_open', { runId, route: '/orders', persona: task.persona, leaseId: task.leaseId });
++    assert.equal(mismatch.code, 'LEASE_MISMATCH');
++
++    const stored = await readRun(runId, stateDir);
++    assert.equal(stored.exploreQueue?.[0]?.status, 'leased', 'failed opens must not consume the lease');
++    assert.equal(stored.exploreQueue?.[0]?.leaseId, task.leaseId);
++  } finally {
++    await client.close();
++  }
++});
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/portable.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/portable.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/portable.bhtest.ts	2026-11-11 06:07:26
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/portable.bhtest.ts	2026-11-11 09:51:09
+@@ -20,6 +20,7 @@
+ const coreToolNames = [
+   'bh_start_run',
+   'bh_resume_run',
++  'bh_explore_next',
+   'bh_open',
+   'bh_state',
+   'bh_act',
+@@ -261,7 +262,11 @@
+     assert.equal(storedRun.id, runId);
+     assert.equal(storedRun.scope, 'full');
+ 
+-    const opened = await callValue(client, 'bh_open', { runId, route: '/profile', persona: 'portable' });
++    const profileTask = await callValue(client, 'bh_explore_next', { runId, route: '/profile' });
++    assert.equal(profileTask.status, 'task', JSON.stringify(profileTask));
++    const opened = await callValue(client, 'bh_open', {
++      runId, route: profileTask.route, persona: profileTask.persona, leaseId: profileTask.leaseId,
++    });
+     const sessionId = opened.sessionId;
+     assert.equal(typeof sessionId, 'string');
+     const state = await callValue(client, 'bh_state', { sessionId });
+@@ -301,7 +306,11 @@
+     assert.deepEqual(resumed.candidates, []);
+     assert.deepEqual(await callValue(client, 'bh_close', { sessionId }), { ok: true });
+     for (const route of ['/', '/orders', '/orders/new', '/clean']) {
+-      const completed = await callValue(client, 'bh_open', { runId, route, persona: 'portable-route' });
++      const routeTask = await callValue(client, 'bh_explore_next', { runId, route });
++      assert.equal(routeTask.status, 'task', JSON.stringify(routeTask));
++      const completed = await callValue(client, 'bh_open', {
++        runId, route: routeTask.route, persona: routeTask.persona, leaseId: routeTask.leaseId,
++      });
+       await callValue(client, 'bh_close', { sessionId: completed.sessionId });
+     }
+     const finished = await callValue(client, 'bh_finish_run', { runId });
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/prompts.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/prompts.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/bughunter/server/test/prompts.bhtest.ts	2026-11-11 05:49:37
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/prompts.bhtest.ts	2026-11-11 09:51:30
+@@ -91,15 +91,15 @@
+   assert.equal(data.override, undefined);
+   for (const required of [
+     '$ARGUMENTS', 'diff', 'full', 'route <path>', 'resume <runId>',
+-    'bh_start_run', 'bh_resume_run', 'bh_reproduce', 'bh_finish_run',
+-    'Agent', 'bh-explorer', 'bh-reviewer', 'bh-test-writer',
++    'bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run',
++    'Agent', 'bh-explorer', 'bh-reviewer', 'bh-test-writer', 'leaseId',
+     'ровно один вызов Agent', 'не объединяй', 'не делегируй воспроизведение',
+-    'EXPLORER_BUSY', 'RUN_INCOMPLETE', 'pendingCandidates',
++    'EXPLORER_BUSY', 'RUN_INCOMPLETE', 'pendingCandidates', 'RETRY_LATER',
+   ]) assert.ok(body.toLowerCase().includes(required.toLowerCase()), `missing entry contract: ${required}`);
+   const allowedLine = body.split('\n').find((line) => line.includes('Главному агенту разрешены только'));
+   const forbiddenLine = body.split('\n').find((line) => line.includes('Запрещено напрямую вызывать'));
+   assert.ok(allowedLine && forbiddenLine, 'binding main-agent allowlist and forbidden list are required');
+-  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_reproduce', 'bh_finish_run', 'Agent']) {
++  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run', 'Agent']) {
+     assert.ok(allowedLine.includes(tool), `main allowlist missing ${tool}`);
+   }
+   for (const tool of [
+@@ -141,4 +141,13 @@
+   assert.ok(writer.includes('bughunter-red-test'));
+   assert.match(writer, /не более (?:чем )?(?:за )?(?:3|тр[её]х)/i);
+   assert.match(writer, /код приложения не (?:меняй|изменяй)/i);
++});
++
++test('explorer requires a lease and never reports a failed exploration as clean', async () => {
++  const explorer = (await readPrompt('.kimi-code/agents/bh-explorer.md')).body;
++  assert.ok(explorer.includes('leaseId'), 'explorer must receive and pass leaseId');
++  assert.match(explorer, /RETRY_LATER: EXPLORER_BUSY/);
++  assert.match(explorer, /FAILED: /);
++  assert.match(explorer, /не чистый маршрут/);
++  assert.match(explorer, /никогда вместо них `Кандидатов нет`/);
+ });
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth --exclude=.playwright-output /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/skills/bughunter/SKILL.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter/SKILL.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-17-before/.kimi-code/skills/bughunter/SKILL.md	2026-11-11 05:51:17
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter/SKILL.md	2026-11-11 09:51:19
+@@ -8,10 +8,10 @@
+ 
+ Для нового прогона вызови `bh_start_run` с выбранным scope и, для route, путём. Для возобновления вызови `bh_resume_run` с runId; продолжи только незавершённые этапы и учитывай возвращённых необработанных кандидатов, не повторяя завершённую работу. Если по состоянию этапов нужно продолжить исследование, прочти маршруты и routeStages из `run.json` этого прогона.
+ 
+-Главному агенту разрешены только `bh_start_run`, `bh_resume_run`, `bh_reproduce`, `bh_finish_run`, `Read` для `run.json` при resume и `Agent`. Запрещено напрямую вызывать `bh_open`, `bh_state`, `bh_act`, `bh_navigate`, `bh_probe`, `bh_report_candidate`, `bh_close`, `bh_triage`, `bh_export_e2e`, `bh_detect_tests`, `bh_verify_red`: они принадлежат соответствующим субагентам. В каждом сообщении модели ровно один tool/Agent вызов, без batch или параллельных вызовов; дождись результата перед следующим сообщением.
++Главному агенту разрешены только `bh_start_run`, `bh_resume_run`, `bh_explore_next`, `bh_reproduce`, `bh_finish_run`, `Read` для `run.json` при resume и `Agent`. Запрещено напрямую вызывать `bh_open`, `bh_state`, `bh_act`, `bh_navigate`, `bh_probe`, `bh_report_candidate`, `bh_close`, `bh_triage`, `bh_export_e2e`, `bh_detect_tests`, `bh_verify_red`: они принадлежат соответствующим субагентам. В каждом сообщении модели ровно один tool/Agent вызов, без batch или параллельных вызовов; дождись результата перед следующим сообщением.
+ 
+-Для каждого незавершённого маршрута последовательно запусти персоны «новичок», «нетерпеливый» и «граничный ввод». Делегируй каждую пару маршрут–персона через `Agent` субагенту `bh-explorer`, передав runId, маршрут и персону. В каждом сообщении модели делай ровно один вызов Agent и никаких других вызовов одновременно с ним. Выполняй только foreground, не в фоне; дождись результата и собери candidateId. Не объединяй исследователей в batch и не запускай следующего, пока предыдущий не завершён.
++Исследование идёт строгим последовательным циклом через серверную очередь задач. Повторяй: вызови `bh_explore_next` с runId. При ответе `status: 'done'` переходи к воспроизведению. При `status: 'busy'` другая задача ещё выполняется: дождись результата уже запущенного Agent и повтори `bh_explore_next`. При `status: 'task'` делегируй задачу субагенту `bh-explorer` через ровно один вызов Agent в foreground, не в фоне, передав runId, `leaseId`, маршрут и персону из задачи без изменений; дождись результата, собери candidateId и повтори `bh_explore_next`. Сервер выдаёт только одну задачу за раз и не открывает сессию без действующего lease, поэтому два исследователя одновременно работать не могут: не объединяй исследователей в batch и не запускай следующего, пока предыдущий не завершён. Если исследователь вернул `FAILED: <код>` или `RETRY_LATER: EXPLORER_BUSY`, маршрут не считается проверенным: повтори `bh_explore_next` и делегируй задачу заново.
+ 
+ Для каждого кандидата, который ещё не воспроизведён, сам вызови `bh_reproduce`; не делегируй воспроизведение агентам. Невоспроизведённые кандидаты исключаются из дальнейшей обработки: не передавай их reviewer или test-writer. Каждого воспроизведённого кандидата без вердикта передай через отдельный foreground `Agent` субагенту `bh-reviewer`, дождись вердикта и причины. Не объединяй reviewers в batch: один вызов Agent на сообщение и один кандидат на вызов. Передавай через foreground `Agent` субагенту `bh-test-writer` только подтверждённые баги, по одному с тем же правилом; отклонённые, дубли и невоспроизведённые не передавай.
+ 
+-При `EXPLORER_BUSY` или `RUN_INCOMPLETE` не завершай работу: вызови `bh_resume_run`, затем последовательно обработай оставшиеся маршруты и `pendingCandidates`, не повторяя завершённые этапы, и только после этого повтори finish. Вызови `bh_finish_run` с runId лишь когда необработанных кандидатов нет. Верни краткую сводку: сколько кандидатов найдено, сколько багов подтверждено, какие файлы тестов созданы и путь к отчёту. Укажи ошибки обработки, не выдавая неподтверждённых кандидатов за баги.
++При `EXPLORER_BUSY` или `RUN_INCOMPLETE` не завершай работу: вызови `bh_resume_run`, затем последовательно обработай оставшиеся задачи исследования через `bh_explore_next` и `pendingCandidates`, не повторяя завершённые этапы, и только после этого повтори finish. Вызови `bh_finish_run` с runId лишь когда необработанных кандидатов нет. Верни краткую сводку: сколько кандидатов найдено, сколько багов подтверждено, какие файлы тестов созданы и путь к отчёту. Укажи ошибки обработки, не выдавая неподтверждённых кандидатов за баги.

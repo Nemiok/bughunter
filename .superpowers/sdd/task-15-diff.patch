@@ -1,0 +1,1195 @@
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/README.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/README.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/README.md	2026-11-10 22:47:27
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/README.md	2026-11-11 03:19:50
+@@ -43,6 +43,22 @@
+ 4. **Главная страница документации недоступна.** `https://www.kimi.com/code/docs/en/kimi-code-cli/` вернула HTTP 403; нужные сведения получены из конкретных внутренних страниц.
+ 5. **Первоначальная ручная реализация stdio-сервера не прошла инициализацию.** Сервер на чистом Node.js буферизовал первый ответ, и Kimi Code CLI отключал его по таймауту 30 с. Проба переписана на `@modelcontextprotocol/sdk`; это ограничение реализации пробы, а не продуктовый баг.
+ 
++## Переносимая копия и изоляция инструментов проекта
++
++Автоматическая проверка: `cd .kimi-code/bughunter/server && node --test test/portable.bhtest.ts`. Она копирует демо и `.kimi-code/` без `node_modules`, `state/runs` и `state/auth`, выполняет `git init` и `npm ci` в обеих частях копии, запускает скопированное демо и проходит полный цикл кандидата через все 15 инструментов по настоящему stdio MCP. Временная копия и её процессы удаляются после проверки. Это автоматизированная проверка переносимости, а не доказательство интерактивного trust.
++
++У демо TypeScript включает только `src` и `vite.config.ts`; Jest и ESLint не настроены. Стандартный шаблон Vitest обнаруживает тестовые фикстуры внутри `.kimi-code/`, поэтому **только в одноразовой копии проекта** нужен `vitest.config.ts`:
++
++```ts
++import { configDefaults, defineConfig } from 'vitest/config';
++
++export default defineConfig({
++  test: { exclude: [...configDefaults.exclude, '**/.kimi-code/**'] },
++});
++```
++
++Точный добавленный glob: `**/.kimi-code/**`. После появления проектных Playwright-тестов в одноразовой копии демо в тот же `exclude` также добавляется `**/e2e/**`, чтобы Vitest не загружал Playwright-файлы; их запускает только Playwright/`bh_verify_red`. Исходное демо этой проверкой не изменяется.
++
+ ## Остальные разделы README
+ 
+ Заполняются по мере реализации этапов 1–5 MVP.
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/.last-run.json	2026-11-11 06:10:31
+@@ -0,0 +1,6 @@
++{
++  "status": "failed",
++  "failedTests": [
++    "557d9a8a2e45cc802b03-dfef8ec5c6b0db6cd382"
++  ]
++}
+\ No newline at end of file
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/fixtures/buggy-app/.playwright-output/bughunter-verdict-dHKBrK-broken-broken-assertion/error-context.md	2026-11-11 06:10:31
+@@ -0,0 +1,26 @@
++# Instructions
++
++- Following Playwright test failed.
++- Explain why, be concise, respect Playwright best practices.
++- Provide a snippet of code with the fix, if possible.
++
++# Test info
++
++- Name: bughunter/verdict-dHKBrK/broken.spec.ts >> broken assertion
++- Location: e2e/bughunter/verdict-dHKBrK/broken.spec.ts:3:1
++
++# Error details
++
++```
++Error: setup exploded
++```
++
++# Test source
++
++```ts
++  1 | import { expect, test } from '@playwright/test';
++  2 | 
++> 3 | test('broken assertion', () => { throw new Error("setup exploded"); });
++    |                                        ^ Error: setup exploded
++  4 | 
++```
+\ No newline at end of file
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/package.json /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/package.json
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/package.json	2026-11-10 19:22:35
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/package.json	2026-11-11 04:35:29
+@@ -6,7 +6,7 @@
+     "node": ">=22.18"
+   },
+   "scripts": {
+-    "test": "node --test test/*.bhtest.ts",
++    "test": "node --test --test-concurrency=1 test/*.bhtest.ts",
+     "typecheck": "tsc",
+     "start": "node src/index.ts",
+     "auth": "node src/auth.ts"
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/detectors/signals.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/detectors/signals.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/detectors/signals.ts	2026-11-10 15:56:40
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/detectors/signals.ts	2026-11-11 04:32:57
+@@ -113,6 +113,7 @@
+     reconcileErrorBoundaries(page, config, state, new Set(texts));
+   });
+   await observeErrorBoundary(page, config.detectors.errorBoundarySelector);
++  await observeAnomalies(page, config, state);
+ }
+ 
+ function reconcileErrorBoundaries(page: Page, config: Config, state: PageState, visibleTexts: Set<string>): void {
+@@ -153,15 +154,50 @@
+   }, selector);
+ }
+ 
+-async function scanBodyText(page: Page, config: Config, state: PageState): Promise<void> {
+-  const bodyText = await page.locator('body').innerText();
+-  const found = new Set(findAnomalyTexts(bodyText, config.detectors.anomalyTexts));
++function reconcileAnomalies(page: Page, config: Config, state: PageState, found: Set<string>): void {
+   for (const anomaly of found) {
+     if (!state.activeAnomalies.has(anomaly)) {
+       addSignal(page, config, { kind: 'anomaly', message: anomaly });
+     }
+   }
+   state.activeAnomalies = found;
++}
++
++async function observeAnomalies(page: Page, config: Config, state: PageState): Promise<void> {
++  await page.exposeFunction('__bughunterReportAnomalies', (texts: string[]) => {
++    reconcileAnomalies(page, config, state, new Set(texts));
++  });
++  const install = (anomalyTexts: string[]): void => {
++    const target = window as unknown as Window & {
++      __bughunterAnomalyObserver?: MutationObserver;
++      __bughunterReportAnomalies: (texts: string[]) => void;
++    };
++    if (target.__bughunterAnomalyObserver) return;
++    const report = (): void => {
++      if (!document.body) return;
++      const text = document.body.innerText;
++      const found = anomalyTexts.filter((anomaly) => {
++        if (anomaly.length === 0) return false;
++        const escaped = anomaly.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++        return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'u').test(text);
++      });
++      target.__bughunterReportAnomalies(found);
++    };
++    target.__bughunterAnomalyObserver = new MutationObserver(report);
++    target.__bughunterAnomalyObserver.observe(document, {
++      characterData: true,
++      childList: true,
++      subtree: true,
++    });
++    report();
++  };
++  await page.addInitScript(install, config.detectors.anomalyTexts);
++  await page.evaluate(install, config.detectors.anomalyTexts);
++}
++
++async function scanBodyText(page: Page, config: Config, state: PageState): Promise<void> {
++  const bodyText = await page.locator('body').innerText();
++  reconcileAnomalies(page, config, state, new Set(findAnomalyTexts(bodyText, config.detectors.anomalyTexts)));
+ }
+ 
+ async function scanErrorBoundaries(page: Page, config: Config, state: PageState): Promise<void> {
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/index.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/index.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/index.ts	2026-11-11 02:25:34
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/index.ts	2026-11-11 06:02:52
+@@ -19,6 +19,8 @@
+   if (message === 'FORBIDDEN_ACTION' || message === 'FORM_SUBMISSION_BLOCKED') {
+     return { code: 'FORBIDDEN_ACTION', message };
+   }
++  if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
++  if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
+   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
+   if (message === 'NAVIGATION_NOT_ALLOWED' || message.startsWith('NAVIGATION_NOT_ALLOWED:') || message === 'FORBIDDEN_ORIGIN') {
+     return { code: 'FORBIDDEN_ORIGIN', message };
+@@ -65,6 +67,7 @@
+     : resolve(import.meta.dirname, '../../state');
+   let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
+   const explorations = new Map<string, { runId: string; route: string }>();
++  const activeExplorerRuns = new Set<string>();
+ 
+   async function manager(): Promise<InstanceType<typeof SessionManager>> {
+     managerPromise ??= loadConfig(stateDir).then((config) => new SessionManager(config, stateDir));
+@@ -158,13 +161,20 @@
+     description: 'Открыть маршрут в новой браузерной сессии',
+     inputSchema: z.strictObject({ runId, route: z.string().min(1), persona: z.string().min(1) }),
+   }, async ({ runId: id, route, persona }) => invoke(async () => {
+-    const opened = await (await manager()).open(id, route, persona);
++    if (activeExplorerRuns.has(id)) throw new ToolError(`EXPLORER_BUSY: ${id}`);
++    activeExplorerRuns.add(id);
+     try {
+-      await recordRouteExploration(id, route, 'exploring', stateDir);
+-      explorations.set(opened.sessionId, { runId: id, route });
+-      return opened;
++      const opened = await (await manager()).open(id, route, persona);
++      try {
++        await recordRouteExploration(id, route, 'exploring', stateDir);
++        explorations.set(opened.sessionId, { runId: id, route });
++        return opened;
++      } catch (error) {
++        await (await manager()).close(opened.sessionId).catch(() => undefined);
++        throw error;
++      }
+     } catch (error) {
+-      await (await manager()).close(opened.sessionId).catch(() => undefined);
++      activeExplorerRuns.delete(id);
+       throw error;
+     }
+   }));
+@@ -272,7 +282,10 @@
+     if ((id === undefined) !== (candidateId === undefined)) throw new Error('TEST_ASSOCIATION_INCOMPLETE');
+     const absoluteTestFile = resolve(testFile);
+     const config = await loadConfig(stateDir);
+-    const verdict = await verifyRed(absoluteTestFile, { unitCommand: config.tests.unit.command });
++    const verdict = await verifyRed(absoluteTestFile, {
++      unitCommand: config.tests.unit.command,
++      ...(kind === undefined ? {} : { kind }),
++    });
+     if (id !== undefined && candidateId !== undefined) {
+       await recordCandidateTest(id, candidateId, kind ?? 'unit', absoluteTestFile, stateDir);
+       await recordRunStage(id, 'export', 'done', stateDir);
+@@ -284,13 +297,19 @@
+     description: 'Закрыть сессию и сохранить артефакты',
+     inputSchema: z.strictObject({ sessionId }),
+   }, async ({ sessionId: id }) => invoke(async () => {
+-    await (await manager()).close(id);
+     const exploration = explorations.get(id);
+-    if (exploration) {
+-      await recordRouteExploration(exploration.runId, exploration.route, 'done', stateDir);
+-      explorations.delete(id);
++    try {
++      await (await manager()).close(id);
++      if (exploration) {
++        await recordRouteExploration(exploration.runId, exploration.route, 'done', stateDir);
++      }
++      return { ok: true };
++    } finally {
++      if (exploration) {
++        activeExplorerRuns.delete(exploration.runId);
++        explorations.delete(id);
++      }
+     }
+-    return { ok: true };
+   }));
+ 
+   const transport = new stdio.StdioServerTransport();
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/run-store.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/run-store.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/run-store.ts	2026-11-11 02:26:28
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/run-store.ts	2026-11-11 05:54:50
+@@ -308,6 +308,9 @@
+   await readRun(input.runId, input.stateDir);
+   const candidate = await readCandidate(input.runId, input.candidateId, input.stateDir);
+   if (candidate.runId !== input.runId) throw new Error(`CANDIDATE_RUN_MISMATCH: ${input.candidateId}`);
++  if (candidate.reproduction?.status !== 'reproduced') {
++    throw new Error(`CANDIDATE_UNREPRODUCED: ${input.candidateId}`);
++  }
+   const knownPath = join(input.stateDir ?? defaultStateDir, 'known-bugs.json');
+   const suppressionsPath = join(input.stateDir ?? defaultStateDir, 'suppressions.json');
+   let duplicateOf = candidate.duplicateOf;
+@@ -456,7 +459,15 @@
+ }
+ 
+ export async function finishRun(runId: string, stateDir?: string): Promise<{ report: string }> {
++  const { pendingCandidates } = await resumeRun(runId, stateDir);
++  if (pendingCandidates.length > 0) {
++    throw new Error(`RUN_INCOMPLETE: ${pendingCandidates.map((candidate) => candidate.id).join(',')}`);
++  }
+   const run = await readRun(runId, stateDir);
++  const incompleteRoutes = run.routes.filter((route) => run.routeStages[route] !== 'done');
++  if (incompleteRoutes.length > 0) {
++    throw new Error(`RUN_INCOMPLETE: routes ${incompleteRoutes.join(',')}`);
++  }
+   const candidates = await readCandidates(runId, stateDir);
+   const contents = renderReport(run, candidates, stateDir);
+   const report = join(dirname(runPath(runId, stateDir)), 'report.md');
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/tests/verify-red.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/tests/verify-red.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/src/tests/verify-red.ts	2026-11-11 00:36:23
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/src/tests/verify-red.ts	2026-11-11 03:06:07
+@@ -5,7 +5,7 @@
+ import { dirname, join, parse, resolve } from 'node:path';
+ import { detectTests } from './detect.ts';
+ 
+-type Framework = 'jest' | 'vitest';
++type Framework = 'jest' | 'vitest' | 'playwright';
+ type Verdict = { status: 'red' | 'green' | 'broken'; message: string };
+ type AssertionResult = {
+   fullName?: string;
+@@ -31,6 +31,16 @@
+   numRuntimeErrorTestSuites?: number;
+   testResults?: SuiteResult[];
+ };
++type PlaywrightResult = { status?: string; error?: { message?: string } };
++type PlaywrightTest = { status?: string; results?: PlaywrightResult[] };
++type PlaywrightSpec = { title: string; file?: string; tests?: PlaywrightTest[] };
++type PlaywrightSuite = { file?: string; specs?: PlaywrightSpec[]; suites?: PlaywrightSuite[] };
++type PlaywrightReport = {
++  config?: { rootDir?: string };
++  suites?: PlaywrightSuite[];
++  errors?: Array<{ message?: string }>;
++  stats?: { expected?: number; unexpected?: number; flaky?: number; skipped?: number };
++};
+ type Execution = {
+   code: number | null;
+   signal: NodeJS.Signals | null;
+@@ -89,13 +99,14 @@
+   }
+ }
+ 
+-async function execute(command: string, cwd: string, timeoutMs: number): Promise<Execution> {
++async function execute(command: string, cwd: string, timeoutMs: number, env?: NodeJS.ProcessEnv): Promise<Execution> {
+   return new Promise((resolveExecution) => {
+     const child = spawn(command, {
+       cwd,
+       shell: true,
+       detached: process.platform !== 'win32',
+       stdio: ['ignore', 'pipe', 'pipe'],
++      ...(env ? { env: { ...process.env, ...env } } : {}),
+     });
+     let stdout = '';
+     let stderr = '';
+@@ -176,38 +187,115 @@
+   return verdict('broken', diagnostic || 'The selected file did not complete with all tests passed');
+ }
+ 
++function classifyPlaywrightReport(
++  testFile: string,
++  report: PlaywrightReport | null,
++  execution: Execution,
++): Verdict {
++  const processDiagnostic = [execution.stderr, execution.stdout].filter(Boolean).join('\n');
++  if (execution.timedOut) return verdict('broken', `Test run timed out\n${processDiagnostic}`);
++  if (execution.error) return verdict('broken', `Test runner failed: ${execution.error.message}\n${processDiagnostic}`);
++  if (!report) {
++    return verdict('broken', `No readable JSON test report (exit ${execution.code ?? execution.signal ?? 'unknown'})\n${processDiagnostic}`);
++  }
++
++  const specs: PlaywrightSpec[] = [];
++  const visit = (suite: PlaywrightSuite, inheritedFile?: string): void => {
++    const file = suite.file ?? inheritedFile;
++    for (const spec of suite.specs ?? []) specs.push({ ...spec, file });
++    for (const child of suite.suites ?? []) visit(child, file);
++  };
++  for (const suite of report.suites ?? []) visit(suite);
++  const rootDir = report.config?.rootDir;
++  if (!rootDir || specs.length === 0 || specs.some((spec) => !spec.file || resolve(rootDir, spec.file) !== resolve(testFile))) {
++    return verdict('broken', `The runner did not report exactly one selected test file\n${processDiagnostic}`);
++  }
++  const tests = specs.flatMap((spec) => (spec.tests ?? []).map((test) => ({ spec, test })));
++  if (tests.length !== specs.length || tests.some(({ test }) => test.results?.length !== 1)) {
++    return verdict('broken', `Every selected test must complete exactly once\n${processDiagnostic}`);
++  }
++  const globalDiagnostic = (report.errors ?? []).map((error) => error.message ?? '').filter(Boolean).join('\n');
++  if (globalDiagnostic) return verdict('broken', `${globalDiagnostic}\n${processDiagnostic}`);
++
++  const rows = tests.map(({ spec, test }) => ({ spec, test, result: test.results![0]! }));
++  const diagnostic = [
++    ...rows.map(({ result }) => result.error?.message ?? '').filter(Boolean),
++    processDiagnostic,
++  ].filter(Boolean).join('\n');
++  const failed = rows.filter(({ result }) => result.status !== 'passed');
++  if (failed.length > 0) {
++    const ordinary = failed.every(({ result }) => {
++      const message = (result.error?.message ?? '').replace(/\u001b\[[0-9;]*m/g, '');
++      return message.startsWith('Error: expect(');
++    });
++    if (execution.code !== 0 && report.stats?.unexpected === failed.length && ordinary) {
++      const names = failed.map(({ spec }) => spec.title).join(', ');
++      return verdict('red', `${names}\n${diagnostic}`);
++    }
++    return verdict('broken', diagnostic);
++  }
++
++  if (
++    execution.code === 0
++    && execution.signal === null
++    && report.stats?.expected === rows.length
++    && report.stats.unexpected === 0
++    && report.stats.flaky === 0
++    && report.stats.skipped === 0
++    && rows.every(({ test }) => test.status === 'expected')
++  ) {
++    const names = rows.map(({ spec }) => spec.title).join(', ');
++    return verdict('green', `${names}: all ${rows.length} test(s) passed`);
++  }
++  return verdict('broken', diagnostic || 'The selected file did not complete with all tests passed');
++}
++
+ export async function verifyRed(
+   testFile: string,
+-  options?: { timeoutMs?: number; unitCommand?: string | null },
++  options?: { timeoutMs?: number; unitCommand?: string | null; kind?: 'e2e' | 'unit' },
+ ): Promise<Verdict> {
+   const target = resolve(testFile);
+   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'bh-verify-red-'));
+   const outputFile = join(temporaryDirectory, 'report.json');
+-  let report: TestReport | null = null;
++  let report: TestReport | PlaywrightReport | null = null;
+   let execution: Execution;
+   let framework: Framework;
+ 
+   try {
+-    const detected = await detectTests(target, { unitCommand: options?.unitCommand });
+-    if (!detected.framework || !detected.command) return verdict('broken', 'No supported Jest or Vitest command was detected');
+-    framework = detected.framework;
+     const projectRoot = await nearestPackageRoot(target);
+     if (!projectRoot) return verdict('broken', 'No project package.json was found for the selected test file');
+-    const reporterArguments = framework === 'jest'
+-      ? ['--runTestsByPath', target, '--runInBand', '--json', `--outputFile=${outputFile}`]
+-      : [target, '--reporter=json', `--outputFile=${outputFile}`];
+-    const command = [detected.command, ...reporterArguments.map(shellArgument)].join(' ');
+-    execution = await execute(command, projectRoot, options?.timeoutMs ?? defaultTimeoutMs);
++    if (options?.kind === 'e2e') {
++      framework = 'playwright';
++      await stat(join(projectRoot, 'node_modules/@playwright/test/package.json'));
++      const args = [target, '--reporter=json', '--workers=1'].map(shellArgument).join(' ');
++      execution = await execute(
++        `npm exec -- playwright test ${args}`,
++        projectRoot,
++        options?.timeoutMs ?? defaultTimeoutMs,
++        { PLAYWRIGHT_JSON_OUTPUT_FILE: outputFile },
++      );
++    } else {
++      const detected = await detectTests(target, { unitCommand: options?.unitCommand });
++      if (!detected.framework || !detected.command) return verdict('broken', 'No supported Jest or Vitest command was detected');
++      framework = detected.framework;
++      const reporterArguments = framework === 'jest'
++        ? ['--runTestsByPath', target, '--runInBand', '--json', `--outputFile=${outputFile}`]
++        : [target, '--reporter=json', `--outputFile=${outputFile}`];
++      const command = [detected.command, ...reporterArguments.map(shellArgument)].join(' ');
++      execution = await execute(command, projectRoot, options?.timeoutMs ?? defaultTimeoutMs);
++    }
+   } catch (error) {
+     return verdict('broken', error instanceof Error ? error.message : String(error));
+   } finally {
+     try {
+-      report = JSON.parse(await readFile(outputFile, 'utf8')) as TestReport;
++      report = JSON.parse(await readFile(outputFile, 'utf8')) as TestReport | PlaywrightReport;
+     } catch {
+       report = null;
+     }
+     await rm(temporaryDirectory, { recursive: true, force: true });
+   }
+ 
+-  return classifyReport(framework, target, report, execution);
++  return framework === 'playwright'
++    ? classifyPlaywrightReport(target, report as PlaywrightReport | null, execution)
++    : classifyReport(framework, target, report as TestReport | null, execution);
+ }
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/core-integration.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/core-integration.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/core-integration.bhtest.ts	2026-11-11 02:25:09
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/core-integration.bhtest.ts	2026-11-11 06:03:45
+@@ -78,17 +78,6 @@
+   return signals.filter((signal) => signal.kind === kind);
+ }
+ 
+-async function delayOrdersResponse(manager: SessionManager, sessionId: string): Promise<void> {
+-  const page = (manager as unknown as {
+-    sessions: Map<string, { page: { route(url: string, handler: (route: { continue(): Promise<void> }) => Promise<void>): Promise<void> } }>;
+-  }).sessions.get(sessionId)?.page;
+-  assert.ok(page);
+-  await page.route('**/api/orders', async (route) => {
+-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+-    await route.continue();
+-  });
+-}
+-
+ test('scripted real-Chrome discovery finds seeded bugs 1, 2, 4 and 5 and stays clean', { timeout: 60_000 }, async () => {
+   const { createServer } = await import('../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
+   const vite = await createServer({
+@@ -118,7 +107,6 @@
+     assert.ok(signalsOfType(orderClick.signals, 'response').some((signal) => signal.message.includes('500')));
+ 
+     const orders = await manager.open(run.id, '/orders', 'scripted');
+-    await delayOrdersResponse(manager, orders.sessionId);
+     const ordersState = await manager.probe(orders.sessionId, 'reload');
+     assert.ok(signalsOfType(ordersState.signals, 'anomaly').some((signal) => signal.message.includes('NaN')));
+ 
+@@ -306,6 +294,49 @@
+ 
+     const closed = await callValue(client, 'bh_close', { sessionId });
+     assert.deepEqual(closed, { ok: true });
++
++    const contested = await Promise.all([
++      client.callTool({ name: 'bh_open', arguments: { runId, route: '/orders', persona: 'race-a' } }),
++      client.callTool({ name: 'bh_open', arguments: { runId, route: '/orders/new', persona: 'race-b' } }),
++    ]);
++    const succeeded = contested.filter((response) => response.isError !== true);
++    const busyResponses = contested.filter((response) => response.isError === true);
++    assert.equal(succeeded.length, 1);
++    assert.equal(busyResponses.length, 1);
++    assert.ok(Array.isArray(busyResponses[0]?.content));
++    const busyContent = busyResponses[0]?.content[0] as { type: string; text: string };
++    assert.equal((JSON.parse(busyContent.text) as { code?: string }).code, 'EXPLORER_BUSY');
++    const contestedRun = JSON.parse(await readFile(join(stateDir, 'runs', runId as string, 'run.json'), 'utf8')) as {
++      routeStages: Record<string, string>;
++    };
++    assert.equal(Object.values(contestedRun.routeStages).filter((status) => status === 'exploring').length, 1);
++    assert.ok(Array.isArray(succeeded[0]?.content));
++    const successContent = succeeded[0]?.content[0] as { type: string; text: string };
++    const contestedSession = (JSON.parse(successContent.text) as { sessionId: string }).sessionId;
++    await callValue(client, 'bh_close', { sessionId: contestedSession });
++    const released = await callValue(client, 'bh_open', { runId, route: '/clean', persona: 'released' });
++    const failedCandidate = await callValue(client, 'bh_report_candidate', {
++      sessionId: released.sessionId, title: 'Close failure probe', expected: 'Clean page', actual: 'Clean page',
++      signalIds: [], check: { kind: 'visibleText', target: 'Clean page', expected: 'Clean page' },
++    });
++    const failedCandidatePath = join(
++      stateDir, 'runs', runId as string, 'candidates', `${failedCandidate.candidateId}.json`,
++    );
++    await rm(failedCandidatePath);
++    await mkdir(failedCandidatePath);
++    const failedClose = await client.callTool({ name: 'bh_close', arguments: { sessionId: released.sessionId } });
++    assert.equal(failedClose.isError, true);
++    assert.ok(Array.isArray(failedClose.content));
++    const failedCloseContent = failedClose.content[0] as { type: string; text: string };
++    assert.match((JSON.parse(failedCloseContent.text) as { message?: string }).message ?? '', /SESSION_CLOSE_FAILED/);
++    await rm(failedCandidatePath, { recursive: true });
++    const reopened = await callValue(client, 'bh_open', { runId, route: '/', persona: 'close-failure-released' });
++    await callValue(client, 'bh_close', { sessionId: reopened.sessionId });
++    for (const route of ['/clean', '/orders', '/orders/new']) {
++      const completed = await callValue(client, 'bh_open', { runId, route, persona: 'complete-route' });
++      await callValue(client, 'bh_close', { sessionId: completed.sessionId });
++    }
++
+     const finished = await callValue(client, 'bh_finish_run', { runId });
+     const reportPath = join(stateDir, 'runs', runId as string, 'report.md');
+     assert.deepEqual(finished, { report: reportPath });
+@@ -316,7 +347,7 @@
+     assert.equal(await readFile(reportPath, 'utf8'), report);
+     const finishedResume = await callValue(client, 'bh_resume_run', { runId });
+     assert.deepEqual(Object.keys(finishedResume).sort(), ['candidates', 'runId', 'stages']);
+-    assert.deepEqual(finishedResume.stages, { explore: 'running', reproduce: 'done', triage: 'done', export: 'done' });
++    assert.deepEqual(finishedResume.stages, { explore: 'done', reproduce: 'done', triage: 'done', export: 'done' });
+     assert.deepEqual(finishedResume.candidates, []);
+ 
+     const runnerMarker = join(projectRoot, 'verify-runner-invoked');
+@@ -337,6 +368,29 @@
+     assert.equal(incompleteValue.code, 'TOOL_FAILED');
+     assert.match(incompleteValue.message ?? '', /TEST_ASSOCIATION_INCOMPLETE/);
+     await assert.rejects(readFile(runnerMarker, 'utf8'), { code: 'ENOENT' });
++
++    const pendingMcpId = 'pending-mcp-candidate';
++    await writeFile(join(stateDir, 'runs', runId as string, 'candidates', `${pendingMcpId}.json`), JSON.stringify({
++      id: pendingMcpId, runId, sessionId: 'pending-mcp-session', route: '/profile',
++      title: 'Pending MCP candidate', expected: 'Expected', actual: 'Actual', signalIds: ['signal'],
++      signature: 'pending-mcp-signature', steps: [], artifacts: [], status: 'unprocessed',
++      createdAt: new Date().toISOString(), reproduction: { status: 'unreproduced', attempts: 0 },
++    }), 'utf8');
++    const guardCases = [
++      {
++        name: 'bh_triage',
++        arguments: { runId, candidateId: pendingMcpId, verdict: 'confirmed', reason: 'Skipped reproduction' },
++        code: 'CANDIDATE_UNREPRODUCED',
++      },
++      { name: 'bh_finish_run', arguments: { runId }, code: 'RUN_INCOMPLETE' },
++    ] as const;
++    for (const guardCase of guardCases) {
++      const response = await client.callTool({ name: guardCase.name, arguments: guardCase.arguments });
++      assert.equal(response.isError, true);
++      assert.ok(Array.isArray(response.content));
++      const content = response.content[0] as { type: string; text: string };
++      assert.equal((JSON.parse(content.text) as { code?: string }).code, guardCase.code);
++    }
+ 
+     const missing = await client.callTool({ name: 'bh_resume_run', arguments: { runId: 'missing-integration-run' } });
+     assert.equal(missing.isError, true);
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/portable.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/portable.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/portable.bhtest.ts	1970-01-01 03:00:00
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/portable.bhtest.ts	2026-11-11 06:07:26
+@@ -0,0 +1,320 @@
++import assert from 'node:assert/strict';
++import { spawn } from 'node:child_process';
++import type { ChildProcess } from 'node:child_process';
++import { execFile as execFileCallback } from 'node:child_process';
++import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
++import { createServer } from 'node:net';
++import { tmpdir } from 'node:os';
++import { join, relative, resolve, sep } from 'node:path';
++import { test } from 'node:test';
++import { promisify } from 'node:util';
++import { Client } from '@modelcontextprotocol/sdk/client/index.js';
++import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
++import type { Config, Run } from '../src/types.ts';
++
++const execFile = promisify(execFileCallback);
++const serverRoot = resolve(import.meta.dirname, '..');
++const workspaceRoot = resolve(serverRoot, '../../..');
++const fixtureRoot = join(serverRoot, 'fixtures');
++const sourceDemo = join(fixtureRoot, 'buggy-app');
++const coreToolNames = [
++  'bh_start_run',
++  'bh_resume_run',
++  'bh_open',
++  'bh_state',
++  'bh_act',
++  'bh_navigate',
++  'bh_probe',
++  'bh_report_candidate',
++  'bh_reproduce',
++  'bh_triage',
++  'bh_export_e2e',
++  'bh_detect_tests',
++  'bh_verify_red',
++  'bh_finish_run',
++  'bh_close',
++];
++
++function cleanEnvironment(): Record<string, string> {
++  return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] =>
++    entry[1] !== undefined && !entry[0].startsWith('BUGHUNTER_'),
++  ));
++}
++
++async function pathExists(path: string): Promise<boolean> {
++  try {
++    await stat(path);
++    return true;
++  } catch (error) {
++    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
++    throw error;
++  }
++}
++
++function inside(root: string, path: string): boolean {
++  const child = relative(root, path);
++  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`);
++}
++
++async function copyPortableProject(destination: string): Promise<void> {
++  await cp(sourceDemo, destination, {
++    recursive: true,
++    filter: (source) => !relative(sourceDemo, source).split(sep).includes('node_modules'),
++  });
++  const staging = await mkdtemp(join(tmpdir(), 'bh-portable-copy-'));
++  try {
++    await cp(join(workspaceRoot, '.kimi-code'), join(staging, '.kimi-code'), {
++      recursive: true,
++      filter(source) {
++        const path = relative(workspaceRoot, source).split(sep);
++        return !path.includes('node_modules')
++          && relative(workspaceRoot, source) !== '.kimi-code/bughunter/state/runs'
++          && relative(workspaceRoot, source) !== '.kimi-code/bughunter/state/auth';
++      },
++    });
++    await cp(join(staging, '.kimi-code'), join(destination, '.kimi-code'), { recursive: true });
++  } finally {
++    await rm(staging, { recursive: true, force: true });
++  }
++}
++
++async function run(command: string, args: string[], cwd: string): Promise<string> {
++  const { stdout, stderr } = await execFile(command, args, {
++    cwd,
++    env: cleanEnvironment(),
++    encoding: 'utf8',
++    maxBuffer: 10 * 1024 * 1024,
++  });
++  return `${stdout}${stderr}`;
++}
++
++async function availablePort(): Promise<number> {
++  const probe = createServer();
++  await new Promise<void>((resolveListen, reject) => {
++    probe.once('error', reject);
++    probe.listen(0, '127.0.0.1', resolveListen);
++  });
++  const address = probe.address();
++  assert.ok(address && typeof address === 'object');
++  const port = address.port;
++  await new Promise<void>((resolveClose, reject) => {
++    probe.close((error) => error ? reject(error) : resolveClose());
++  });
++  return port;
++}
++
++async function startDemo(projectRoot: string): Promise<{ child: ChildProcess; baseUrl: string; output: () => string }> {
++  const port = await availablePort();
++  const child = spawn(process.execPath, [
++    join(projectRoot, 'node_modules/vite/bin/vite.js'),
++    '--host', '127.0.0.1', '--port', String(port), '--strictPort',
++  ], {
++    cwd: projectRoot,
++    env: cleanEnvironment(),
++    detached: process.platform !== 'win32',
++    stdio: ['ignore', 'pipe', 'pipe'],
++  });
++  let output = '';
++  child.stdout.setEncoding('utf8');
++  child.stderr.setEncoding('utf8');
++  child.stdout.on('data', (chunk) => { output += chunk; });
++  child.stderr.on('data', (chunk) => { output += chunk; });
++  const baseUrl = `http://127.0.0.1:${port}`;
++  try {
++    const deadline = Date.now() + 20_000;
++    while (Date.now() < deadline) {
++      if (child.exitCode !== null) throw new Error(`Copied demo exited early: ${output}`);
++      try {
++        const response = await fetch(baseUrl);
++        if (response.ok) return { child, baseUrl, output: () => output };
++      } catch {
++        // Vite may still be starting.
++      }
++      await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
++    }
++    throw new Error(`Copied demo did not start: ${output}`);
++  } catch (error) {
++    await stopProcess(child);
++    throw error;
++  }
++}
++
++async function stopProcess(child: ChildProcess): Promise<void> {
++  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
++  const exited = new Promise<void>((resolveExit) => child.once('exit', resolveExit));
++  try {
++    if (process.platform === 'win32') child.kill('SIGTERM');
++    else process.kill(-child.pid, 'SIGTERM');
++  } catch {
++    child.kill('SIGTERM');
++  }
++  await exited;
++}
++
++function demoConfig(baseUrl: string): Config {
++  return {
++    baseUrl,
++    allowedOrigins: [baseUrl],
++    routes: ['/', '/profile', '/orders', '/orders/new', '/clean'],
++    routeMap: {},
++    baseBranch: 'main',
++    limits: { stepsPerSession: 60, candidatesPerRun: 20 },
++    safety: { forbiddenActionText: ['delete'], readOnly: false },
++    testDataPrefix: 'bh_',
++    detectors: {
++      ignoreConsole: [],
++      ignoreRequests: [],
++      anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
++      errorBoundarySelector: '[data-error-boundary]',
++    },
++    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
++  };
++}
++
++async function callValue(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
++  const response = await client.callTool({ name, arguments: args });
++  assert.notEqual(response.isError, true, `${name}: ${JSON.stringify(response.content)}`);
++  assert.ok(Array.isArray(response.content));
++  assert.equal(response.content.length, 1);
++  const content = response.content[0] as { type: string; text: string };
++  assert.equal(content.type, 'text');
++  const value = JSON.parse(content.text) as unknown;
++  assert.ok(value && typeof value === 'object' && !Array.isArray(value));
++  return value as Record<string, unknown>;
++}
++
++test('demo process stop waits for child exit', async () => {
++  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
++    detached: process.platform !== 'win32',
++    stdio: 'ignore',
++  });
++  await stopProcess(child);
++  assert.equal(child.signalCode, 'SIGTERM');
++});
++
++test('clean copied project is self-contained and isolates project tools', { timeout: 240_000 }, async () => {
++  const projectRoot = await mkdtemp(join(fixtureRoot, 'portable-'));
++  let demo: Awaited<ReturnType<typeof startDemo>> | undefined;
++  let client: Client | undefined;
++  let transport: StdioClientTransport | undefined;
++  try {
++    await copyPortableProject(projectRoot);
++    assert.equal(await pathExists(join(projectRoot, 'node_modules')), false);
++    assert.equal(await pathExists(join(projectRoot, '.kimi-code/bughunter/server/node_modules')), false);
++    assert.equal(await pathExists(join(projectRoot, '.kimi-code/bughunter/state/runs')), false);
++    assert.equal(await pathExists(join(projectRoot, '.kimi-code/bughunter/state/auth')), false);
++    await run('git', ['init', '--initial-branch=main'], projectRoot);
++    await run('npm', ['ci', '--no-audit', '--no-fund'], join(projectRoot, '.kimi-code/bughunter/server'));
++    await run('npm', ['ci', '--no-audit', '--no-fund'], projectRoot);
++
++    const packageJson = JSON.parse(await readFile(join(projectRoot, 'package.json'), 'utf8')) as {
++      scripts?: Record<string, string>;
++      dependencies?: Record<string, string>;
++      devDependencies?: Record<string, string>;
++    };
++    const tsconfig = JSON.parse(await readFile(join(projectRoot, 'tsconfig.json'), 'utf8')) as { include?: string[] };
++    assert.deepEqual(tsconfig.include, ['src', 'vite.config.ts']);
++    assert.equal(packageJson.dependencies?.jest, undefined);
++    assert.equal(packageJson.devDependencies?.jest, undefined);
++    assert.equal(packageJson.devDependencies?.eslint, undefined);
++    assert.equal(packageJson.scripts?.lint, undefined);
++    await writeFile(join(projectRoot, 'vitest.config.ts'), `import { configDefaults, defineConfig } from 'vitest/config';
++
++export default defineConfig({
++  test: { exclude: [...configDefaults.exclude, '**/.kimi-code/**'] },
++});
++`, 'utf8');
++    const typecheck = await run('npm', ['exec', '--', 'tsc', '--noEmit', '--listFiles'], projectRoot);
++    const compiledFiles = typecheck.split(/\r?\n/).map((file) => file.trim()).filter(Boolean);
++    assert.equal(compiledFiles.some((file) => inside(join(projectRoot, '.kimi-code'), file)), false, typecheck);
++    const unitTests = await run('npm', ['test', '--', '--run', '--reporter=verbose'], projectRoot);
++    assert.match(unitTests, /2 passed/);
++    assert.equal(unitTests.includes('.bhtest.ts'), false, unitTests);
++
++    demo = await startDemo(projectRoot);
++    const stateDir = join(projectRoot, '.kimi-code/bughunter/state');
++    await mkdir(stateDir, { recursive: true });
++    await writeFile(join(stateDir, 'config.json'), `${JSON.stringify(demoConfig(demo.baseUrl), null, 2)}\n`, 'utf8');
++    transport = new StdioClientTransport({
++      command: process.execPath,
++      args: [join(projectRoot, '.kimi-code/bughunter/server/src/index.ts')],
++      cwd: projectRoot,
++      env: cleanEnvironment(),
++      stderr: 'pipe',
++    });
++    let serverErrors = '';
++    transport.stderr?.on('data', (chunk: Buffer) => { serverErrors += chunk.toString(); });
++    client = new Client({ name: 'bughunter-portability', version: '1.0.0' });
++    await client.connect(transport);
++    const listed = await client.listTools();
++    assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [...coreToolNames].sort());
++
++    const detected = await callValue(client, 'bh_detect_tests', { path: join(projectRoot, 'src/profile.test.ts') });
++    assert.equal(detected.framework, 'vitest');
++    const verified = await callValue(client, 'bh_verify_red', { testFile: join(projectRoot, 'src/profile.test.ts') });
++    assert.equal(verified.status, 'green', JSON.stringify(verified));
++
++    const started = await callValue(client, 'bh_start_run', { scope: 'full' });
++    const runId = started.runId;
++    assert.equal(typeof runId, 'string');
++    const storedRun = JSON.parse(await readFile(join(stateDir, 'runs', runId as string, 'run.json'), 'utf8')) as Run;
++    assert.equal(storedRun.id, runId);
++    assert.equal(storedRun.scope, 'full');
++
++    const opened = await callValue(client, 'bh_open', { runId, route: '/profile', persona: 'portable' });
++    const sessionId = opened.sessionId;
++    assert.equal(typeof sessionId, 'string');
++    const state = await callValue(client, 'bh_state', { sessionId });
++    const elements = state.elements as Array<Record<string, unknown>>;
++    const name = elements.find((element) => element.name === 'Name');
++    const save = elements.find((element) => element.name === 'Save');
++    assert.ok(name && save);
++    await callValue(client, 'bh_act', { sessionId, elementId: name.id, action: 'fill', value: '' });
++    const saved = await callValue(client, 'bh_act', { sessionId, elementId: save.id, action: 'click' });
++    const signals = saved.signals as Array<{ id: string }>;
++    const navigated = await callValue(client, 'bh_navigate', { sessionId, path: '/profile' });
++    assert.equal(navigated.url, `${demo.baseUrl}/profile`);
++    await callValue(client, 'bh_probe', { sessionId, kind: 'reload' });
++    const reported = await callValue(client, 'bh_report_candidate', {
++      sessionId,
++      title: 'Portable profile failure',
++      expected: 'Profile saves without a page error',
++      actual: 'Saving an empty profile raises a page error',
++      signalIds: signals.map((signal) => signal.id),
++    });
++    const candidateId = reported.candidateId;
++    assert.equal(typeof candidateId, 'string');
++    const reproduced = await callValue(client, 'bh_reproduce', { runId, candidateId });
++    assert.equal(reproduced.reproduced, '3/3');
++    await callValue(client, 'bh_triage', {
++      runId, candidateId, verdict: 'confirmed', reason: 'Portable copy reproduced the page error',
++    });
++    const exported = await callValue(client, 'bh_export_e2e', { runId, bugId: candidateId });
++    assert.equal(exported.placedInProject, true);
++    assert.equal(typeof exported.file, 'string');
++    assert.equal(inside(projectRoot, exported.file as string), true, String(exported.file));
++    const verifiedE2e = await callValue(client, 'bh_verify_red', {
++      testFile: exported.file, runId, candidateId, kind: 'e2e',
++    });
++    assert.equal(verifiedE2e.status, 'red', JSON.stringify(verifiedE2e));
++    const resumed = await callValue(client, 'bh_resume_run', { runId });
++    assert.deepEqual(resumed.candidates, []);
++    assert.deepEqual(await callValue(client, 'bh_close', { sessionId }), { ok: true });
++    for (const route of ['/', '/orders', '/orders/new', '/clean']) {
++      const completed = await callValue(client, 'bh_open', { runId, route, persona: 'portable-route' });
++      await callValue(client, 'bh_close', { sessionId: completed.sessionId });
++    }
++    const finished = await callValue(client, 'bh_finish_run', { runId });
++    assert.equal(finished.report, join(stateDir, 'runs', runId as string, 'report.md'));
++    assert.equal(inside(stateDir, finished.report as string), true);
++    assert.match(await readFile(finished.report as string, 'utf8'), /Portable profile failure/);
++    assert.equal(serverErrors.includes(workspaceRoot), false, serverErrors);
++  } catch (error) {
++    throw new Error(`${error instanceof Error ? error.message : String(error)}${demo ? `\nDemo output: ${demo.output()}` : ''}`);
++  } finally {
++    const connections = await Promise.allSettled([client?.close(), transport?.close()]);
++    if (demo) await stopProcess(demo.child);
++    const removal = await Promise.allSettled([rm(projectRoot, { recursive: true, force: true })]);
++    assert.deepEqual([...connections, ...removal].filter((entry) => entry.status === 'rejected'), []);
++  }
++});
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/prompts.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/prompts.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/prompts.bhtest.ts	2026-11-11 02:33:53
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/prompts.bhtest.ts	2026-11-11 05:49:37
+@@ -93,7 +93,21 @@
+     '$ARGUMENTS', 'diff', 'full', 'route <path>', 'resume <runId>',
+     'bh_start_run', 'bh_resume_run', 'bh_reproduce', 'bh_finish_run',
+     'Agent', 'bh-explorer', 'bh-reviewer', 'bh-test-writer',
+-  ]) assert.ok(body.includes(required), `missing entry contract: ${required}`);
++    'ровно один вызов Agent', 'не объединяй', 'не делегируй воспроизведение',
++    'EXPLORER_BUSY', 'RUN_INCOMPLETE', 'pendingCandidates',
++  ]) assert.ok(body.toLowerCase().includes(required.toLowerCase()), `missing entry contract: ${required}`);
++  const allowedLine = body.split('\n').find((line) => line.includes('Главному агенту разрешены только'));
++  const forbiddenLine = body.split('\n').find((line) => line.includes('Запрещено напрямую вызывать'));
++  assert.ok(allowedLine && forbiddenLine, 'binding main-agent allowlist and forbidden list are required');
++  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_reproduce', 'bh_finish_run', 'Agent']) {
++    assert.ok(allowedLine.includes(tool), `main allowlist missing ${tool}`);
++  }
++  for (const tool of [
++    'bh_open', 'bh_state', 'bh_act', 'bh_navigate', 'bh_probe', 'bh_report_candidate', 'bh_close',
++    'bh_triage', 'bh_export_e2e', 'bh_detect_tests', 'bh_verify_red',
++  ]) assert.ok(forbiddenLine.includes(tool), `main forbidden list missing ${tool}`);
++  assert.match(body, /ровно один tool\/Agent вызов/i);
++  assert.match(body, /без batch/i);
+   assert.match(body, /последовательно/i);
+   assert.match(body, /не в фоне/i);
+   assert.match(body, /не открывай браузер/i);
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/report-resume.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/report-resume.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/report-resume.bhtest.ts	2026-11-11 02:26:05
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/report-resume.bhtest.ts	2026-11-11 06:00:30
+@@ -66,8 +66,8 @@
+   await writeJsonAtomic(join(stateDir, 'runs', value.runId, 'candidates', `${value.id}.json`), value);
+ }
+ 
+-function occurrences(value: string, needle: string): number {
+-  return value.split(needle).length - 1;
++async function completeConfiguredRoutes(runId: string, stateDir: string): Promise<void> {
++  for (const route of config().routes) await recordRouteExploration(runId, route, 'done', stateDir);
+ }
+ 
+ test('finish writes a deterministic escaped Markdown report with steps, artifacts, tests, and review reasons', async (t) => {
+@@ -97,11 +97,11 @@
+     status: 'duplicate', duplicateOf: 'known-one', reproduction: { status: 'reproduced', attempts: 1 },
+     review: { status: 'duplicate', reason: 'Same signature' },
+   });
+-  const pending = candidate(runId, 'candidate-unprocessed');
+   const unreproduced = candidate(runId, 'candidate-unreproduced', {
+     reproduction: { status: 'unreproduced', attempts: 2 },
+   });
+-  for (const value of [confirmed, rejected, duplicate, pending, unreproduced]) await writeCandidate(stateDir, value);
++  for (const value of [confirmed, rejected, duplicate, unreproduced]) await writeCandidate(stateDir, value);
++  await completeConfiguredRoutes(runId, stateDir);
+ 
+   const first = await finishRun(runId, stateDir);
+   assert.deepEqual(first, { report: join(runRoot, 'report.md') });
+@@ -125,10 +125,8 @@
+   assert.match(report, /Same signature/);
+   assert.match(report, /## Unreproduced\n/);
+   assert.match(report, /candidate-unreproduced/);
+-  assert.match(report, /## Pending\n/);
+-  assert.match(report, /candidate-unprocessed/);
++  assert.match(report, /## Pending\n\nNone\./);
+   assert.ok(!report.includes('\n# forged heading'));
+-  assert.equal(occurrences(report, '### Title candidate-unprocessed'), 1);
+ });
+ 
+ test('resume returns persisted route and stage state and only candidates with remaining work', async (t) => {
+@@ -167,11 +165,11 @@
+     'pending-review', 'pending-tests', 'pending-reproduction',
+   ]);
+ 
+-  await finishRun(runId, stateDir);
+-  const finished = await resumeRun(runId, stateDir);
+-  assert.equal(finished.run.id, runId);
+-  assert.equal(finished.run.status, 'finished');
+-  assert.deepEqual(finished.pendingCandidates.map((value) => value.id), resumed.pendingCandidates.map((value) => value.id));
++  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
++  const unfinished = await resumeRun(runId, stateDir);
++  assert.equal(unfinished.run.id, runId);
++  assert.equal(unfinished.run.status, 'reviewing');
++  assert.deepEqual(unfinished.pendingCandidates.map((value) => value.id), resumed.pendingCandidates.map((value) => value.id));
+   assert.deepEqual(await readdir(join(stateDir, 'runs')), [runId]);
+ });
+ 
+@@ -208,11 +206,85 @@
+   assert.equal((await readCandidate(runId, reviewed.id, stateDir)).tests?.unit, 'unit/reviewed.test.ts');
+ });
+ 
++test('finish rejects pending candidates without writing a report or marking finished', async (t) => {
++  const { stateDir, runId, runRoot } = await fixture(t);
++  const pending = candidate(runId, 'pending-finish');
++  await writeCandidate(stateDir, pending);
++
++  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
++  assert.equal((await readRun(runId, stateDir)).status, 'created');
++  await assert.rejects(readFile(join(runRoot, 'report.md'), 'utf8'), { code: 'ENOENT' });
++
++  await writeCandidate(stateDir, candidate(runId, pending.id, {
++    status: 'rejected', reproduction: { status: 'reproduced', attempts: 1 },
++    review: { status: 'rejected', reason: 'Processed after resume' },
++  }));
++  await completeConfiguredRoutes(runId, stateDir);
++  await finishRun(runId, stateDir);
++  assert.equal((await readRun(runId, stateDir)).status, 'finished');
++});
++
++test('finish rejects an exploring route even with zero candidates', async (t) => {
++  const { stateDir, runId, runRoot } = await fixture(t);
++  await updateRun(runId, {
++    status: 'exploring',
++    stages: { explore: 'running', reproduce: 'pending', triage: 'pending', export: 'pending' },
++    routeStages: { '/': 'exploring', '/orders': 'pending' },
++  }, stateDir);
++
++  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
++  const unfinished = await readRun(runId, stateDir);
++  assert.equal(unfinished.status, 'exploring');
++  assert.deepEqual(unfinished.routeStages, { '/': 'exploring', '/orders': 'pending' });
++  await assert.rejects(readFile(join(runRoot, 'report.md'), 'utf8'), { code: 'ENOENT' });
++});
++
++test('finish requires actual resumed route completion after terminal candidate work', async (t) => {
++  const { stateDir, runId, runRoot } = await fixture(t);
++  await updateRun(runId, {
++    status: 'writing_tests',
++    stages: { explore: 'running', reproduce: 'done', triage: 'done', export: 'running' },
++    routeStages: { '/': 'exploring', '/orders': 'exploring' },
++  }, stateDir);
++  const confirmed = candidate(runId, 'interrupted-confirmed', {
++    status: 'confirmed', reproduction: { status: 'reproduced', attempts: 3 },
++    review: { status: 'confirmed', reason: 'Reproduced before interruption' },
++  });
++  await writeCandidate(stateDir, confirmed);
++
++  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
++  assert.equal((await readRun(runId, stateDir)).stages.explore, 'running');
++  await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir);
++  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
++  await recordRouteExploration(runId, '/', 'done', stateDir);
++  await recordRouteExploration(runId, '/orders', 'done', stateDir);
++  await finishRun(runId, stateDir);
++
++  const finished = await readRun(runId, stateDir);
++  assert.equal(finished.status, 'finished');
++  assert.equal(finished.stages.explore, 'done');
++  assert.deepEqual(finished.routeStages, { '/': 'done', '/orders': 'done' });
++  assert.deepEqual((await resumeRun(runId, stateDir)).pendingCandidates, []);
++});
++
++test('triage rejects unreproduced candidates without changing status or memory', async (t) => {
++  const { stateDir, runId, runRoot } = await fixture(t);
++  const pending = candidate(runId, 'pending-triage');
++  await writeCandidate(stateDir, pending);
++
++  await assert.rejects(triageCandidate({
++    runId, candidateId: pending.id, verdict: 'confirmed', reason: 'Skipped reproduction', stateDir,
++  }), /CANDIDATE_UNREPRODUCED/);
++  assert.equal((await readCandidate(runId, pending.id, stateDir)).status, 'unprocessed');
++  await assert.rejects(readFile(join(runRoot, '../known-bugs.json'), 'utf8'), { code: 'ENOENT' });
++});
++
+ test('a report write failure leaves the run unfinished and removes temporary files', async (t) => {
+   const { stateDir, runId, runRoot } = await fixture(t);
++  await completeConfiguredRoutes(runId, stateDir);
+   await mkdir(join(runRoot, 'report.md'), { recursive: true });
+   await assert.rejects(finishRun(runId, stateDir));
+-  assert.equal((await readRun(runId, stateDir)).status, 'created');
++  assert.equal((await readRun(runId, stateDir)).status, 'exploring');
+   assert.deepEqual((await readdir(runRoot)).filter((file) => file.endsWith('.tmp')), []);
+ });
+ 
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/reproduce.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/reproduce.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/reproduce.bhtest.ts	2026-11-10 23:15:09
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/reproduce.bhtest.ts	2026-11-11 04:34:16
+@@ -70,17 +70,6 @@
+   return result;
+ }
+ 
+-async function delayOrdersResponse(manager: SessionManager, sessionId: string): Promise<void> {
+-  const page = (manager as unknown as {
+-    sessions: Map<string, { page: { route(url: string, handler: (route: { continue(): Promise<void> }) => Promise<void>): Promise<void> } }>;
+-  }).sessions.get(sessionId)?.page;
+-  assert.ok(page);
+-  await page.route('**/api/orders', async (route) => {
+-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+-    await route.continue();
+-  });
+-}
+-
+ async function candidateFixture(
+   route: string,
+   explore: (manager: SessionManager, sessionId: string) => Promise<CandidateInput>,
+@@ -166,7 +155,6 @@
+   await t.test('4: empty orders render NaN', async () => {
+     await candidateFixture('/orders', async (manager, sessionId) => {
+       await manager.state(sessionId);
+-      await delayOrdersResponse(manager, sessionId);
+       await manager.probe(sessionId, 'mobile_viewport');
+       const reloaded = await manager.probe(sessionId, 'reload');
+       return signalCandidate({
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/signals.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/signals.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/signals.bhtest.ts	2026-11-10 15:52:43
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/signals.bhtest.ts	2026-11-11 04:27:13
+@@ -16,6 +16,16 @@
+       response.writeHead(404).end('missing');
+       return;
+     }
++    if (request.url === '/clean') {
++      response.writeHead(200, { 'Content-Type': 'text/html' }).end('<main>Total 0</main>');
++      return;
++    }
++    if (request.url === '/transient') {
++      response.writeHead(200, { 'Content-Type': 'text/html' }).end(`<main>Total <span id="total">NaN</span></main><script>
++        setTimeout(() => { document.getElementById('total').textContent = '0'; }, 0);
++      </script>`);
++      return;
++    }
+     response.writeHead(200, { 'Content-Type': 'text/html' }).end('<main>Total NaN today</main>');
+   });
+   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+@@ -141,6 +151,39 @@
+     assert.deepEqual(await scanSignals(page, config), []);
+   } finally {
+     await page.close();
++  }
++});
++
++test('transient anomalies are captured between scans and during initial page load', async () => {
++  const config = configTemplate();
++  const page = await browser.newPage();
++  try {
++    await page.goto(`${origin}/clean`);
++    await scanSignals(page, config);
++    await page.evaluate(async () => {
++      const total = document.querySelector('main')!;
++      total.textContent = 'Total NaN';
++      await new Promise((resolve) => setTimeout(resolve, 0));
++      total.textContent = 'Total 0';
++      await new Promise((resolve) => setTimeout(resolve, 0));
++    });
++    const betweenScans = await scanSignals(page, config);
++    assert.equal(betweenScans.filter((signal) => signal.kind === 'anomaly' && signal.message === 'NaN').length, 1);
++    assert.deepEqual(await scanSignals(page, config), []);
++  } finally {
++    await page.close();
++  }
++
++  const initialPage = await browser.newPage();
++  try {
++    await scanSignals(initialPage, config);
++    await initialPage.goto(`${origin}/transient`, { waitUntil: 'domcontentloaded' });
++    await initialPage.waitForFunction(() => document.body.innerText.includes('Total 0'));
++    const initialLoad = await scanSignals(initialPage, config);
++    assert.equal(initialLoad.filter((signal) => signal.kind === 'anomaly' && signal.message === 'NaN').length, 1);
++    assert.deepEqual(await scanSignals(initialPage, config), []);
++  } finally {
++    await initialPage.close();
+   }
+ });
+ 
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/verify-red.bhtest.ts /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/verify-red.bhtest.ts
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/bughunter/server/test/verify-red.bhtest.ts	2026-11-11 00:36:03
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/bughunter/server/test/verify-red.bhtest.ts	2026-11-11 03:04:43
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict';
+-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
++import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+ import { tmpdir } from 'node:os';
+ import { join, resolve } from 'node:path';
+ import { after, test } from 'node:test';
+@@ -8,6 +8,7 @@
+ const fixtures = {
+   jest: resolve(import.meta.dirname, '../fixtures/jest-project'),
+   vitest: resolve(import.meta.dirname, '../fixtures/vitest-project'),
++  demo: resolve(import.meta.dirname, '../fixtures/buggy-app'),
+ };
+ const temporaryDirectories: string[] = [];
+ const cases = [
+@@ -40,6 +41,28 @@
+     }
+   });
+ }
++
++test('playwright e2e verdicts use the project-local JSON reporter', async (t) => {
++  const e2eRoot = join(fixtures.demo, 'e2e/bughunter');
++  await mkdir(e2eRoot, { recursive: true });
++  const directory = await mkdtemp(join(e2eRoot, 'verdict-'));
++  temporaryDirectories.push(directory);
++  const playwrightCases = [
++    { name: 'red', status: 'red', body: 'expect(1).toBe(2);', diagnostic: /expected|received|toBe/i },
++    { name: 'green', status: 'green', body: 'expect(1).toBe(1);', diagnostic: /green assertion|passed/i },
++    { name: 'broken', status: 'broken', body: 'throw new Error("setup exploded");', diagnostic: /setup exploded/i },
++  ] as const;
++  for (const fixture of playwrightCases) {
++    const file = join(directory, `${fixture.name}.spec.ts`);
++    await writeFile(file, `import { expect, test } from '@playwright/test';\n\ntest('${fixture.name} assertion', () => { ${fixture.body} });\n`, 'utf8');
++    await t.test(`${fixture.name} is ${fixture.status}`, async () => {
++      const result = await verifyRed(file, { kind: 'e2e' });
++      assert.equal(result.status, fixture.status, result.message);
++      assert.match(result.message, fixture.diagnostic);
++      assert.ok(result.message.length <= 1500, `message length: ${result.message.length}`);
++    });
++  }
++});
+ 
+ test('explicit unit command takes precedence over the framework default', async () => {
+   const command = `${JSON.stringify(join(fixtures.jest, 'node_modules/.bin/jest'))}`;
+diff -ruN --exclude=.superpowers --exclude=node_modules --exclude=.git --exclude=.env --exclude=.env.* --exclude=runs --exclude=auth /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/skills/bughunter/SKILL.md /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter/SKILL.md
+--- /Users/nemiok/Desktop/projects/vault/.superpowers/sdd/task-15-before/.kimi-code/skills/bughunter/SKILL.md	2026-11-11 02:33:32
++++ /Users/nemiok/Desktop/projects/vault/bughunter/.kimi-code/skills/bughunter/SKILL.md	2026-11-11 05:51:17
+@@ -8,8 +8,10 @@
+ 
+ Для нового прогона вызови `bh_start_run` с выбранным scope и, для route, путём. Для возобновления вызови `bh_resume_run` с runId; продолжи только незавершённые этапы и учитывай возвращённых необработанных кандидатов, не повторяя завершённую работу. Если по состоянию этапов нужно продолжить исследование, прочти маршруты и routeStages из `run.json` этого прогона.
+ 
+-Для каждого незавершённого маршрута последовательно запусти персоны «новичок», «нетерпеливый» и «граничный ввод». Делегируй каждую пару маршрут–персона через `Agent` субагенту `bh-explorer`, передав runId, маршрут и персону. Выполняй вызовы только в foreground, не в фоне, по одному; дождись результата и собери candidateId.
++Главному агенту разрешены только `bh_start_run`, `bh_resume_run`, `bh_reproduce`, `bh_finish_run`, `Read` для `run.json` при resume и `Agent`. Запрещено напрямую вызывать `bh_open`, `bh_state`, `bh_act`, `bh_navigate`, `bh_probe`, `bh_report_candidate`, `bh_close`, `bh_triage`, `bh_export_e2e`, `bh_detect_tests`, `bh_verify_red`: они принадлежат соответствующим субагентам. В каждом сообщении модели ровно один tool/Agent вызов, без batch или параллельных вызовов; дождись результата перед следующим сообщением.
+ 
+-Для каждого кандидата, который ещё не воспроизведён, вызови `bh_reproduce`. Невоспроизведённые кандидаты исключаются из дальнейшей обработки: не передавай их reviewer или test-writer. Каждого воспроизведённого кандидата без вердикта передай через отдельный foreground `Agent` субагенту `bh-reviewer`, дождись вердикта и причины. Передавай через foreground `Agent` субагенту `bh-test-writer` только подтверждённые баги, по одному; отклонённые, дубли и невоспроизведённые не передавай.
++Для каждого незавершённого маршрута последовательно запусти персоны «новичок», «нетерпеливый» и «граничный ввод». Делегируй каждую пару маршрут–персона через `Agent` субагенту `bh-explorer`, передав runId, маршрут и персону. В каждом сообщении модели делай ровно один вызов Agent и никаких других вызовов одновременно с ним. Выполняй только foreground, не в фоне; дождись результата и собери candidateId. Не объединяй исследователей в batch и не запускай следующего, пока предыдущий не завершён.
+ 
+-Вызови `bh_finish_run` с runId. Верни краткую сводку: сколько кандидатов найдено, сколько багов подтверждено, какие файлы тестов созданы и путь к отчёту. Укажи ошибки обработки, не выдавая неподтверждённых кандидатов за баги.
++Для каждого кандидата, который ещё не воспроизведён, сам вызови `bh_reproduce`; не делегируй воспроизведение агентам. Невоспроизведённые кандидаты исключаются из дальнейшей обработки: не передавай их reviewer или test-writer. Каждого воспроизведённого кандидата без вердикта передай через отдельный foreground `Agent` субагенту `bh-reviewer`, дождись вердикта и причины. Не объединяй reviewers в batch: один вызов Agent на сообщение и один кандидат на вызов. Передавай через foreground `Agent` субагенту `bh-test-writer` только подтверждённые баги, по одному с тем же правилом; отклонённые, дубли и невоспроизведённые не передавай.
++
++При `EXPLORER_BUSY` или `RUN_INCOMPLETE` не завершай работу: вызови `bh_resume_run`, затем последовательно обработай оставшиеся маршруты и `pendingCandidates`, не повторяя завершённые этапы, и только после этого повтори finish. Вызови `bh_finish_run` с runId лишь когда необработанных кандидатов нет. Верни краткую сводку: сколько кандидатов найдено, сколько багов подтверждено, какие файлы тестов созданы и путь к отчёту. Укажи ошибки обработки, не выдавая неподтверждённых кандидатов за баги.
