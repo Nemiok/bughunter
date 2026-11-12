@@ -1,4 +1,5 @@
 import { delay, http, HttpResponse } from 'msw';
+import { duplicateOnSecondPage } from './bugs.ts';
 import { dataset, SEED_VERSION, type Dataset } from './seed.ts';
 import { RESET_ENDPOINT, type ScenarioName } from './scenarios.ts';
 
@@ -34,13 +35,24 @@ export function buildHandlers(scenario: ScenarioName) {
       return json(dashboard);
     }),
 
-    http.get('/api/dashboards/:id/widgets/:widget', async ({ params }) => {
+    http.get('/api/dashboards/:id/widgets/:widget', async ({ params, request }) => {
       await wait();
       if (scenario === 'error500' && params.widget === 'table') {
         return HttpResponse.json(
           { error: 'Widget backend failed' },
           { status: 500, headers: { 'x-bh-seed': SEED_VERSION } },
         );
+      }
+      const url = new URL(request.url);
+      if (params.widget === 'table') {
+        const rows = data.widgets.table.rows;
+        if (url.searchParams.get('page') === '2') {
+          // D5: вторая страница отдаёт строку id 7 повторно.
+          return json({ rows: duplicateOnSecondPage(rows), total: data.widgets.table.total, page: 2 });
+        }
+        const region = url.searchParams.get('region');
+        const filtered = region === null ? rows : rows.filter((row) => row.region === region);
+        return json({ rows: filtered, total: data.widgets.table.total, page: 1 });
       }
       const widget = data.widgets[params.widget as keyof Dataset['widgets']];
       if (widget === undefined) return new HttpResponse(null, { status: 404 });

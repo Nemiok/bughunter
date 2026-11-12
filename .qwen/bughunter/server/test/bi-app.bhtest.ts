@@ -356,3 +356,139 @@ test('wizard moves a field onto the shelf by drag and drop', async () => {
     assert.match(await page.getByTestId('wizard-step').innerText(), /Шаг 2/);
   });
 });
+
+const ANOMALY_TEXTS = ['undefined', 'NaN', '[object Object]', 'Invalid Date'];
+
+test('every seeded data bug is observable through the widget projection', async () => {
+  await withPage(async (page) => {
+    await openDashboard(page);
+
+    // D1 — итог не равен сумме строк.
+    const table = await profileExtract(page, 'table') as { rows: Array<{ id: number; region: string; value: number }>; total: number };
+    const sum = table.rows.reduce((total, row) => total + row.value, 0);
+    assert.ok(Math.abs(table.total - sum) > 0.01, `D1: total ${table.total} при сумме строк ${sum}`);
+
+    // D2 — округление не в ту сторону: 1234.565 → 1234.56 вместо 1234.57.
+    assert.match(await page.getByTestId('kpi-avg').innerText(), /1\s?234,56/);
+
+    // D3 — сдвиг часового пояса: 2026-03-01T00:00:00Z показано как 28.02.2026.
+    assert.match(await page.getByTestId('dashboard-updated').innerText(), /28\.02\.2026/);
+
+    // D6 — доля считается от неверной базы: 37% вместо 52%.
+    assert.match(await page.getByTestId('kpi-share').innerText(), /37%/);
+
+    // D5 — вторая страница таблицы повторяет строку id 7.
+    await page.getByTestId('table-more').click();
+    await page.waitForFunction(() => {
+      const rows = ((window as unknown as { __BHProfile: { extract(w: string): { rows: Array<{ id: number }> } } })
+        .__BHProfile.extract('table')).rows;
+      return rows.filter((row) => row.id === 7).length === 2;
+    }, undefined, { timeout: 15_000 });
+
+    // D4 — фильтр применён к таблице и не применён к линейному графику.
+    await page.getByTestId('filter-region').selectOption('ural');
+    await page.waitForFunction(() => {
+      const rows = ((window as unknown as { __BHProfile: { extract(w: string): { rows: Array<{ region: string }> } } })
+        .__BHProfile.extract('table')).rows;
+      return rows.length > 0 && rows.every((row) => row.region === 'ural');
+    }, undefined, { timeout: 15_000 });
+    const line = await profileExtract(page, 'line') as { points: unknown[] };
+    assert.equal(line.points.length, dataset('normal').widgets.line.points.length, 'D4: линейный график не отреагировал на фильтр');
+  });
+});
+
+test('unhandled exception on settings is visible as a pageerror signal', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await openFixture(page, '/settings');
+    const [error] = await Promise.all([
+      page.waitForEvent('pageerror', { timeout: 15_000 }),
+      page.getByTestId('export-csv').click(),
+    ]);
+    assert.match(error.message, /Cannot read properties of null/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('race on fast filter change is visible as a console error', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  try {
+    await openFixture(page, '/dashboard/1');
+    await setScenarioFlag(page, 'latency');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('dashboard-ready').waitFor({ state: 'visible', timeout: 30_000 });
+
+    const filter = page.getByTestId('filter-region');
+    await filter.selectOption('ural');
+    await filter.selectOption('siberia');
+    await page.waitForTimeout(3_000);
+
+    assert.ok(consoleErrors.some((text) => text.includes('RACE')), JSON.stringify(consoleErrors));
+    assert.deepEqual(consoleErrors.filter((text) => text.includes('RACE')).length > 0, true);
+  } finally {
+    await context.close();
+  }
+});
+
+test('double submit of the wizard creates two requests and leaves no signal at all', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedResponses: string[] = [];
+  const saves: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.url()} ${response.status()}`);
+  });
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/wizard/save')) saves.push(request.url());
+  });
+  try {
+    await openFixture(page, '/wizard');
+    await page.getByTestId('wizard-next').click();
+    await page.getByTestId('wizard-next').click();
+    await page.getByTestId('wizard-save').dblclick();
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="wizard-summary"]')?.textContent?.includes('2') ?? false,
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    assert.equal(saves.length, 2, 'двойная отправка обязана создать два запроса');
+    assert.match(await page.getByTestId('wizard-summary').innerText(), /Сохранённых отчётов: 2/);
+    // N3 — это и есть граница существующих детекторов: нарушение кратности не оставляет сигнала.
+    assert.deepEqual(pageErrors, []);
+    assert.deepEqual(consoleErrors, []);
+    assert.deepEqual(failedResponses, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('legal transformations render correctly and produce no anomaly text', async () => {
+  await withPage(async (page) => {
+    await openFixture(page, '/clean');
+    assert.match(await page.getByTestId('clean-abbrev').innerText(), /1[.,]2K/);
+    assert.match(await page.getByTestId('clean-number').innerText(), /234,57/);
+    assert.match(await page.getByTestId('clean-date').innerText(), /01\.03\.2026/);
+    assert.match(await page.getByTestId('clean-total').innerText(), /2\s?400,00/);
+
+    await openDashboard(page);
+    for (const text of [await page.locator('body').innerText()]) {
+      for (const anomaly of ANOMALY_TEXTS) {
+        assert.ok(!text.includes(anomaly), `на экране найдена аномалия ${anomaly}`);
+      }
+    }
+  });
+});

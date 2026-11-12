@@ -5,7 +5,11 @@ export function SettingsScreen() {
   const [message, setMessage] = useState('');
 
   function exportCsv(): void {
-    setMessage('Экспорт запущен');
+    // N1 (засеянный баг): источник данных экспорта не проверен, клик даёт
+    // необработанное исключение страницы вместо внятного сообщения.
+    const source: { rows: string[] } | null =
+      (window as { __bhExportSource?: { rows: string[] } }).__bhExportSource ?? null;
+    setMessage(`Строк в экспорте: ${(source as { rows: string[] }).rows.length}`);
   }
 
   return (

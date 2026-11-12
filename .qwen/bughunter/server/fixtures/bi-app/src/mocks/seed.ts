@@ -1,3 +1,4 @@
+import { TOTAL_OFFSET } from './bugs.ts';
 import type { ScenarioName } from './scenarios.ts';
 
 export const SEED_VERSION = '2026-11-12.1';
@@ -49,7 +50,9 @@ export function dataset(scenario: ScenarioName): Dataset {
       id: index + 1,
       title: `Дашборд ${index + 1}`,
       owner: OWNERS[index % OWNERS.length]!,
-      updatedAt: `2026-0${(index % 9) + 1}-1${index % 9}T10:00:00Z`,
+      // D3: у первого дашборда дата намеренно на границе суток в UTC —
+      // форматирование в неверной зоне сдвигает её на день назад.
+      updatedAt: index === 0 ? '2026-03-01T00:00:00Z' : `2026-0${(index % 9) + 1}-1${index % 9}T10:00:00Z`,
     }));
   const reports: ReportMeta[] = empty
     ? []
@@ -65,7 +68,11 @@ export function dataset(scenario: ScenarioName): Dataset {
     region: REGIONS[index % REGIONS.length]!,
     value: Math.round(random() * 100000) / 100,
   }));
-  const total = Math.round(rows.reduce((sum, row) => sum + row.value, 0) * 100) / 100;
+  const total = rows.length === 0
+    ? 0
+    // D1: итог расходится с суммой строк на фиксированную величину — баг живёт в данных,
+    // а не в рендере, поэтому его видно и в ответе API, и в проекции виджета.
+    : Math.round((rows.reduce((sum, row) => sum + row.value, 0) + TOTAL_OFFSET) * 100) / 100;
 
   const months = MONTHS.map((month) => ({ month, value: Math.round(random() * 90000) / 100 }));
   return {
