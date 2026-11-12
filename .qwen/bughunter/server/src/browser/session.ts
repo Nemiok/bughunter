@@ -18,8 +18,11 @@ import type {
   Step,
   StepAction,
 } from '../types.ts';
-import { collectElements, toPlaywrightLocator } from './elements.ts';
+import { defaultElementsPerSnapshot } from '../config.ts';
+import { collectElements, paginateElements, rankElements, toPlaywrightLocator } from './elements.ts';
+import type { Viewport } from './elements.ts';
 import { attachNetworkCapture, type NetworkCapture } from './network.ts';
+import { describeScreen, type ScreenStructure } from './screen.ts';
 import { coordinateActions, isValidScroll, resolvePointTarget, scrollDeltas, type Point, type PointTarget } from './point.ts';
 
 export type StateResult = {
@@ -28,6 +31,20 @@ export type StateResult = {
   elements: ElementSnapshot[];
   signals: Signal[];
   stepsLeft: number;
+  /** Сколько элементов на странице всего: показывает, что список отдан не целиком. */
+  totalVisible: number;
+  truncated: boolean;
+  nextCursor?: number;
+  screen?: ScreenStructure;
+};
+
+export type StateOptions = {
+  cursor?: number;
+  limit?: number;
+  /** Собрать структуру экрана по экстракторам профиля. */
+  screen?: boolean;
+  /** Полный список без лимита: нужен повтору, который ищет элемент по локатору. */
+  full?: boolean;
 };
 
 export type ActInput = {
@@ -45,6 +62,8 @@ export type ActInput = {
 
 /** Действия, которым цель не нужна: скролл страницы работает по viewport. */
 const elementlessActions: StepAction[] = ['scroll'];
+
+const defaultViewport: Viewport = { width: 1280, height: 720 };
 
 export type ActResult = {
   ok: boolean;
@@ -170,6 +189,11 @@ export class SessionManager {
     this.profile = profile;
   }
 
+  /** Лимит элементов снимка; публичен, потому что страницы снимка нарезает слой MCP. */
+  get snapshotLimit(): number {
+    return this.config.limits.elementsPerSnapshot ?? defaultElementsPerSnapshot;
+  }
+
   private launchOptions(): LaunchOptions {
     return resolveLaunchOptions(this.config, this.profile);
   }
@@ -241,8 +265,9 @@ export class SessionManager {
     }
   }
 
-  async state(sessionId: string): Promise<StateResult> {
-    return this.readState(this.session(sessionId));
+  async state(sessionId: string, options: StateOptions = {}): Promise<StateResult> {
+    const session = this.session(sessionId);
+    return this.presentState(session, await this.readState(session), options);
   }
 
   async act(sessionId: string, input: ActInput): Promise<ActResult> {
@@ -374,7 +399,7 @@ export class SessionManager {
     return { ok: true, element, locator, point, target, filePath };
   }
 
-  async navigate(sessionId: string, path: string): Promise<StateResult> {
+  async navigate(sessionId: string, path: string, options: StateOptions = {}): Promise<StateResult> {
     const session = this.session(sessionId);
     this.assertStepsRemain(session);
     const target = this.navigationUrl(path);
@@ -389,10 +414,10 @@ export class SessionManager {
       signalIds: result.signals.map((signal) => signal.id),
     });
     result.stepsLeft = this.stepsLeft(session);
-    return result;
+    return this.presentState(session, result, options);
   }
 
-  async probe(sessionId: string, kind: ProbeKind): Promise<StateResult> {
+  async probe(sessionId: string, kind: ProbeKind, options: StateOptions = {}): Promise<StateResult> {
     const session = this.session(sessionId);
     this.assertStepsRemain(session);
     switch (kind) {
@@ -416,7 +441,7 @@ export class SessionManager {
       signalIds: result.signals.map((signal) => signal.id),
     });
     result.stepsLeft = this.stepsLeft(session);
-    return result;
+    return this.presentState(session, result, options);
   }
 
   async reportCandidate(sessionId: string, input: CandidateInput): Promise<{ candidateId: string; duplicateOf?: string }> {
@@ -734,7 +759,10 @@ export class SessionManager {
 
   private async readState(session: Session): Promise<StateResult> {
     await this.settle(session.page);
-    const elements = await collectElements(session.page);
+    const collected = await collectElements(session.page);
+    const elements = rankElements(collected, session.page.viewportSize() ?? defaultViewport);
+    // Карта содержит весь снимок, а не только отданную страницу: действие по id
+    // должно проходить и для элемента, который модель увидит на следующем курсоре.
     session.elements = new Map(elements.map((element) => [element.id, element]));
     const signals = await this.collectSignals(session);
     return {
@@ -743,6 +771,27 @@ export class SessionManager {
       elements,
       signals,
       stepsLeft: this.stepsLeft(session),
+      totalVisible: elements.length,
+      truncated: false,
+    };
+  }
+
+  /**
+   * Снимок для модели: ранжированный список усекается лимитом и отдаётся страницами,
+   * иначе экран на сотни элементов съедает весь контекст ещё до начала исследования.
+   */
+  private async presentState(session: Session, result: StateResult, options: StateOptions): Promise<StateResult> {
+    const listed = options.full === true
+      ? { elements: result.elements, totalVisible: result.elements.length, truncated: false, nextCursor: undefined }
+      : paginateElements(result.elements, options.limit ?? this.snapshotLimit, options.cursor);
+    const screen = options.screen === true ? await describeScreen(session.page, this.profile) : undefined;
+    return {
+      ...result,
+      elements: listed.elements,
+      totalVisible: listed.totalVisible,
+      truncated: listed.truncated,
+      ...(listed.nextCursor === undefined ? {} : { nextCursor: listed.nextCursor }),
+      ...(screen === undefined ? {} : { screen }),
     };
   }
 

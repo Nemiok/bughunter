@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { after, test } from 'node:test';
-import { ensureConfig, loadConfig } from '../src/config.ts';
+import { defaultElementsPerSnapshot, ensureConfig, loadConfig } from '../src/config.ts';
 import { findProjectRoot } from '../src/project.ts';
 import { createRun, readRun, updateRun, writeJsonAtomic } from '../src/run-store.ts';
 import type { Config } from '../src/types.ts';
@@ -31,7 +31,7 @@ function configTemplate(): Config {
     routes: ['/', '/orders', '/orders/new', '/profile'],
     routeMap: { 'src/pages/orders/**': ['/orders', '/orders/new'] },
     baseBranch: 'main',
-    limits: { stepsPerSession: 60, candidatesPerRun: 20 },
+    limits: { stepsPerSession: 60, candidatesPerRun: 20, elementsPerSnapshot: defaultElementsPerSnapshot },
     safety: { forbiddenActionText: ['удалить', 'delete', 'оплатить'], readOnly: false },
     testDataPrefix: 'bh_',
     detectors: {

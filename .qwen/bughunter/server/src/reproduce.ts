@@ -218,7 +218,8 @@ async function executeReplay(
     for (const step of steps) {
       if (step.kind === 'act') {
         if (!step.action) throw new Error('REPLAY_ELEMENT_NOT_FOUND');
-        const state = await manager.state(sessionId);
+        // Полный снимок без лимита: шаг журнала может ссылаться на элемент за пределами первой страницы.
+        const state = await manager.state(sessionId, { full: true });
         collect(state.signals);
         const acted = await manager.act(sessionId, replayActInput(step, state));
         collect(acted.signals);

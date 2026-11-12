@@ -6,6 +6,9 @@ import type { Config } from './types.ts';
 
 const defaultStateDir = resolve(import.meta.dirname, '../../state');
 
+/** Сколько элементов снимка видит модель за вызов, если конфиг не задаёт своё значение. */
+export const defaultElementsPerSnapshot = 120;
+
 const configSchema: z.ZodType<Config> = z.strictObject({
   baseUrl: z.url(),
   allowedOrigins: z.array(z.url()).min(1),
@@ -21,6 +24,7 @@ const configSchema: z.ZodType<Config> = z.strictObject({
   limits: z.strictObject({
     stepsPerSession: z.number().int().positive(),
     candidatesPerRun: z.number().int().positive(),
+    elementsPerSnapshot: z.number().int().positive().max(2000).optional(),
   }),
   safety: z.strictObject({
     forbiddenActionText: z.array(z.string()),
@@ -46,7 +50,7 @@ function configTemplate(): Config {
     routes: ['/', '/orders', '/orders/new', '/profile'],
     routeMap: { 'src/pages/orders/**': ['/orders', '/orders/new'] },
     baseBranch: 'main',
-    limits: { stepsPerSession: 60, candidatesPerRun: 20 },
+    limits: { stepsPerSession: 60, candidatesPerRun: 20, elementsPerSnapshot: defaultElementsPerSnapshot },
     safety: { forbiddenActionText: ['удалить', 'delete', 'оплатить'], readOnly: false },
     testDataPrefix: 'bh_',
     detectors: {

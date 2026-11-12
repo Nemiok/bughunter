@@ -242,9 +242,20 @@ async function main(): Promise<void> {
   }));
 
   server.registerTool('bh_state', {
-    description: 'Получить элементы страницы и новые сигналы',
-    inputSchema: z.strictObject({ sessionId }),
-  }, async ({ sessionId: id }) => invoke(async () => compactState(await (await manager()).state(id))));
+    description: 'Получить элементы страницы (отранжированы, отдаются страницами по cursor), структуру экрана по экстракторам профиля и новые сигналы',
+    inputSchema: z.strictObject({
+      sessionId,
+      cursor: z.number().int().nonnegative().optional(),
+      limit: z.number().int().positive().max(2000).optional(),
+    }),
+  }, async ({ sessionId: id, cursor, limit }) => invoke(async () => {
+    const session = await manager();
+    return compactState(await session.state(id, {
+      screen: true,
+      limit: limit ?? session.snapshotLimit,
+      ...(cursor === undefined ? {} : { cursor }),
+    }));
+  }));
 
   server.registerTool('bh_act', {
     description: 'Выполнить одно действие: с элементом страницы (click, dblclick, fill, select, press, check, hover, drag, scroll, upload) или по координате точки (clickAt, hoverAt — для canvas и других целей без DOM-семантики)',
@@ -285,12 +296,18 @@ async function main(): Promise<void> {
   server.registerTool('bh_navigate', {
     description: 'Перейти по разрешённому пути в текущей сессии',
     inputSchema: z.strictObject({ sessionId, path: z.string().min(1) }),
-  }, async ({ sessionId: id, path }) => invoke(async () => compactState(await (await manager()).navigate(id, path))));
+  }, async ({ sessionId: id, path }) => invoke(async () => {
+    const session = await manager();
+    return compactState(await session.navigate(id, path, { screen: true, limit: session.snapshotLimit }));
+  }));
 
   server.registerTool('bh_probe', {
     description: 'Проверить перезагрузку, возврат или мобильный viewport',
     inputSchema: z.strictObject({ sessionId, kind: z.enum(['reload', 'back', 'mobile_viewport']) }),
-  }, async ({ sessionId: id, kind }) => invoke(async () => compactState(await (await manager()).probe(id, kind))));
+  }, async ({ sessionId: id, kind }) => invoke(async () => {
+    const session = await manager();
+    return compactState(await session.probe(id, kind, { screen: true, limit: session.snapshotLimit }));
+  }));
 
   server.registerTool('bh_report_candidate', {
     description: 'Сохранить кандидата в баги с сигналами и журналом',

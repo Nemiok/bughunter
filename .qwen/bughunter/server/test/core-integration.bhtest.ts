@@ -197,7 +197,8 @@ test('real MCP stdio client validates strict schemas and compact core results', 
       bh_explore_next: ['runId'],
       bh_open: ['persona', 'route', 'runId'],
       bh_state: ['sessionId'],
-      bh_act: ['action', 'elementId', 'sessionId'],
+      // elementId необязателен: координатные действия (clickAt, hoverAt) и скролл страницы цели не имеют.
+      bh_act: ['action', 'sessionId'],
       bh_navigate: ['path', 'sessionId'],
       bh_probe: ['kind', 'sessionId'],
       bh_report_candidate: ['actual', 'expected', 'sessionId', 'signalIds', 'title'],
@@ -240,8 +241,13 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     assert.equal(typeof sessionId, 'string');
 
     const state = await callValue(client, 'bh_state', { sessionId });
-    assert.deepEqual(Object.keys(state).sort(), ['elements', 'signals', 'stepsLeft', 'title', 'url']);
+    assert.deepEqual(Object.keys(state).sort(), [
+      'elements', 'screen', 'signals', 'stepsLeft', 'title', 'totalVisible', 'truncated', 'url',
+    ]);
+    assert.equal(state.truncated, false);
+    assert.deepEqual(state.screen, { widgets: [] });
     const elements = state.elements as Array<Record<string, unknown>>;
+    assert.equal(state.totalVisible, elements.length);
     assert.ok(elements.every((element) => !('locator' in element)));
     const name = elements.find((element) => element.name === 'Name');
     const save = elements.find((element) => element.name === 'Save');

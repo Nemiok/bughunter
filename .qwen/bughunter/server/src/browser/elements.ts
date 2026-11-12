@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Locator, Page } from 'playwright-core';
-import type { ElementSnapshot, SemanticLocator } from '../types.ts';
+import type { ElementBox, ElementSnapshot, SemanticLocator } from '../types.ts';
 
-export type { ElementSnapshot, SemanticLocator } from '../types.ts';
+export type { ElementBox, ElementSnapshot, SemanticLocator } from '../types.ts';
 
 const interactiveSelector = [
   'button',
@@ -37,6 +37,7 @@ type RawElement = {
   css: string;
   semanticRole: boolean;
   formControl: boolean;
+  box: ElementBox;
 };
 
 function locatorKey(locator: SemanticLocator): string {
@@ -125,9 +126,11 @@ async function collectRaw(page: Page, point?: { x: number; y: number }): Promise
     function describe(element: HTMLElement, position: number, role: string): RawElement {
       const testid = element.dataset.testid;
       const testIdGroup = testid === undefined ? [] : testIdGroups.get(testid)!;
+      const rect = element.getBoundingClientRect();
       return {
         position,
         role,
+        box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         type: element instanceof HTMLInputElement ? element.type : element.tagName.toLowerCase(),
         ...(testid === undefined ? {} : {
           testid,
@@ -180,6 +183,7 @@ async function toSnapshots(page: Page, entries: Array<{ raw: RawElement; locator
       type: raw.type,
       fullName,
       locator: semanticLocator,
+      box: raw.box,
       ...(raw.formControl ? { value: await locator.inputValue() } : {}),
       disabled: await locator.isDisabled(),
     });
@@ -225,6 +229,71 @@ export async function elementAtPoint(page: Page, at: { x: number; y: number }): 
     return { ...snapshot, locator: { kind: 'css', value: raw.css } };
   }
   return snapshot;
+}
+
+export type Viewport = { width: number; height: number };
+
+export type SnapshotPage = {
+  elements: ElementSnapshot[];
+  nextCursor?: number;
+  totalVisible: number;
+  truncated: boolean;
+};
+
+/** Роли, которыми модель управляет приложением, важнее декоративных контейнеров. */
+const roleWeights: Record<string, number> = {
+  button: 0,
+  link: 1,
+  textbox: 2,
+  searchbox: 2,
+  combobox: 3,
+  checkbox: 4,
+  radio: 4,
+  switch: 4,
+  slider: 5,
+  spinbutton: 5,
+};
+
+const semanticRoleWeight = 6;
+const decorativeRoleWeight = 9;
+
+function roleWeight(role: string): number {
+  if (role in roleWeights) return roleWeights[role]!;
+  return role === 'generic' ? decorativeRoleWeight : semanticRoleWeight;
+}
+
+function intersectsViewport(box: ElementBox, viewport: Viewport): boolean {
+  return box.width > 0 && box.height > 0
+    && box.x < viewport.width && box.y < viewport.height
+    && box.x + box.width > 0 && box.y + box.height > 0;
+}
+
+/**
+ * Порядок: пересечение с viewport → роль → позиция сверху вниз и слева направо.
+ * Сортировка устойчива, поэтому равные элементы сохраняют порядок DOM-выборки,
+ * а результат не зависит от того, в каком порядке страница отдала узлы.
+ */
+export function rankElements(elements: ElementSnapshot[], viewport: Viewport): ElementSnapshot[] {
+  return [...elements].sort((left, right) => {
+    const reach = Number(!intersectsViewport(left.box, viewport)) - Number(!intersectsViewport(right.box, viewport));
+    if (reach !== 0) return reach;
+    const weight = roleWeight(left.role) - roleWeight(right.role);
+    if (weight !== 0) return weight;
+    if (left.box.y !== right.box.y) return left.box.y - right.box.y;
+    return left.box.x - right.box.x;
+  });
+}
+
+export function paginateElements(elements: ElementSnapshot[], limit: number, cursor = 0): SnapshotPage {
+  const start = Math.max(0, cursor);
+  const slice = elements.slice(start, start + limit);
+  const next = start + slice.length;
+  return {
+    elements: slice,
+    totalVisible: elements.length,
+    truncated: next < elements.length,
+    ...(next < elements.length ? { nextCursor: next } : {}),
+  };
 }
 
 export function toPlaywrightLocator(locator: SemanticLocator): string {

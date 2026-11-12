@@ -15,6 +15,8 @@ export type Config = {
   limits: {
     stepsPerSession: number;
     candidatesPerRun: number;
+    /** Сколько элементов снимка отдавать модели за один вызов; остальное доступно через cursor. */
+    elementsPerSnapshot?: number;
   };
   safety: {
     forbiddenActionText: string[];
@@ -82,6 +84,8 @@ export type SemanticLocator =
   | { kind: 'text'; value: string; index?: number }
   | { kind: 'css'; value: string; index?: number };
 
+export type ElementBox = { x: number; y: number; width: number; height: number };
+
 export type ElementSnapshot = {
   id: string;
   role: string;
@@ -90,6 +94,8 @@ export type ElementSnapshot = {
   value?: string;
   disabled?: boolean;
   locator: SemanticLocator;
+  /** Положение в координатах viewport на момент снимка: нужно ранжированию и координатным действиям. */
+  box: ElementBox;
 };
 
 export type StepAction =
