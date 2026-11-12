@@ -26,6 +26,7 @@ const coreToolNames = [
   'bh_act',
   'bh_navigate',
   'bh_probe',
+  'bh_crawl',
   'bh_report_candidate',
   'bh_reproduce',
   'bh_triage',

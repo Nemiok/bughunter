@@ -24,7 +24,7 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
-  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND)\b/.test(message)) {
+  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT)\b/.test(message)) {
     return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
@@ -68,13 +68,15 @@ async function main(): Promise<void> {
   const { exportE2e } = await import('./export/playwright.ts');
   const { detectTests } = await import('./tests/detect.ts');
   const { verifyRed } = await import('./tests/verify-red.ts');
-  const { SessionManager } = await import('./browser/session.ts');
+  const { SessionManager, resolveLaunchOptions } = await import('./browser/session.ts');
   const { loadProfile } = await import('./profile/load.ts');
+  const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
   const { z } = zod;
   const stateDir = process.env.BUGHUNTER_STATE_DIR
     ? resolve(process.env.BUGHUNTER_STATE_DIR)
     : resolve(import.meta.dirname, '../../state');
   let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
+  let contextPromise: ReturnType<typeof loadContext> | undefined;
   const explorations = new Map<string, { runId: string; route: string; leaseId?: string }>();
   const activeExplorerRuns = new Set<string>();
   const explorationQueueLocks = new Map<string, Promise<unknown>>();
@@ -104,12 +106,24 @@ async function main(): Promise<void> {
     return leases;
   }
 
+  async function loadContext() {
+    const config = await loadConfig(stateDir);
+    return { config, profile: config.profile === undefined ? null : await loadProfile(stateDir, config.profile) };
+  }
+
+  // Конфиг и профиль нужны не только сессиям (bh_crawl работает без сессии), поэтому кэш отдельный.
+  async function appContext(): ReturnType<typeof loadContext> {
+    contextPromise ??= loadContext();
+    try {
+      return await contextPromise;
+    } catch (error) {
+      contextPromise = undefined;
+      throw error;
+    }
+  }
+
   async function manager(): Promise<InstanceType<typeof SessionManager>> {
-    managerPromise ??= loadConfig(stateDir).then(async (config) => new SessionManager(
-      config,
-      stateDir,
-      config.profile === undefined ? null : await loadProfile(stateDir, config.profile),
-    ));
+    managerPromise ??= appContext().then(({ config, profile }) => new SessionManager(config, stateDir, profile));
     try {
       return await managerPromise;
     } catch (error) {
@@ -307,6 +321,27 @@ async function main(): Promise<void> {
   }, async ({ sessionId: id, kind }) => invoke(async () => {
     const session = await manager();
     return compactState(await session.probe(id, kind, { screen: true, limit: session.snapshotLimit }));
+  }));
+
+  server.registerTool('bh_crawl', {
+    description: 'Обойти разрешённые экраны приложения и пополнить инвентарь state/screens.json: динамические сегменты приводятся к шаблону, для каждого экрана сохраняется список виджетов профиля, чужие и недоступные переходы записываются в blocked',
+    inputSchema: z.strictObject({
+      maxScreens: z.number().int().positive().max(5000).optional(),
+      maxDepth: z.number().int().nonnegative().max(10).optional(),
+      startPaths: z.array(z.string().min(1).startsWith('/')).min(1).max(50).optional(),
+    }),
+  }, async ({ maxScreens, maxDepth, startPaths }) => invoke(async () => {
+    const { config, profile } = await appContext();
+    return crawlScreens({
+      baseUrl: config.baseUrl,
+      allowedOrigins: config.allowedOrigins,
+      stateDir,
+      profile,
+      maxScreens: maxScreens ?? defaultMaxScreens,
+      maxDepth: maxDepth ?? defaultMaxDepth,
+      startPaths: startPaths ?? config.routes,
+      launch: resolveLaunchOptions(config, profile),
+    });
   }));
 
   server.registerTool('bh_report_candidate', {

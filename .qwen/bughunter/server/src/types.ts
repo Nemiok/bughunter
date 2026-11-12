@@ -35,6 +35,17 @@ export type Config = {
   };
 };
 
+/** Экран приложения в инвентаре: шаблон маршрута, а не конкретный URL. */
+export type ScreenEntry = {
+  template: string;
+  sampleUrl: string;
+  discoveredVia: string[];
+  widgets: string[];
+  lastCheckedAt?: string;
+  /** Позиция в инвентаре для прерванного обхода, чтобы не начинать заново. */
+  cursorState?: number;
+};
+
 export type RunStage = 'created' | 'exploring' | 'reproducing' | 'reviewing' | 'writing_tests' | 'finished';
 export type OperationStage = 'pending' | 'running' | 'done' | 'failed';
 export type RouteStage = 'pending' | 'exploring' | 'done' | 'failed';
