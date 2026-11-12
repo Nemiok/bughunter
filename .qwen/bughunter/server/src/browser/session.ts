@@ -15,6 +15,7 @@ import type {
   Step,
 } from '../types.ts';
 import { collectElements, toPlaywrightLocator } from './elements.ts';
+import { attachNetworkCapture, type NetworkCapture } from './network.ts';
 
 export type StateResult = {
   url: string;
@@ -57,6 +58,7 @@ type Session = {
   signals: Map<string, Signal>;
   candidateIds: string[];
   mediaDir: string;
+  network: NetworkCapture;
 };
 
 type SharedMemoryEntry = {
@@ -118,6 +120,7 @@ export class SessionManager {
     await mkdir(mediaDir, { recursive: true });
     const storageStatePath = join(this.stateDir, 'auth', 'storage-state.json');
     let context: BrowserContext | undefined;
+    let network: NetworkCapture | undefined;
     try {
       let storageState: string | undefined;
       try {
@@ -133,6 +136,11 @@ export class SessionManager {
       await this.installNavigationGuard(context);
       await context.tracing.start({ screenshots: true, snapshots: true });
       const page = await context.newPage();
+      network = await attachNetworkCapture(page, {
+        stateDir: this.stateDir,
+        runId,
+        allowedOrigins: this.config.allowedOrigins,
+      });
       const journal: Journal = {
         sessionId,
         runId,
@@ -151,6 +159,7 @@ export class SessionManager {
         signals: new Map(),
         candidateIds: [],
         mediaDir,
+        network,
       };
       this.sessions.set(sessionId, session);
       await scanSignals(page, this.config);
@@ -160,6 +169,7 @@ export class SessionManager {
       return { sessionId };
     } catch (error) {
       this.sessions.delete(sessionId);
+      await network?.dispose().catch(() => undefined);
       await context?.close().catch(() => undefined);
       await rm(mediaDir, { recursive: true, force: true });
       throw error;
@@ -349,6 +359,11 @@ export class SessionManager {
         errors.push(error);
       }
     } finally {
+      try {
+        await session.network.dispose();
+      } catch (error) {
+        errors.push(error);
+      }
       try {
         await session.context.close();
       } catch (error) {
@@ -575,6 +590,13 @@ export class SessionManager {
   }
 
   private async appendStep(session: Session, step: Step): Promise<void> {
+    if (step.responseHashes === undefined) {
+      await session.network.flush();
+      const hashes = session.network.takePending()
+        .map((response) => response.hash)
+        .filter((hash): hash is string => hash !== undefined);
+      if (hashes.length > 0) step = { ...step, responseHashes: hashes };
+    }
     session.journal.steps.push(step);
     await this.writeJournal(session);
   }

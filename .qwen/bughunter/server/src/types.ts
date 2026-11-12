@@ -99,6 +99,7 @@ export type Step = {
   probe?: 'reload' | 'back' | 'mobile_viewport';
   locator?: string;
   signalIds?: string[];
+  responseHashes?: string[];
 };
 
 export type Journal = {
