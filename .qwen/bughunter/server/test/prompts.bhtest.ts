@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { EXPLORER_PERSONAS } from '../src/run-store.ts';
 
 const projectRoot = join(import.meta.dirname, '../../../..');
 const finalResultInstruction = 'последнее сообщение — полный самостоятельный результат для вызывающего агента';
@@ -44,25 +45,25 @@ const agents = {
     'mcp__bughunter__bh_probe',
     'mcp__bughunter__bh_report_candidate',
     'mcp__bughunter__bh_close',
-    'skill',
+    'Skill',
   ],
   'bh-reviewer': [
-    'read_file',
-    'grep_search',
-    'glob',
+    'Read',
+    'Grep',
+    'Glob',
     'mcp__bughunter__bh_triage',
-    'skill',
+    'Skill',
   ],
   'bh-test-writer': [
-    'read_file',
-    'grep_search',
-    'glob',
-    'edit',
-    'write_file',
+    'Read',
+    'Grep',
+    'Glob',
+    'Edit',
+    'Write',
     'mcp__bughunter__bh_detect_tests',
     'mcp__bughunter__bh_export_e2e',
     'mcp__bughunter__bh_verify_red',
-    'skill',
+    'Skill',
   ],
 } as const;
 
@@ -92,14 +93,14 @@ test('entry skill is manual, argument-driven, and orchestrates the complete run'
   for (const required of [
     '$ARGUMENTS', 'diff', 'full', 'route <path>', 'resume <runId>',
     'bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run',
-    'agent', 'subagent_type', 'bh-explorer', 'bh-reviewer', 'bh-test-writer', 'leaseId',
+    'Agent', 'subagent_type', 'bh-explorer', 'bh-reviewer', 'bh-test-writer', 'leaseId',
     'run_in_background: false', 'не объединяй', 'не делегируй воспроизведение',
     'EXPLORER_BUSY', 'RUN_INCOMPLETE', 'pendingCandidates', 'RETRY_LATER',
   ]) assert.ok(body.toLowerCase().includes(required.toLowerCase()), `missing entry contract: ${required}`);
   const allowedLine = body.split('\n').find((line) => line.includes('Главному агенту разрешены только'));
   const forbiddenLine = body.split('\n').find((line) => line.includes('Запрещено напрямую вызывать'));
   assert.ok(allowedLine && forbiddenLine, 'binding main-agent allowlist and forbidden list are required');
-  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run', 'agent']) {
+  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run', 'Agent']) {
     assert.ok(allowedLine.includes(tool), `main allowlist missing ${tool}`);
   }
   for (const tool of [
@@ -119,6 +120,13 @@ const skills = {
   'bughunter-oracles': 'при исследовании страницы и разборе кандидатов в баги',
   'bughunter-red-test': 'при написании теста на найденный баг',
 } as const;
+
+test('oracles name multiplicity and idempotency as a checkable invariant class', async () => {
+  const { body } = await readPrompt('.qwen/skills/bughunter-oracles/SKILL.md');
+  for (const required of ['идемпотентн', 'кратност', 'одно действие', 'дублир', 'check', 'без сигнала']) {
+    assert.ok(body.toLowerCase().includes(required.toLowerCase()), `missing oracle rule: ${required}`);
+  }
+});
 
 for (const [name, whenToUse] of Object.entries(skills)) {
   test(`${name} declares its exact skill metadata`, async () => {
@@ -143,11 +151,21 @@ test('agents invoke their reusable skills and reviewer/writer keep their boundar
   assert.match(writer, /код приложения не (?:меняй|изменяй)/i);
 });
 
-test('explorer requires a lease and never reports a failed exploration as clean', async () => {
-  const explorer = (await readPrompt('.qwen/agents/bh-explorer.md')).body;
+test('explorer requires a lease and never reports a failed exploration as clean', async () => {  const explorer = (await readPrompt('.qwen/agents/bh-explorer.md')).body;
   assert.ok(explorer.includes('leaseId'), 'explorer must receive and pass leaseId');
   assert.match(explorer, /RETRY_LATER: EXPLORER_BUSY/);
   assert.match(explorer, /FAILED: /);
   assert.match(explorer, /не чистый маршрут/);
   assert.match(explorer, /никогда вместо них `Кандидатов нет`/);
+});
+
+test('explorer defines the behaviour of every server-side persona', async () => {
+  const explorer = (await readPrompt('.qwen/agents/bh-explorer.md')).body.toLowerCase();
+  assert.ok(EXPLORER_PERSONAS.length > 0);
+  for (const persona of EXPLORER_PERSONAS) {
+    assert.ok(explorer.includes(persona.toLowerCase()), `explorer does not define persona: ${persona}`);
+  }
+  for (const behaviour of ['dblclick', 'reload', 'back', 'query-параметры', 'отрицательные', 'bh_probe']) {
+    assert.ok(explorer.includes(behaviour.toLowerCase()), `missing persona behaviour: ${behaviour}`);
+  }
 });

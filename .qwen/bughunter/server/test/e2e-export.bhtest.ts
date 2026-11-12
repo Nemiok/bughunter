@@ -411,7 +411,7 @@ async function proveBug(id: number, suiteRoot: string): Promise<BugEvidence> {
     assert.equal(exported.placedInProject, true);
     const source = await readFile(exported.file, 'utf8');
     assert.equal(source, generatePlaywrightTest(candidate, config, route));
-    const red = await runPlaywright(projectRoot, [exported.file], vite.baseUrl, id === 2 ? 100 : 0);
+    const red = await runPlaywright(projectRoot, [exported.file], vite.baseUrl);
     const redAssertion = redAssertions[id - 1]!;
     assertRed(red, redAssertion, 1);
     await applyMinimalFix(id, projectRoot);
@@ -419,7 +419,7 @@ async function proveBug(id: number, suiteRoot: string): Promise<BugEvidence> {
       await vite.server.close();
       vite = await startVite(projectRoot, cacheDir, port);
     }
-    const green = await runPlaywright(projectRoot, [exported.file], vite.baseUrl, id === 2 ? 100 : 0);
+    const green = await runPlaywright(projectRoot, [exported.file], vite.baseUrl);
     assertGreen(green);
     console.log(JSON.stringify({
       bug: id,
@@ -488,4 +488,61 @@ test('every exported seeded-bug E2E is red on the symptom and green after its mi
   assert.equal(diff.exitCode, 0, diff.output);
   assert.equal(diff.output, '');
   console.log(JSON.stringify({ originalFixtureHashes: before }));
+});
+
+test('exported anomaly spec observes a transient symptom without an artificial API delay', { timeout: 600_000 }, async () => {
+  const suiteRoot = await realpath(await mkdtemp(join(tmpdir(), 'bh-e2e-transient-')));
+  try {
+    const projectRoot = join(suiteRoot, 'project');
+    const stateDir = join(suiteRoot, 'state');
+    const cacheDir = join(suiteRoot, 'vite-cache');
+    const port = await availablePort();
+    await copyFixture(projectRoot);
+    const vite = await startVite(projectRoot, cacheDir, port);
+    let manager: SessionManager | undefined;
+    try {
+      const config = demoConfig(vite.baseUrl);
+      const run = await createRun('full', undefined, { config, projectRoot, stateDir });
+      await writeJsonAtomic(join(stateDir, 'config.json'), config);
+      manager = new SessionManager(config, stateDir);
+      const { sessionId } = await manager.open(run.id, '/profile', 'transient-anomaly');
+      const before = await manager.state(sessionId);
+      const link = before.elements.find((candidate) =>
+        candidate.locator.kind === 'role' && candidate.locator.role === 'link' && candidate.locator.name === 'Orders');
+      assert.ok(link, 'Missing Orders link');
+      const clicked = await manager.act(sessionId, { elementId: link.id, action: 'click' });
+      assert.equal(clicked.ok, true, clicked.error);
+      const after = await manager.state(sessionId);
+      const input = signalCandidate({
+        title: 'Orders total flashes NaN while orders load',
+        expected: 'The orders total is numeric at every point after navigation',
+        actual: 'Transient NaN is rendered until the orders response arrives',
+        signalIds: [],
+      }, [...before.signals, ...clicked.signals, ...after.signals], 'anomaly');
+      const { candidateId } = await manager.reportCandidate(sessionId, input);
+      await manager.close(sessionId);
+      const reproduction = await reproduceCandidate({ runId: run.id, candidateId, attempts: 3, stateDir });
+      assert.equal(reproduction.reproduced, '3/3', JSON.stringify(reproduction));
+      await triageCandidate({ runId: run.id, candidateId, verdict: 'confirmed', reason: 'Reproduced 3/3 in real Chrome', stateDir });
+      const previousCwd = process.cwd();
+      let exported: Awaited<ReturnType<typeof exportE2e>>;
+      try {
+        process.chdir(projectRoot);
+        exported = await exportE2e({ runId: run.id, bugId: candidateId, stateDir });
+      } finally {
+        process.chdir(previousCwd);
+      }
+      assert.equal(exported.placedInProject, true);
+      const red = await runPlaywright(projectRoot, [exported.file], vite.baseUrl, 0);
+      assertRed(red, 'expect(matched).toBe(false);', 1);
+    } finally {
+      try {
+        await manager?.closeAll();
+      } finally {
+        await vite.server.close();
+      }
+    }
+  } finally {
+    await rm(suiteRoot, { recursive: true, force: true });
+  }
 });

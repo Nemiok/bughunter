@@ -7,9 +7,13 @@
 .kimi-code/bughunter/state/runs/
 .kimi-code/bughunter/state/auth/
 
+# Disposable model-gate copies (must live outside .qwen: CLI treats those paths as sensitive)
+bughunter-gate/
+
 # Generated Playwright output in fixtures
 **/.playwright-output/
 
 # Env / local overrides
 .env
 .env.*
+.qwen/settings.local.json

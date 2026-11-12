@@ -16,10 +16,21 @@ function allowedUrl(path: string, config: Config): string {
   } catch {
     throw new Error(`ROUTE_NOT_ALLOWED: ${path}`);
   }
-  const base = new URL(config.baseUrl);
-  if (target.origin !== base.origin || !config.routes.includes(target.pathname)) {
-    throw new Error(`ROUTE_NOT_ALLOWED: ${path}`);
-  }
+  // Граница та же, что у рантайм-навигации (SessionManager.isAllowed): разрешённый origin.
+  // config.routes — область исследования, а не allowlist переходов, иначе легально
+  // записанный журнал оказывался бы неэкспортируемым.
+  const allowed = ['http:', 'https:'].includes(target.protocol)
+    && !target.username
+    && !target.password
+    && config.allowedOrigins.some((origin) => {
+      try {
+        const allowedOrigin = new URL(origin);
+        return !allowedOrigin.username && !allowedOrigin.password && allowedOrigin.origin === target.origin;
+      } catch {
+        return false;
+      }
+    });
+  if (!allowed) throw new Error(`ROUTE_NOT_ALLOWED: ${path}`);
   return target.href;
 }
 
@@ -150,11 +161,50 @@ test(${JSON.stringify(candidate.title)}, async ({ page }) => {
     const url = response.url();
     if (status >= 400 && signature({ kind: 'response', message: \`\${response.request().method()} \${url}: HTTP \${status}\`, route: route() }) === ${signature}) matched = true;
   });
+  const observedAnomalies: Array<{ text: string; route: string }> = [];
+  await page.exposeFunction('__bughunterReportAnomalies', (entries: Array<{ text: string; route: string }>) => {
+    for (const entry of entries) observedAnomalies.push(entry);
+  });
+  await page.addInitScript((anomalyTexts: string[]) => {
+    const target = window as unknown as Window & {
+      __bughunterAnomalyObserver?: MutationObserver;
+      __bughunterSeenAnomalies?: Set<string>;
+      __bughunterReportAnomalies: (entries: Array<{ text: string; route: string }>) => void;
+    };
+    if (target.__bughunterAnomalyObserver) return;
+    target.__bughunterSeenAnomalies = new Set();
+    const scan = (): void => {
+      if (!document.body) return;
+      const text = document.body.innerText;
+      for (const token of anomalyTexts) {
+        if (token.length === 0) continue;
+        const escaped = token.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
+        if (!new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(text)) continue;
+        let observedRoute: string;
+        try {
+          observedRoute = new URL(location.href).pathname;
+        } catch {
+          observedRoute = location.href;
+        }
+        const key = \`\${token}\\n\${observedRoute}\`;
+        if (target.__bughunterSeenAnomalies!.has(key)) continue;
+        target.__bughunterSeenAnomalies!.add(key);
+        target.__bughunterReportAnomalies([{ text: token, route: observedRoute }]);
+      }
+    };
+    target.__bughunterAnomalyObserver = new MutationObserver(scan);
+    target.__bughunterAnomalyObserver.observe(document, { characterData: true, childList: true, subtree: true });
+    scan();
+  }, ${JSON.stringify(config.detectors.anomalyTexts)});
   await page.goto(new URL(${JSON.stringify(initialRoute)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });
-${replay}  const bodyText = await page.locator('body').innerText();
+${replay}  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
+  const bodyText = await page.locator('body').innerText();
   for (const text of ${JSON.stringify(config.detectors.anomalyTexts)}) {
     const escaped = text.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
     if (text.length > 0 && new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(bodyText) && signature({ kind: 'anomaly', message: text, route: route() }) === ${signature}) matched = true;
+  }
+  for (const entry of observedAnomalies) {
+    if (signature({ kind: 'anomaly', message: entry.text, route: entry.route }) === ${signature}) matched = true;
   }
   const boundaries = page.locator(${JSON.stringify(config.detectors.errorBoundarySelector)});
   for (let index = 0; index < await boundaries.count(); index += 1) {

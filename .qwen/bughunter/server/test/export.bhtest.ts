@@ -91,11 +91,50 @@ test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
     const url = response.url();
     if (status >= 400 && signature({ kind: 'response', message: \`\${response.request().method()} \${url}: HTTP \${status}\`, route: route() }) === ${JSON.stringify(signature)}) matched = true;
   });
+  const observedAnomalies: Array<{ text: string; route: string }> = [];
+  await page.exposeFunction('__bughunterReportAnomalies', (entries: Array<{ text: string; route: string }>) => {
+    for (const entry of entries) observedAnomalies.push(entry);
+  });
+  await page.addInitScript((anomalyTexts: string[]) => {
+    const target = window as unknown as Window & {
+      __bughunterAnomalyObserver?: MutationObserver;
+      __bughunterSeenAnomalies?: Set<string>;
+      __bughunterReportAnomalies: (entries: Array<{ text: string; route: string }>) => void;
+    };
+    if (target.__bughunterAnomalyObserver) return;
+    target.__bughunterSeenAnomalies = new Set();
+    const scan = (): void => {
+      if (!document.body) return;
+      const text = document.body.innerText;
+      for (const token of anomalyTexts) {
+        if (token.length === 0) continue;
+        const escaped = token.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
+        if (!new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(text)) continue;
+        let observedRoute: string;
+        try {
+          observedRoute = new URL(location.href).pathname;
+        } catch {
+          observedRoute = location.href;
+        }
+        const key = \`\${token}\\n\${observedRoute}\`;
+        if (target.__bughunterSeenAnomalies!.has(key)) continue;
+        target.__bughunterSeenAnomalies!.add(key);
+        target.__bughunterReportAnomalies([{ text: token, route: observedRoute }]);
+      }
+    };
+    target.__bughunterAnomalyObserver = new MutationObserver(scan);
+    target.__bughunterAnomalyObserver.observe(document, { characterData: true, childList: true, subtree: true });
+    scan();
+  }, ["NaN","[object Object]"]);
   await page.goto(new URL("/profile", "https://example.test/app/").href, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
   const bodyText = await page.locator('body').innerText();
   for (const text of ["NaN","[object Object]"]) {
     const escaped = text.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
     if (text.length > 0 && new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(bodyText) && signature({ kind: 'anomaly', message: text, route: route() }) === ${JSON.stringify(signature)}) matched = true;
+  }
+  for (const entry of observedAnomalies) {
+    if (signature({ kind: 'anomaly', message: entry.text, route: entry.route }) === ${JSON.stringify(signature)}) matched = true;
   }
   const boundaries = page.locator("[data-error-boundary]");
   for (let index = 0; index < await boundaries.count(); index += 1) {
@@ -198,11 +237,14 @@ test('golden replay preserves semantic locator indexes, every action, navigation
   assert.ok(!source.includes('\nthrow new Error("injected");'));
 });
 
-test('generation rejects routes outside the configured route allowlist', () => {
-  assert.throws(() => generatePlaywrightTest(candidate({ route: '/admin' }), config()), /ROUTE_NOT_ALLOWED/);
-  assert.throws(() => generatePlaywrightTest(candidate({
-    steps: [{ id: '1', kind: 'navigate', path: 'https://evil.test/profile', timestamp: createdAt, routeTemplate: '/profile' }],
-  }), config()), /ROUTE_NOT_ALLOWED/);
+test('generation accepts any same-origin route and rejects other origins and protocols', () => {
+  const source = generatePlaywrightTest(candidate({ route: '/admin/deep' }), config());
+  assert.ok(source.includes('new URL("/admin/deep", "https://example.test/app/")'));
+  for (const path of ['https://evil.test/profile', 'file:///etc/passwd', 'javascript:alert(1)']) {
+    assert.throws(() => generatePlaywrightTest(candidate({
+      steps: [{ id: '1', kind: 'navigate', path, timestamp: createdAt, routeTemplate: '/profile' }],
+    }), config()), /ROUTE_NOT_ALLOWED/, path);
+  }
 });
 
 type TriageFixture = {
