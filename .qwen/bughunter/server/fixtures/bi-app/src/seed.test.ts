@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { formatAbbreviated, formatDate, formatNumber, roundToCents } from './format.ts';
+import { formatAbbreviated, formatDate, formatNumber, formatShare, roundToCents } from './format.ts';
 import {
   KPI_AVG_CHECK, SEEDED, SHARE, TOTAL_OFFSET, WRONG_TIME_ZONE,
   duplicateOnSecondPage, formatDateWrongZone, roundHalfUp, truncateToCents,
@@ -51,6 +51,22 @@ it('SEEDED registry holds six data bugs, four legal transforms and three behavio
   }
 });
 
+it('every oracle-detectable bug names the oracle shape that catches it', () => {
+  for (const [id, entry] of Object.entries(SEEDED)) {
+    if (entry.detectable === 'oracle') {
+      expect(['response', 'projection', 'request'], id).toContain(entry.oracle);
+    } else {
+      expect(entry.oracle, id).toBeUndefined();
+    }
+  }
+  expect(SEEDED.D1.oracle).toBe('response');
+  expect(SEEDED.D2.oracle).toBe('projection');
+  expect(SEEDED.D3.oracle).toBe('projection');
+  expect(SEEDED.D4.oracle).toBe('request');
+  expect(SEEDED.D5.oracle).toBe('response');
+  expect(SEEDED.D6.oracle).toBe('projection');
+});
+
 it('D1: dataset total does not equal the sum of its rows', () => {
   const table = dataset('normal').widgets.table;
   const sum = table.rows.reduce((total, row) => total + row.value, 0);
@@ -83,6 +99,21 @@ it('D6: the share is taken from the wrong base', () => {
   expect(SHARE.part / SHARE.correctBase).toBeCloseTo(0.52, 2);
   expect(SHARE.part / SHARE.usedBase).toBeCloseTo(0.37, 2);
   expect(`${Math.round((SHARE.part / SHARE.usedBase) * 100)}%`).toBe('37%');
+});
+
+it('D2/D6: the kpi response carries every value a projection oracle needs', () => {
+  const kpi = dataset('normal').widgets.kpi;
+  expect(kpi).toEqual({
+    avgCheck: KPI_AVG_CHECK,
+    paid: SHARE.part,
+    regionRows: SHARE.correctBase,
+    allRows: SHARE.usedBase,
+  });
+  // Расхождение обязано быть выводимым из этого же ответа, а не зашитым в компонент.
+  expect(roundHalfUp(kpi.avgCheck, 2)).not.toBe(truncateToCents(kpi.avgCheck));
+  expect(formatShare(kpi.paid, kpi.regionRows)).toBe('52%');
+  expect(formatShare(kpi.paid, kpi.allRows)).toBe('37%');
+  expect(dataset('empty').widgets.kpi).toEqual(kpi);
 });
 
 it('legal transformations are arithmetically correct, not bugs', () => {

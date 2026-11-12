@@ -1,4 +1,4 @@
-import { TOTAL_OFFSET } from './bugs.ts';
+import { KPI_AVG_CHECK, SHARE, TOTAL_OFFSET } from './bugs.ts';
 import type { ScenarioName } from './scenarios.ts';
 
 export const SEED_VERSION = '2026-11-12.1';
@@ -15,6 +15,11 @@ export type Dataset = {
     line: { points: Array<{ month: string; revenue: number }> };
     bars: { bars: Array<{ month: string; value: number }> };
     scene: { objects: Array<{ name: string; value: number }> };
+    /**
+     * D2/D6: исходные значения плиток отдаёт API, а не держит компонент. Тогда оракул
+     * «ответ ↔ проекция» может пересчитать эталон из того же ответа и увидеть расхождение.
+     */
+    kpi: { avgCheck: number; paid: number; regionRows: number; allRows: number };
   };
 };
 
@@ -83,6 +88,7 @@ export function dataset(scenario: ScenarioName): Dataset {
       line: { points: months.map(({ month, value }) => ({ month, revenue: value })) },
       bars: { bars: months.map(({ month, value }) => ({ month, value })) },
       scene: { objects: months.slice(0, 6).map(({ month, value }) => ({ name: month, value })) },
+      kpi: { avgCheck: KPI_AVG_CHECK, paid: SHARE.part, regionRows: SHARE.correctBase, allRows: SHARE.usedBase },
     },
   };
 }

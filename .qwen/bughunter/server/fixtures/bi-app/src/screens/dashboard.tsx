@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatAbbreviated, formatNumber, formatShare } from '../format.ts';
-import { KPI_AVG_CHECK, SHARE, formatDateWrongZone, truncateToCents } from '../mocks/bugs.ts';
+import { formatDateWrongZone, truncateToCents } from '../mocks/bugs.ts';
 import type { Dashboard, Dataset, TableRow } from '../mocks/seed.ts';
 import { useApi } from '../useApi.ts';
 import { BarCanvas } from '../widgets/bar-canvas.tsx';
@@ -47,10 +47,11 @@ export function DashboardScreen({ id }: { id: string }) {
   const line = useRacyLine(`/api/dashboards/${id}/widgets/line`, region);
   const bars = useApi<Dataset['widgets']['bars']>(`/api/dashboards/${id}/widgets/bars`);
   const scene = useApi<Dataset['widgets']['scene']>(`/api/dashboards/${id}/widgets/scene`);
+  const kpi = useApi<Dataset['widgets']['kpi']>(`/api/dashboards/${id}/widgets/kpi`);
 
-  // Готовность определяется завершением всех четырёх запросов, а не успехом:
+  // Готовность определяется завершением всех пяти запросов, а не успехом:
   // экран со сценарием error500 тоже должен доходить до измеримого состояния.
-  const ready = [table, line, bars, scene].every((widget) => widget.status !== null);
+  const ready = [table, line, bars, scene, kpi].every((widget) => widget.status !== null);
 
   useEffect(() => {
     setExtraRows([]);
@@ -60,6 +61,10 @@ export function DashboardScreen({ id }: { id: string }) {
     rows: [...(table.data?.rows ?? []), ...extraRows],
     total: table.data?.total ?? 0,
   }), [extraRows, table.data]);
+
+  // До загрузки ответа плитки показывают нули: formatShare при базе 0 отдаёт «—»,
+  // поэтому промежуточное состояние не выглядит аномалией.
+  const kpiData = kpi.data ?? { avgCheck: 0, paid: 0, regionRows: 0, allRows: 0 };
 
   async function loadMore(): Promise<void> {
     const response = await fetch(`/api/dashboards/${id}/widgets/table?page=2`);
@@ -87,8 +92,10 @@ export function DashboardScreen({ id }: { id: string }) {
       </select>
 
       <p data-testid="dashboard-kpi">Суммарно: {formatAbbreviated(tableData.total)}</p>
-      <p data-testid="kpi-avg">Средний чек: {formatNumber(truncateToCents(KPI_AVG_CHECK))}</p>
-      <p data-testid="kpi-share">Доля региона: {formatShare(SHARE.part, SHARE.usedBase)}</p>
+      {/* D2: ответ даёт 1234.565, контракт требует half-up до копеек, плитка усекает. */}
+      <p data-testid="kpi-avg">Средний чек: {formatNumber(truncateToCents(kpiData.avgCheck))}</p>
+      {/* D6: знаменатель — allRows вместо regionRows из того же ответа. */}
+      <p data-testid="kpi-share">Доля оплаченных заказов: {formatShare(kpiData.paid, kpiData.allRows)}</p>
       {table.status === 500 && <p data-testid="table-error">Виджет таблицы недоступен (HTTP 500)</p>}
       {ready && <p data-testid="dashboard-ready">данные загружены</p>}
 

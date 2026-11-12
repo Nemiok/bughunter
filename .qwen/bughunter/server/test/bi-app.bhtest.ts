@@ -5,6 +5,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import type { ViteDevServer } from '../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
 import { SEED_VERSION, dataset } from '../fixtures/bi-app/src/mocks/seed.ts';
 import { RESET_ENDPOINT, SCENARIO_KEY } from '../fixtures/bi-app/src/mocks/scenarios.ts';
+import { formatNumber, formatShare } from '../fixtures/bi-app/src/format.ts';
+import { roundHalfUp } from '../fixtures/bi-app/src/mocks/bugs.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../fixtures/bi-app');
 let vite: ViteDevServer | undefined;
@@ -394,6 +396,35 @@ test('every seeded data bug is observable through the widget projection', async 
     }, undefined, { timeout: 15_000 });
     const line = await profileExtract(page, 'line') as { points: unknown[] };
     assert.equal(line.points.length, dataset('normal').widgets.line.points.length, 'D4: линейный график не отреагировал на фильтр');
+  });
+});
+
+/**
+ * D2 и D6 обязаны быть выводимыми из ответа API: оракул фазы 2 сравнивает проекцию виджета
+ * со значением, пересчитанным из того же ответа. Если эталон зашит в компонент, баг ненаходим.
+ */
+test('kpi bugs are recomputable from the recorded api response', async () => {
+  await withPage(async (page) => {
+    await openDashboard(page);
+    const responses = await hookResponses(page);
+    const recorded = recordedFor(responses, '/widgets/kpi');
+    assert.ok(recorded, 'ответ /widgets/kpi обязан быть записан хуком эталона');
+    assert.equal(recorded.status, 200);
+    const kpi = recorded.body as { avgCheck: number; paid: number; regionRows: number; allRows: number };
+    assert.equal(typeof kpi.avgCheck, 'number');
+
+    const normalize = (text: string) => text.replace(/[ \s]+/g, ' ');
+    const expectedAvg = normalize(formatNumber(roundHalfUp(kpi.avgCheck, 2)));
+    const expectedShare = normalize(formatShare(kpi.paid, kpi.regionRows));
+    const actualAvg = normalize(await page.getByTestId('kpi-avg').innerText());
+    const actualShare = normalize(await page.getByTestId('kpi-share').innerText());
+
+    assert.ok(!actualAvg.includes(expectedAvg), `D2: проекция «${actualAvg}» совпала с эталоном «${expectedAvg}»`);
+    assert.ok(!actualShare.includes(expectedShare), `D6: проекция «${actualShare}» совпала с эталоном «${expectedShare}»`);
+    assert.match(actualAvg, /1 ?234,56/);
+    assert.match(actualShare, /37%/);
+    // Баг живёт в проекции, а не в данных: сам ответ внутренне непротиворечив.
+    assert.equal(formatShare(kpi.paid, kpi.allRows), '37%');
   });
 });
 

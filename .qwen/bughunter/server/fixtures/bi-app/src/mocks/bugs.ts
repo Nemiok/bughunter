@@ -7,6 +7,8 @@ export type SeededKind = 'data' | 'legal' | 'behavior';
  * `detectable` — чем баг находится сегодня: `signal` — существующим детектором,
  * `oracle` — только оракулом сверки данных (фаза 2), `none` — не находится ничем.
  */
+export type SeededOracle = 'response' | 'projection' | 'request';
+
 export type SeededEntry = {
   kind: SeededKind;
   screen: string;
@@ -14,6 +16,12 @@ export type SeededEntry = {
   expected: string;
   actual: string;
   detectable: 'signal' | 'oracle' | 'none';
+  /**
+   * Форма оракула, которая ловит баг: `response` — противоречие внутри одного ответа API,
+   * `projection` — пересчёт эталона из ответа и сравнение с проекцией виджета,
+   * `request` — сравнение URL запроса с активным фильтром экрана.
+   */
+  oracle?: SeededOracle;
 };
 
 export type SeededId =
@@ -25,32 +33,32 @@ export const SEEDED: Record<SeededId, SeededEntry> = {
   D1: {
     kind: 'data', screen: '/dashboard/:id', widget: 'table',
     expected: 'Итого равен сумме строк таблицы', actual: 'Итого больше суммы строк на 10',
-    detectable: 'oracle',
+    detectable: 'oracle', oracle: 'response',
   },
   D2: {
     kind: 'data', screen: '/dashboard/:id', widget: 'kpi',
     expected: 'Средний чек 1 234,57 (округление half-up)', actual: 'Средний чек 1 234,56 (усечение)',
-    detectable: 'oracle',
+    detectable: 'oracle', oracle: 'projection',
   },
   D3: {
     kind: 'data', screen: '/dashboard/:id',
     expected: 'Обновлён: 01.03.2026 (Europe/Moscow)', actual: 'Обновлён: 28.02.2026 (America/New_York)',
-    detectable: 'oracle',
+    detectable: 'oracle', oracle: 'projection',
   },
   D4: {
     kind: 'data', screen: '/dashboard/:id', widget: 'line',
     expected: 'Фильтр региона применён ко всем виджетам экрана', actual: 'Таблица фильтруется, линейный график — нет',
-    detectable: 'oracle',
+    detectable: 'oracle', oracle: 'request',
   },
   D5: {
     kind: 'data', screen: '/dashboard/:id', widget: 'table',
     expected: 'Вторая страница таблицы продолжает первую без повторов', actual: 'Строка id 7 отдаётся повторно',
-    detectable: 'oracle',
+    detectable: 'oracle', oracle: 'response',
   },
   D6: {
     kind: 'data', screen: '/dashboard/:id', widget: 'kpi',
-    expected: 'Доля 52% (база 1000)', actual: 'Доля 37% (база 1405 — все строки вместо отфильтрованных)',
-    detectable: 'oracle',
+    expected: 'Доля 52% (paid / regionRows = 520/1000)', actual: 'Доля 37% — знаменатель allRows = 1405 из того же ответа',
+    detectable: 'oracle', oracle: 'projection',
   },
   L1: {
     kind: 'legal', screen: '/clean',
