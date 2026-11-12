@@ -3,6 +3,7 @@ import { access, mkdir, readFile, rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
 import { scanSignals } from '../detectors/index.ts';
+import type { Profile } from '../profile/types.ts';
 import { writeJsonAtomic } from '../run-store.ts';
 import type {
   Candidate,
@@ -97,6 +98,37 @@ export function resolveSemanticLocator(page: Page, locator: SemanticLocator): Lo
   return locator.index === undefined ? resolved : resolved.nth(locator.index);
 }
 
+export type LaunchOptions = {
+  args: string[];
+  proxy?: { server: string };
+  ignoreHTTPSErrors: boolean;
+};
+
+const forbiddenLaunchArgs = [
+  '--disable-web-security',
+  '--allow-running-insecure-content',
+  '--unsafely-treat-insecure-origin-as-secure',
+  '--remote-debugging-port',
+];
+
+const requiredLaunchArgs = ['--no-first-run', '--no-default-browser-check'];
+
+export function resolveLaunchOptions(config: Config, profile: Profile | null): LaunchOptions {
+  const merged = new Map<string, string>();
+  for (const argument of [...(config.browser?.launchArgs ?? []), ...(profile?.browser?.launchArgs ?? [])]) {
+    const name = argument.split('=', 1)[0]!;
+    if (forbiddenLaunchArgs.includes(name)) throw new Error(`LAUNCH_ARG_FORBIDDEN: ${argument}`);
+    merged.set(name, argument);
+  }
+  for (const required of requiredLaunchArgs) merged.set(required, required);
+  const proxy = config.browser?.proxy;
+  return {
+    args: [...merged.values()],
+    ...(proxy === undefined ? {} : { proxy: { server: proxy } }),
+    ignoreHTTPSErrors: config.browser?.ignoreHTTPSErrors ?? false,
+  };
+}
+
 export class SessionManager {
   private browser?: Browser;
   private browserPromise?: Promise<Browser>;
@@ -105,10 +137,16 @@ export class SessionManager {
   private readonly blockedPopups = new WeakSet<BrowserContext>();
   private readonly config: Config;
   private readonly stateDir: string;
+  private readonly profile: Profile | null;
 
-  constructor(config: Config, stateDir: string) {
+  constructor(config: Config, stateDir: string, profile: Profile | null = null) {
     this.config = config;
     this.stateDir = stateDir;
+    this.profile = profile;
+  }
+
+  private launchOptions(): LaunchOptions {
+    return resolveLaunchOptions(this.config, this.profile);
   }
 
   async open(runId: string, route: string, persona: string): Promise<{ sessionId: string }> {
@@ -129,8 +167,10 @@ export class SessionManager {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
+      const launchOptions = this.launchOptions();
       context = await browser.newContext({
         ...(storageState === undefined ? {} : { storageState }),
+        ...(launchOptions.ignoreHTTPSErrors ? { ignoreHTTPSErrors: true } : {}),
         recordVideo: { dir: mediaDir },
       });
       await this.installNavigationGuard(context);
@@ -413,7 +453,13 @@ export class SessionManager {
   private async getBrowser(): Promise<Browser> {
     if (this.browser?.isConnected()) return this.browser;
     if (!this.browserPromise) {
-      this.browserPromise = chromium.launch({ channel: 'chrome', headless: true }).then((browser) => {
+      const options = this.launchOptions();
+      this.browserPromise = chromium.launch({
+        channel: 'chrome',
+        headless: true,
+        args: options.args,
+        ...(options.proxy === undefined ? {} : { proxy: options.proxy }),
+      }).then((browser) => {
         this.browser = browser;
         return browser;
       });

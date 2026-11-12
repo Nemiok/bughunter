@@ -7,6 +7,11 @@ export type Config = {
   routeMap: Record<string, string[]>;
   baseBranch: string;
   profile?: string;
+  browser?: {
+    launchArgs?: string[];
+    proxy?: string;
+    ignoreHTTPSErrors?: boolean;
+  };
   limits: {
     stepsPerSession: number;
     candidatesPerRun: number;

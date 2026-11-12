@@ -66,6 +66,7 @@ async function main(): Promise<void> {
   const { detectTests } = await import('./tests/detect.ts');
   const { verifyRed } = await import('./tests/verify-red.ts');
   const { SessionManager } = await import('./browser/session.ts');
+  const { loadProfile } = await import('./profile/load.ts');
   const { z } = zod;
   const stateDir = process.env.BUGHUNTER_STATE_DIR
     ? resolve(process.env.BUGHUNTER_STATE_DIR)
@@ -101,7 +102,11 @@ async function main(): Promise<void> {
   }
 
   async function manager(): Promise<InstanceType<typeof SessionManager>> {
-    managerPromise ??= loadConfig(stateDir).then((config) => new SessionManager(config, stateDir));
+    managerPromise ??= loadConfig(stateDir).then(async (config) => new SessionManager(
+      config,
+      stateDir,
+      config.profile === undefined ? null : await loadProfile(stateDir, config.profile),
+    ));
     try {
       return await managerPromise;
     } catch (error) {
