@@ -25,6 +25,8 @@ const configSchema: z.ZodType<Config> = z.strictObject({
     stepsPerSession: z.number().int().positive(),
     candidatesPerRun: z.number().int().positive(),
     elementsPerSnapshot: z.number().int().positive().max(2000).optional(),
+    responseSettleMs: z.number().int().nonnegative().max(60_000).optional(),
+    screensPerSweep: z.number().int().positive().max(2000).optional(),
   }),
   safety: z.strictObject({
     forbiddenActionText: z.array(z.string()),

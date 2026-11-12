@@ -1,4 +1,4 @@
-export type Scope = 'diff' | 'full' | 'route';
+export type Scope = 'diff' | 'full' | 'route' | 'screen' | 'sweep';
 
 export type Config = {
   baseUrl: string;
@@ -17,6 +17,10 @@ export type Config = {
     candidatesPerRun: number;
     /** Сколько элементов снимка отдавать модели за один вызов; остальное доступно через cursor. */
     elementsPerSnapshot?: number;
+    /** Сколько миллисекунд детерминированный обход ждёт ответов приложения на экране. */
+    responseSettleMs?: number;
+    /** Сколько экранов обход проходит за один вызов `bh_sweep`; остальное — следующим курсором. */
+    screensPerSweep?: number;
   };
   safety: {
     forbiddenActionText: string[];
@@ -50,6 +54,45 @@ export type RunStage = 'created' | 'exploring' | 'reproducing' | 'reviewing' | '
 export type OperationStage = 'pending' | 'running' | 'done' | 'failed';
 export type RouteStage = 'pending' | 'exploring' | 'done' | 'failed';
 
+/**
+ * Набор стадий зависит от области: у `diff`/`full`/`route` есть `explore`,
+ * у `screen`/`sweep` вместо него детерминированные `sweep` и `findings`.
+ */
+export type RunStages = {
+  explore?: OperationStage;
+  reproduce?: OperationStage;
+  triage?: OperationStage;
+  export?: OperationStage;
+  sweep?: OperationStage;
+  findings?: OperationStage;
+};
+
+export type FindingKind = 'extract-failed' | 'response-missing' | 'response-captured' | 'navigation-failed' | 'reset-unsupported';
+
+/**
+ * Находка детерминированного обхода. Это не кандидат: у находки нет журнала сессии,
+ * поэтому в кандидаты она превращается только через `promoteFindingToCandidate`.
+ */
+export type Finding = {
+  id: string;
+  runId: string;
+  screenTemplate: string;
+  widget?: string;
+  kind: FindingKind;
+  detail: string;
+  responseHashes: string[];
+  status: 'new' | 'promoted' | 'dismissed';
+  candidateId?: string;
+  createdAt: string;
+};
+
+export type SweepProgress = {
+  visited: string[];
+  cursor: number;
+  startedAt: string;
+  updatedAt: string;
+};
+
 export type ExploreQueueItem = {
   id: string;
   route: string;
@@ -64,7 +107,7 @@ export type Run = {
   scope: Scope;
   routes: string[];
   status: RunStage;
-  stages: Record<'explore' | 'reproduce' | 'triage' | 'export', OperationStage>;
+  stages: RunStages;
   routeStages: Record<string, RouteStage>;
   exploreQueue?: ExploreQueueItem[];
   createdAt: string;

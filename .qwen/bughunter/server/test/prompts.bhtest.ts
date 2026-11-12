@@ -159,6 +159,24 @@ test('explorer requires a lease and never reports a failed exploration as clean'
   assert.match(explorer, /никогда вместо них `Кандидатов нет`/);
 });
 
+test('entry skill offers deterministic scopes and the explorer knows the extended action set', async () => {
+  const entry = (await readPrompt('.qwen/skills/bughunter/SKILL.md')).body;
+  const entryLower = entry.toLowerCase();
+  for (const required of ['screen <template>', 'sweep', 'bh_crawl', 'bh_sweep', 'bh_promote_finding', 'не расходуй модель', 'FINDING_NOT_CANDIDATE']) {
+    assert.ok(entryLower.includes(required.toLowerCase()), `missing entry scope contract: ${required}`);
+  }
+  const allowedLine = entry.split('\n').find((line) => line.includes('Главному агенту разрешены только'));
+  assert.ok(allowedLine, 'binding main-agent allowlist is required');
+  for (const tool of ['bh_crawl', 'bh_sweep', 'bh_promote_finding']) {
+    assert.ok(allowedLine!.includes(tool), `main allowlist missing ${tool}`);
+  }
+
+  const explorer = (await readPrompt('.qwen/agents/bh-explorer.md')).body.toLowerCase();
+  for (const required of ['структура экрана', 'drag', 'scroll', 'clickat', 'hoverat', 'upload', 'cursor', 'totalvisible', 'точк']) {
+    assert.ok(explorer.includes(required), `missing explorer capability: ${required}`);
+  }
+});
+
 test('explorer defines the behaviour of every server-side persona', async () => {
   const explorer = (await readPrompt('.qwen/agents/bh-explorer.md')).body.toLowerCase();
   assert.ok(EXPLORER_PERSONAS.length > 0);

@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import type { Candidate, Config, ExploreQueueItem, OperationStage, RouteStage, Run, Scope, Step } from './types.ts';
+import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope, Step } from './types.ts';
 
 const execFile = promisify(execFileCallback);
 const defaultStateDir = resolve(import.meta.dirname, '../../state');
@@ -87,12 +87,23 @@ export async function createRun(
       throw new Error(`ROUTE_NOT_ALLOWED: ${route}`);
     }
     routes = [route];
+  } else if (scope === 'screen') {
+    // Шаблон экрана не обязан быть в config.routes: инвентарь шире списка настроенных маршрутов.
+    // Наличие шаблона проверяет обход — он единственный, кто читает screens.json.
+    if (route === undefined || !route.startsWith('/')) {
+      throw new Error('ROUTE_REQUIRED');
+    }
+    routes = [route];
+  } else if (scope === 'sweep') {
+    routes = [];
   } else if (scope === 'diff') {
     routes = await diffRoutes(deps.config, deps.projectRoot);
   } else {
     routes = [...deps.config.routes];
   }
 
+  // Детерминированные области не дают модели очередь исследования: экраны обходит bh_sweep.
+  const deterministic = scope === 'sweep' || scope === 'screen';
   const timestamp = new Date();
   const id = `${timestamp.toISOString().replace(/[-:]/g, '')}-${randomBytes(6).toString('hex')}`;
   const run: Run = {
@@ -100,9 +111,11 @@ export async function createRun(
     scope,
     routes,
     status: 'created',
-    stages: { explore: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' },
+    stages: deterministic
+      ? { sweep: 'pending', findings: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' }
+      : { explore: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' },
     routeStages: Object.fromEntries(routes.map((route) => [route, 'pending'])),
-    exploreQueue: buildExploreQueue(routes),
+    ...(deterministic ? {} : { exploreQueue: buildExploreQueue(routes) }),
     createdAt: timestamp.toISOString(),
     updatedAt: timestamp.toISOString(),
   };
@@ -266,11 +279,12 @@ export async function recordRunStage(
   stateDir?: string,
 ): Promise<Run> {
   const run = await readRun(runId, stateDir);
-  const stageStatus: Record<keyof Run['stages'], Run['status']> = {
-    explore: 'exploring', reproduce: 'reproducing', triage: 'reviewing', export: 'writing_tests',
+  const stageStatus: Partial<Record<keyof Run['stages'], Run['status']>> = {
+    explore: 'exploring', sweep: 'exploring', findings: 'exploring',
+    reproduce: 'reproducing', triage: 'reviewing', export: 'writing_tests',
   };
   return updateRun(runId, {
-    status: run.status === 'finished' ? 'finished' : stageStatus[stage],
+    status: run.status === 'finished' ? 'finished' : stageStatus[stage] ?? run.status,
     stages: { ...run.stages, [stage]: status },
   }, stateDir);
 }
@@ -347,10 +361,43 @@ export async function readCandidate(runId: string, candidateId: string, stateDir
     return JSON.parse(await readFile(candidatePath(runId, candidateId, stateDir), 'utf8')) as Candidate;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      // Находка детерминированного обхода — не кандидат: у неё нет журнала сессии, поэтому
+      // triage или экспорт по её id были бы молчаливой подменой сущности.
+      if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(candidateId)) {
+        const finding = join(stateDir ?? defaultStateDir, 'runs', runId, 'findings', `${candidateId}.json`);
+        try {
+          await readFile(finding, 'utf8');
+        } catch {
+          throw new Error(`CANDIDATE_NOT_FOUND: ${candidateId}`);
+        }
+        throw new Error(`FINDING_NOT_CANDIDATE: ${candidateId}`);
+      }
       throw new Error(`CANDIDATE_NOT_FOUND: ${candidateId}`);
     }
     throw error;
   }
+}
+
+export function findingPath(runId: string, findingId: string, stateDir?: string): string {
+  return join(stateDir ?? defaultStateDir, 'runs', runId, 'findings', `${findingId}.json`);
+}
+
+export async function readFindings(runId: string, stateDir?: string): Promise<Finding[]> {
+  const directory = join(stateDir ?? defaultStateDir, 'runs', runId, 'findings');
+  let files: string[];
+  try {
+    files = await readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const findings = await Promise.all(files.filter((file) => file.endsWith('.json'))
+    .map(async (file) => JSON.parse(await readFile(join(directory, file), 'utf8')) as Finding));
+  return findings.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export async function writeFinding(finding: Finding, stateDir?: string): Promise<void> {
+  await writeJsonAtomic(findingPath(finding.runId, finding.id, stateDir), finding);
 }
 
 async function readCandidates(runId: string, stateDir?: string): Promise<Candidate[]> {
@@ -569,7 +616,19 @@ function reportSection(title: string, entries: string[]): string {
   return [`## ${title}`, '', entries.length > 0 ? entries.join('\n\n') : 'None.', ''].join('\n');
 }
 
-function renderReport(run: Run, candidates: Candidate[], stateDir?: string): string {
+function findingReport(finding: Finding): string {
+  return [
+    `### ${finding.kind}: ${finding.screenTemplate}`, '',
+    `- Finding: ${finding.id}`,
+    ...(finding.widget === undefined ? [] : [`- Widget: ${finding.widget}`]),
+    `- Detail: ${finding.detail.replaceAll('\n', ' ')}`,
+    `- Status: ${finding.status}`,
+    ...(finding.candidateId === undefined ? [] : [`- Candidate: ${finding.candidateId}`]),
+    `- Responses: ${finding.responseHashes.length}`,
+  ].join('\n');
+}
+
+function renderReport(run: Run, candidates: Candidate[], findings: Finding[], stateDir?: string): string {
   const confirmed = candidates.filter((candidate) => candidate.status === 'confirmed');
   const rejected = candidates.filter((candidate) => candidate.status === 'rejected');
   const duplicates = candidates.filter((candidate) => candidate.status === 'duplicate');
@@ -585,6 +644,8 @@ function renderReport(run: Run, candidates: Candidate[], stateDir?: string): str
     reportSection('Duplicates', duplicates.map(reviewedReport)),
     reportSection('Unreproduced', unreproduced.map(pendingReport)),
     reportSection('Pending', pending.map(pendingReport)),
+    // Секция появляется только у прогонов с находками: отчёты существующих областей не меняются.
+    ...(findings.length === 0 ? [] : [reportSection('Findings', findings.map(findingReport))]),
   ].join('\n');
 }
 
@@ -594,12 +655,17 @@ export async function finishRun(runId: string, stateDir?: string): Promise<{ rep
     throw new Error(`RUN_INCOMPLETE: ${pendingCandidates.map((candidate) => candidate.id).join(',')}`);
   }
   const run = await readRun(runId, stateDir);
+  // Завершённость проверяется по фактической области: у детерминированного обхода нет маршрутных
+  // стадий на весь список routes, но незакрытый sweep означал бы отчёт по неполному инвентарю.
+  if ((run.scope === 'sweep' || run.scope === 'screen') && run.stages.sweep !== 'done') {
+    throw new Error('RUN_INCOMPLETE: sweep');
+  }
   const incompleteRoutes = run.routes.filter((route) => run.routeStages[route] !== 'done');
   if (incompleteRoutes.length > 0) {
     throw new Error(`RUN_INCOMPLETE: routes ${incompleteRoutes.join(',')}`);
   }
-  const candidates = await readCandidates(runId, stateDir);
-  const contents = renderReport(run, candidates, stateDir);
+  const [candidates, findings] = await Promise.all([readCandidates(runId, stateDir), readFindings(runId, stateDir)]);
+  const contents = renderReport(run, candidates, findings, stateDir);
   const report = join(dirname(runPath(runId, stateDir)), 'report.md');
   await writeAtomic(report, contents);
   if (run.status !== 'finished') await updateRun(runId, { status: 'finished' }, stateDir);

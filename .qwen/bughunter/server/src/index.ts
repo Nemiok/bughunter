@@ -24,7 +24,7 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
-  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT)\b/.test(message)) {
+  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND)\b/.test(message)) {
     return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
@@ -71,6 +71,7 @@ async function main(): Promise<void> {
   const { SessionManager, resolveLaunchOptions } = await import('./browser/session.ts');
   const { loadProfile } = await import('./profile/load.ts');
   const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
+  const { runSweep, promoteFindingToCandidate } = await import('./sweep.ts');
   const { z } = zod;
   const stateDir = process.env.BUGHUNTER_STATE_DIR
     ? resolve(process.env.BUGHUNTER_STATE_DIR)
@@ -178,9 +179,9 @@ async function main(): Promise<void> {
   const signalIds = z.array(z.string().min(1));
 
   server.registerTool('bh_start_run', {
-    description: 'Создать прогон проверки приложения',
+    description: 'Создать прогон проверки приложения: diff/full/route исследует модель, screen (один шаблон экрана) и sweep (весь инвентарь) обходятся детерминированно через bh_sweep',
     inputSchema: z.strictObject({
-      scope: z.enum(['diff', 'full', 'route']),
+      scope: z.enum(['diff', 'full', 'route', 'screen', 'sweep']),
       route: z.string().startsWith('/').optional(),
     }),
   }, async ({ scope, route }) => invoke(async () => {
@@ -343,6 +344,36 @@ async function main(): Promise<void> {
       launch: resolveLaunchOptions(config, profile),
     });
   }));
+
+  server.registerTool('bh_sweep', {
+    description: 'Детерминированно обойти экраны инвентаря в прогоне области screen или sweep: сброс данных профиля, переход, ожидание ответов, структура экрана. Находки пишутся в runs/<runId>/findings, курсор — в sweep.json, поэтому прерванный обход продолжается. Модель при этом не расходуется',
+    inputSchema: z.strictObject({
+      runId,
+      limit: z.number().int().positive().max(2000).optional(),
+      cursor: z.number().int().nonnegative().optional(),
+    }),
+  }, async ({ runId: id, limit, cursor }) => invoke(async () => runSweep({
+    runId: id,
+    stateDir,
+    ...(limit === undefined ? {} : { limit }),
+    ...(cursor === undefined ? {} : { cursor }),
+  })));
+
+  server.registerTool('bh_promote_finding', {
+    description: 'Превратить находку обхода в кандидата: создаёт журнал из перехода на экран, после чего работают обычные bh_reproduce, bh_triage и bh_export_e2e. Обязателен check — иначе кандидата нечем воспроизвести',
+    inputSchema: z.strictObject({
+      runId,
+      findingId: z.string().min(1),
+      title: z.string().min(1),
+      expected: z.string().min(1),
+      actual: z.string().min(1),
+      check: z.strictObject({
+        kind: z.enum(['visibleText', 'notVisibleText', 'elementCount']),
+        target: z.string().min(1),
+        expected: z.union([z.string(), z.number()]).optional(),
+      }).optional(),
+    }),
+  }, async (input) => invoke(() => promoteFindingToCandidate({ ...input, stateDir })));
 
   server.registerTool('bh_report_candidate', {
     description: 'Сохранить кандидата в баги с сигналами и журналом',
