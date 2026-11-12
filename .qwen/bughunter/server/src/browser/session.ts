@@ -5,18 +5,22 @@ import { chromium, type Browser, type BrowserContext, type Locator, type Page } 
 import { scanSignals } from '../detectors/index.ts';
 import type { Profile } from '../profile/types.ts';
 import { writeJsonAtomic } from '../run-store.ts';
+import { resolveTestDataFile } from '../profile/load.ts';
 import type {
   Candidate,
   Check,
   Config,
   ElementSnapshot,
   Journal,
+  ScrollInput,
   SemanticLocator,
   Signal,
   Step,
+  StepAction,
 } from '../types.ts';
 import { collectElements, toPlaywrightLocator } from './elements.ts';
 import { attachNetworkCapture, type NetworkCapture } from './network.ts';
+import { coordinateActions, isValidScroll, resolvePointTarget, scrollDeltas, type Point, type PointTarget } from './point.ts';
 
 export type StateResult = {
   url: string;
@@ -27,10 +31,20 @@ export type StateResult = {
 };
 
 export type ActInput = {
-  elementId: string;
-  action: NonNullable<Step['action']>;
+  elementId?: string;
+  action: StepAction;
   value?: string;
+  /** Вторая цель для drag. */
+  toElementId?: string;
+  /** Точка viewport для clickAt/hoverAt. */
+  at?: Point;
+  /** Путь файла загрузки относительно `profile.testData.dir`. */
+  file?: string;
+  scroll?: ScrollInput;
 };
+
+/** Действия, которым цель не нужна: скролл страницы работает по viewport. */
+const elementlessActions: StepAction[] = ['scroll'];
 
 export type ActResult = {
   ok: boolean;
@@ -38,6 +52,17 @@ export type ActResult = {
   navigated: boolean;
   signals: Signal[];
 };
+
+type ResolvedAction =
+  | { ok: false; error: string }
+  | {
+    ok: true;
+    element: ElementSnapshot | undefined;
+    locator: Locator | null;
+    point: PointTarget | undefined;
+    target: { snapshot: ElementSnapshot; locator: Locator } | undefined;
+    filePath: string | undefined;
+  };
 
 export type ProbeKind = NonNullable<Step['probe']>;
 
@@ -225,16 +250,23 @@ export class SessionManager {
     if (this.stepsLeft(session) <= 0) {
       return { ok: false, error: 'LIMIT_REACHED', navigated: false, signals: [] };
     }
-    const element = session.elements.get(input.elementId);
-    if (!element) {
-      return { ok: false, error: `ELEMENT_NOT_FOUND: ${input.elementId}`, navigated: false, signals: [] };
+    const resolved = await this.resolveAction(session, input);
+    if (!resolved.ok) {
+      return { ok: false, error: resolved.error, navigated: false, signals: [] };
     }
-    const locator = resolveSemanticLocator(session.page, element.locator);
-    if (await this.isForbidden(element, locator)) {
-      return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [] };
-    }
-    if (await this.isReadOnlySubmission(locator, input)) {
-      return { ok: false, error: 'FORM_SUBMISSION_BLOCKED', navigated: false, signals: [] };
+    const { element, locator, point, target, filePath } = resolved;
+    // Guard'ы проверяют разрешённую цель, а не аргументы модели: координата сначала
+    // превращается в элемент, иначе клик по точке обошёл бы и запретный текст, и readOnly.
+    if (element !== undefined && locator !== null) {
+      if (await this.isForbidden(element, locator)) {
+        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [] };
+      }
+      if (await this.isReadOnlySubmission(locator, input)) {
+        return { ok: false, error: 'FORM_SUBMISSION_BLOCKED', navigated: false, signals: [] };
+      }
+      if (target !== undefined && await this.isForbidden(target.snapshot, target.locator)) {
+        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [] };
+      }
     }
 
     const beforeUrl = session.page.url();
@@ -243,7 +275,11 @@ export class SessionManager {
       : input.value;
     let actionError: unknown;
     try {
-      await this.executeAction(locator, input.action, value);
+      await this.executeAction(session.page, locator, input, {
+        ...(value === undefined ? {} : { value }),
+        ...(target === undefined ? {} : { target: target.locator }),
+        ...(filePath === undefined ? {} : { filePath }),
+      });
     } catch (error) {
       actionError = error;
     }
@@ -274,12 +310,68 @@ export class SessionManager {
       timestamp: new Date().toISOString(),
       routeTemplate: this.currentRoute(session.page),
       action: input.action,
-      elementId: input.elementId,
+      ...(input.elementId === undefined ? {} : { elementId: input.elementId }),
       ...(value === undefined ? {} : { value }),
-      locator: toPlaywrightLocator(element.locator),
+      // Для координатного действия локатор не записывается: повтор идёт по точке,
+      // а семантическая цель под ней остаётся в resolvedLocator как доказательство для guard'ов и отчёта.
+      ...(point !== undefined || element === undefined ? {} : { locator: toPlaywrightLocator(element.locator) }),
+      ...(point === undefined ? {} : { at: input.at, resolvedLocator: point.locator }),
+      ...(target === undefined ? {} : { to: { locator: toPlaywrightLocator(target.snapshot.locator) } }),
+      ...(input.action === 'upload' && input.file !== undefined ? { file: input.file } : {}),
+      ...(input.action === 'scroll' && isValidScroll(input.scroll) ? { scroll: input.scroll } : {}),
       signalIds: signals.map((signal) => signal.id),
     });
     return { ok: true, navigated: beforeUrl !== session.page.url(), signals };
+  }
+
+  private async resolveAction(session: Session, input: ActInput): Promise<ResolvedAction> {
+    const page = session.page;
+    if (input.action === 'scroll' && !isValidScroll(input.scroll)) return { ok: false, error: 'SCROLL_INVALID' };
+    if (coordinateActions.includes(input.action) && input.at === undefined) {
+      return { ok: false, error: 'POINT_TARGET_UNRESOLVED' };
+    }
+
+    let point: PointTarget | undefined;
+    let element: ElementSnapshot | undefined;
+    let locator: Locator | null = null;
+    if (input.at !== undefined) {
+      try {
+        point = await resolvePointTarget(page, input.at, this.profile);
+      } catch (error) {
+        const message = errorMessage(error);
+        return { ok: false, error: message.startsWith('POINT_TARGET_UNRESOLVED') ? 'POINT_TARGET_UNRESOLVED' : message };
+      }
+      element = point.snapshot;
+      locator = resolveSemanticLocator(page, element.locator);
+    } else if (input.elementId !== undefined) {
+      const found = session.elements.get(input.elementId);
+      if (found === undefined) return { ok: false, error: `ELEMENT_NOT_FOUND: ${input.elementId}` };
+      element = found;
+      locator = resolveSemanticLocator(page, found.locator);
+    } else if (!elementlessActions.includes(input.action)) {
+      return { ok: false, error: `ELEMENT_NOT_FOUND: ${String(input.elementId)}` };
+    }
+
+    let target: { snapshot: ElementSnapshot; locator: Locator } | undefined;
+    if (input.action === 'drag') {
+      if (locator === null || input.toElementId === undefined) return { ok: false, error: 'DRAG_TARGET_REQUIRED' };
+      const dropTarget = session.elements.get(input.toElementId);
+      if (dropTarget === undefined) return { ok: false, error: `ELEMENT_NOT_FOUND: ${input.toElementId}` };
+      target = { snapshot: dropTarget, locator: resolveSemanticLocator(page, dropTarget.locator) };
+    }
+
+    let filePath: string | undefined;
+    if (input.action === 'upload') {
+      if (locator === null || input.file === undefined) return { ok: false, error: 'UPLOAD_FILE_NOT_FOUND' };
+      try {
+        filePath = resolveTestDataFile(this.profile, input.file);
+        await access(filePath);
+      } catch {
+        return { ok: false, error: 'UPLOAD_FILE_NOT_FOUND' };
+      }
+    }
+
+    return { ok: true, element, locator, point, target, filePath };
   }
 
   async navigate(sessionId: string, path: string): Promise<StateResult> {
@@ -565,7 +657,8 @@ export class SessionManager {
 
   private async isReadOnlySubmission(locator: Locator, input: ActInput): Promise<boolean> {
     if (!this.config.safety.readOnly) return false;
-    if (!['click', 'dblclick', 'press'].includes(input.action)) return false;
+    // clickAt — тот же клик, только заданный точкой: без него readOnly обходился бы координатой.
+    if (!['click', 'dblclick', 'press', 'clickAt'].includes(input.action)) return false;
     return locator.evaluate((element, action) => {
       if (!(element instanceof HTMLButtonElement || element instanceof HTMLInputElement) || !element.form) return false;
       if (action.action !== 'press') return ['submit', 'image'].includes(element.type);
@@ -573,30 +666,62 @@ export class SessionManager {
     }, input);
   }
 
-  private async executeAction(locator: Locator, action: NonNullable<Step['action']>, value?: string): Promise<void> {
-    switch (action) {
+  private async executeAction(
+    page: Page,
+    locator: Locator | null,
+    input: ActInput,
+    context: { value?: string; target?: Locator; filePath?: string },
+  ): Promise<void> {
+    const required = (): Locator => {
+      if (locator === null) throw new Error('ELEMENT_REQUIRED');
+      return locator;
+    };
+    switch (input.action) {
       case 'click':
-        await locator.click();
+        await required().click();
         break;
       case 'dblclick':
-        await locator.dblclick();
+        await required().dblclick();
         break;
       case 'fill':
-        await locator.fill(value ?? '');
+        await required().fill(context.value ?? '');
         break;
       case 'select':
-        if (value === undefined) throw new Error('VALUE_REQUIRED: select');
-        await locator.selectOption(value);
+        if (context.value === undefined) throw new Error('VALUE_REQUIRED: select');
+        await required().selectOption(context.value);
         break;
       case 'press':
-        if (value === undefined) throw new Error('VALUE_REQUIRED: press');
-        await locator.press(value);
+        if (context.value === undefined) throw new Error('VALUE_REQUIRED: press');
+        await required().press(context.value);
         break;
       case 'check':
-        await locator.check();
+        await required().check();
         break;
       case 'hover':
-        await locator.hover();
+        await required().hover();
+        break;
+      case 'drag':
+        if (context.target === undefined) throw new Error('DRAG_TARGET_REQUIRED');
+        await required().dragTo(context.target);
+        break;
+      case 'scroll': {
+        if (!isValidScroll(input.scroll)) throw new Error('SCROLL_INVALID');
+        const { dx, dy } = scrollDeltas(input.scroll);
+        if (locator === null) await page.mouse.wheel(dx, dy);
+        else await locator.evaluate((element, delta) => element.scrollBy(delta.dx, delta.dy), { dx, dy });
+        break;
+      }
+      case 'clickAt':
+        if (input.at === undefined) throw new Error('POINT_TARGET_UNRESOLVED');
+        await page.mouse.click(input.at.x, input.at.y);
+        break;
+      case 'hoverAt':
+        if (input.at === undefined) throw new Error('POINT_TARGET_UNRESOLVED');
+        await page.mouse.move(input.at.x, input.at.y);
+        break;
+      case 'upload':
+        if (context.filePath === undefined) throw new Error('UPLOAD_FILE_NOT_FOUND');
+        await required().setInputFiles(context.filePath);
         break;
     }
   }

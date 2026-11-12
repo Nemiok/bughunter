@@ -3,8 +3,10 @@ import { mkdir, readFile, rename } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { Page } from 'playwright-core';
 import { SessionManager } from './browser/session.ts';
+import type { ActInput, StateResult } from './browser/session.ts';
 import { toPlaywrightLocator } from './browser/elements.ts';
 import { loadConfig } from './config.ts';
+import { loadProfile } from './profile/load.ts';
 import { findAnomalyTexts, signalSignature } from './detectors/signals.ts';
 import { readRun, writeJsonAtomic } from './run-store.ts';
 import type { Candidate, Check, Config, Journal, Signal, Step } from './types.ts';
@@ -166,6 +168,37 @@ async function observeReplayAnomaly(page: Page, config: Config, signature: strin
   return observed;
 }
 
+/**
+ * Шаг журнала обратно превращается в `bh_act`. Координатный шаг повторяется точкой: цель под ней
+ * приложение определит само, а `resolvedLocator` остаётся в журнале доказательством для отчёта.
+ */
+function replayActInput(step: Step, state: StateResult): ActInput {
+  const action = step.action;
+  if (action === undefined) throw new Error('REPLAY_ELEMENT_NOT_FOUND');
+  if (step.at !== undefined) return { action, at: step.at };
+  if (step.locator === undefined) {
+    if (action === 'scroll' && step.scroll !== undefined) return { action, scroll: step.scroll };
+    throw new Error('REPLAY_ELEMENT_NOT_FOUND');
+  }
+  const find = (locator: string) => state.elements.find((element) => toPlaywrightLocator(element.locator) === locator);
+  const element = find(step.locator);
+  if (element === undefined) throw new Error('REPLAY_ELEMENT_NOT_FOUND');
+  let toElementId: string | undefined;
+  if (step.to !== undefined) {
+    const target = find(step.to.locator);
+    if (target === undefined) throw new Error('REPLAY_ELEMENT_NOT_FOUND');
+    toElementId = target.id;
+  }
+  return {
+    elementId: element.id,
+    action,
+    ...(step.value === undefined ? {} : { value: step.value }),
+    ...(toElementId === undefined ? {} : { toElementId }),
+    ...(step.file === undefined ? {} : { file: step.file }),
+    ...(step.scroll === undefined ? {} : { scroll: step.scroll }),
+  };
+}
+
 async function executeReplay(
   manager: SessionManager,
   config: Config,
@@ -184,17 +217,10 @@ async function executeReplay(
     const collect = (emitted: Signal[]) => signals.push(...emitted);
     for (const step of steps) {
       if (step.kind === 'act') {
+        if (!step.action) throw new Error('REPLAY_ELEMENT_NOT_FOUND');
         const state = await manager.state(sessionId);
         collect(state.signals);
-        const element = state.elements.find((candidateElement) =>
-          toPlaywrightLocator(candidateElement.locator) === step.locator,
-        );
-        if (!element || !step.action) throw new Error('REPLAY_ELEMENT_NOT_FOUND');
-        const acted = await manager.act(sessionId, {
-          elementId: element.id,
-          action: step.action,
-          ...(step.value === undefined ? {} : { value: step.value }),
-        });
+        const acted = await manager.act(sessionId, replayActInput(step, state));
         collect(acted.signals);
         if (!acted.ok) throw new Error(acted.error ?? 'REPLAY_ACTION_FAILED');
       } else if (step.kind === 'navigate') {
@@ -250,7 +276,10 @@ export async function reproduceCandidate(input: {
   if (candidate.runId !== input.runId) throw new Error(`CANDIDATE_RUN_MISMATCH: ${input.candidateId}`);
   if (candidate.signalIds.length === 0 && !candidate.check) throw new Error('CANDIDATE_ORACLE_REQUIRED');
   const journal = await readJournal(input.runId, candidate.sessionId, stateDir);
-  const manager = new SessionManager(config, stateDir);
+  // Профиль нужен повтору: без него upload не найдёт каталог тестовых данных,
+  // а координатные действия лишатся хука приложения.
+  const profile = config.profile === undefined ? null : await loadProfile(stateDir, config.profile);
+  const manager = new SessionManager(config, stateDir, profile);
   const replayArtifacts: string[] = [];
   let activeReplay: Promise<ReplayOutcome> | undefined;
   try {

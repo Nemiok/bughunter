@@ -24,6 +24,9 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
+  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND)\b/.test(message)) {
+    return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
+  }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
   if (message === 'NAVIGATION_NOT_ALLOWED' || message.startsWith('NAVIGATION_NOT_ALLOWED:') || message === 'FORBIDDEN_ORIGIN') {
     return { code: 'FORBIDDEN_ORIGIN', message };
@@ -244,15 +247,30 @@ async function main(): Promise<void> {
   }, async ({ sessionId: id }) => invoke(async () => compactState(await (await manager()).state(id))));
 
   server.registerTool('bh_act', {
-    description: 'Выполнить одно действие с элементом страницы',
+    description: 'Выполнить одно действие: с элементом страницы (click, dblclick, fill, select, press, check, hover, drag, scroll, upload) или по координате точки (clickAt, hoverAt — для canvas и других целей без DOM-семантики)',
     inputSchema: z.strictObject({
       sessionId,
-      elementId: z.string().min(1),
-      action: z.enum(['click', 'dblclick', 'fill', 'select', 'press', 'check', 'hover']),
+      elementId: z.string().min(1).optional(),
+      action: z.enum([
+        'click', 'dblclick', 'fill', 'select', 'press', 'check', 'hover',
+        'drag', 'scroll', 'clickAt', 'hoverAt', 'upload',
+      ]),
       value: z.string().optional(),
+      toElementId: z.string().min(1).optional(),
+      at: z.strictObject({ x: z.number(), y: z.number() }).optional(),
+      file: z.string().min(1).optional(),
+      scroll: z.strictObject({ direction: z.enum(['up', 'down', 'left', 'right']), delta: z.number() }).optional(),
     }),
-  }, async ({ sessionId: id, elementId, action, value }) => {
-    const response = await invoke(async () => (await manager()).act(id, { elementId, action, ...(value === undefined ? {} : { value }) }));
+  }, async ({ sessionId: id, elementId, action, value, toElementId, at, file, scroll }) => {
+    const response = await invoke(async () => (await manager()).act(id, {
+      action,
+      ...(elementId === undefined ? {} : { elementId }),
+      ...(value === undefined ? {} : { value }),
+      ...(toElementId === undefined ? {} : { toElementId }),
+      ...(at === undefined ? {} : { at }),
+      ...(file === undefined ? {} : { file }),
+      ...(scroll === undefined ? {} : { scroll }),
+    }));
     const text = response.content[0]?.text;
     if (text) {
       const value = JSON.parse(text) as { ok?: boolean; error?: string };

@@ -1,6 +1,9 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { isValidScroll, scrollDeltas } from '../browser/point.ts';
 import { loadConfig } from '../config.ts';
+import { loadActiveProfile, resolveTestDataFile } from '../profile/load.ts';
+import type { Profile } from '../profile/types.ts';
 import { findProjectRoot } from '../project.ts';
 import { readCandidate, readRun, readSharedMemory, recordCandidateTest } from '../run-store.ts';
 import type { SharedMemoryEntry } from '../run-store.ts';
@@ -63,29 +66,52 @@ function semanticLocator(source: string): string {
   throw new Error(`STEP_LOCATOR_INVALID: ${source}`);
 }
 
-function actionSource(step: Step): string {
-  if (!step.locator || !step.action) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
-  const locator = semanticLocator(step.locator);
+function actionSource(step: Step, profile: Profile | null): string {
+  if (step.action === undefined) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
+  const element = (): string => {
+    if (step.locator === undefined) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
+    return semanticLocator(step.locator);
+  };
   switch (step.action) {
     case 'click':
     case 'dblclick':
     case 'check':
     case 'hover':
-      return `await ${locator}.${step.action}();`;
+      return `await ${element()}.${step.action}();`;
     case 'fill':
     case 'press':
       if (step.value === undefined) throw new Error(`STEP_VALUE_REQUIRED: ${step.id}`);
-      return `await ${locator}.${step.action}(${JSON.stringify(step.value)});`;
+      return `await ${element()}.${step.action}(${JSON.stringify(step.value)});`;
     case 'select':
       if (step.value === undefined) throw new Error(`STEP_VALUE_REQUIRED: ${step.id}`);
-      return `await ${locator}.selectOption(${JSON.stringify(step.value)});`;
+      return `await ${element()}.selectOption(${JSON.stringify(step.value)});`;
+    case 'drag':
+      if (step.to?.locator === undefined) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
+      return `await ${element()}.dragTo(${semanticLocator(step.to.locator)});`;
+    case 'scroll': {
+      if (!isValidScroll(step.scroll)) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
+      const { dx, dy } = scrollDeltas(step.scroll);
+      // Без элемента скроллится страница, с элементом — конкретный контейнер (виртуальные списки BI).
+      return step.locator === undefined
+        ? `await page.mouse.wheel(${dx}, ${dy});`
+        : `await ${element()}.evaluate((element) => element.scrollBy(${dx}, ${dy}));`;
+    }
+    case 'clickAt':
+    case 'hoverAt': {
+      if (step.at === undefined) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
+      const method = step.action === 'clickAt' ? 'click' : 'move';
+      return `await page.mouse.${method}(${step.at.x}, ${step.at.y});`;
+    }
+    case 'upload':
+      if (step.file === undefined) throw new Error(`STEP_ACTION_INVALID: ${step.id}`);
+      return `await ${element()}.setInputFiles(${JSON.stringify(resolveTestDataFile(profile, step.file))});`;
   }
 }
 
-function replaySource(candidate: Candidate, config: Config): string {
+function replaySource(candidate: Candidate, config: Config, profile: Profile | null): string {
   const steps = (candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps;
   return steps.map((step) => {
-    if (step.kind === 'act') return `  ${actionSource(step)}\n`;
+    if (step.kind === 'act') return `  ${actionSource(step, profile)}\n`;
     if (step.kind === 'navigate') {
       if (!step.path) throw new Error(`STEP_PATH_REQUIRED: ${step.id}`);
       return `  await page.goto(new URL(${JSON.stringify(step.path)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });\n`;
@@ -219,9 +245,14 @@ ${replay}  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch((
 `;
 }
 
-export function generatePlaywrightTest(candidate: Candidate, config: Config, initialRoute = candidate.route): string {
+export function generatePlaywrightTest(
+  candidate: Candidate,
+  config: Config,
+  initialRoute = candidate.route,
+  profile: Profile | null = null,
+): string {
   allowedUrl(initialRoute, config);
-  const replay = replaySource(candidate, config);
+  const replay = replaySource(candidate, config, profile);
   for (const step of (candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) {
     if (step.kind === 'navigate' && step.path) allowedUrl(step.path, config);
   }
@@ -331,8 +362,12 @@ export async function exportE2e(input: { runId: string; bugId: string; stateDir?
   }
   if (candidate.status !== 'confirmed') throw new Error(`BUG_NOT_CONFIRMED: ${input.bugId}`);
   if (candidate.reproduction?.status !== 'reproduced') throw new Error(`CANDIDATE_UNREPRODUCED: ${candidate.id}`);
-  const [config, initialRoute] = await Promise.all([loadConfig(stateDir), journalRoute(candidate, stateDir)]);
-  const source = generatePlaywrightTest(candidate, config, initialRoute);
+  const [config, initialRoute, profile] = await Promise.all([
+    loadConfig(stateDir),
+    journalRoute(candidate, stateDir),
+    loadActiveProfile(stateDir),
+  ]);
+  const source = generatePlaywrightTest(candidate, config, initialRoute, profile);
   const project = await nearestPlaywrightProject();
   const destination = project
     ? resolve(project, config.tests.e2e.dir)

@@ -36,6 +36,11 @@ export type Profile = {
   reset?: ResetRecipe;
   navigation?: { idSegmentPattern: string };
   testData?: { dir: string };
+  /**
+   * Хук приложения для координатных действий: источник функции `(point) => ({ locator, text, role })`.
+   * Нужен там, где цель живёт не в DOM (canvas-сцена приложения): под точкой остаётся canvas.
+   */
+  interactions?: { resolvePoint?: string };
   /** Откуда брать эталон ответов: из перехвата браузера или из страничного хука приложения. */
   responseSource?: 'playwright' | 'page-hook';
   browser?: { launchArgs?: string[] };

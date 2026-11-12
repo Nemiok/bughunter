@@ -92,17 +92,34 @@ export type ElementSnapshot = {
   locator: SemanticLocator;
 };
 
+export type StepAction =
+  | 'click' | 'dblclick' | 'fill' | 'select' | 'press' | 'check' | 'hover'
+  | 'drag' | 'scroll' | 'clickAt' | 'hoverAt' | 'upload';
+
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
+
+export type ScrollInput = { direction: ScrollDirection; delta: number };
+
 export type Step = {
   id: string;
   kind: 'act' | 'navigate' | 'probe';
   timestamp: string;
   routeTemplate: string;
-  action?: 'click' | 'dblclick' | 'fill' | 'select' | 'press' | 'check' | 'hover';
+  action?: StepAction;
   elementId?: string;
   value?: string;
   path?: string;
   probe?: 'reload' | 'back' | 'mobile_viewport';
   locator?: string;
+  /** Цель drag: без неё шаг неоднозначен, а повтор невозможен. */
+  to?: { locator: string };
+  /** Точка в координатах viewport для clickAt/hoverAt. */
+  at?: { x: number; y: number };
+  /** Семантическая цель под точкой: доказательство того, что guard'ы видели реальный элемент. */
+  resolvedLocator?: string;
+  /** Путь файла загрузки относительно `profile.testData.dir` — абсолютный путь машины в журнал не попадает. */
+  file?: string;
+  scroll?: ScrollInput;
   signalIds?: string[];
   responseHashes?: string[];
 };

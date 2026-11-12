@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { loadConfig } from '../config.ts';
@@ -32,6 +32,7 @@ const profileSchema: z.ZodType<Profile> = z.strictObject({
   }).optional(),
   navigation: z.strictObject({ idSegmentPattern: z.string().min(1) }).optional(),
   testData: z.strictObject({ dir: z.string().min(1) }).optional(),
+  interactions: z.strictObject({ resolvePoint: z.string().min(1).optional() }).optional(),
   responseSource: z.enum(['playwright', 'page-hook']).optional(),
   browser: z.strictObject({ launchArgs: z.array(z.string()).max(64) }).optional(),
 });
@@ -70,4 +71,17 @@ export async function loadActiveProfile(stateDir: string): Promise<Profile | nul
   const config = await loadConfig(stateDir);
   if (config.profile === undefined) return null;
   return loadProfile(stateDir, config.profile);
+}
+
+/**
+ * Файл загрузки резолвится строго внутри `profile.testData.dir`: модель не должна уметь
+ * прочитать произвольный файл машины действием `upload`.
+ */
+export function resolveTestDataFile(profile: Profile | null, file: string): string {
+  const directory = profile?.testData?.dir;
+  if (directory === undefined) throw new Error(`UPLOAD_FILE_NOT_FOUND: ${file}`);
+  const root = resolve(directory);
+  const resolved = resolve(root, file);
+  if (resolved !== root && !resolved.startsWith(root + sep)) throw new Error(`UPLOAD_FILE_NOT_FOUND: ${file}`);
+  return resolved;
 }

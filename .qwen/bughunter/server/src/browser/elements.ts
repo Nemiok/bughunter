@@ -55,8 +55,14 @@ async function accessibleName(locator: Locator, fallback: string): Promise<strin
   }
 }
 
-export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
-  const rawElements = await page.evaluate((selector): RawElement[] => {
+/**
+ * Один `evaluate` на оба сценария — снимок всех интерактивных элементов и поиск цели по точке.
+ * Инпейдж-хелперы (роль, имя, css-путь) существуют в одном экземпляре: разделись они на две копии,
+ * координатное действие и снимок начали бы расходиться в определении одного и того же элемента.
+ * `position` — индекс в списке `interactiveSelector`, для точки вне этого списка он равен -1.
+ */
+async function collectRaw(page: Page, point?: { x: number; y: number }): Promise<RawElement[]> {
+  return page.evaluate(({ selector, point }): RawElement[] => {
     function inferredRole(element: Element): string | null {
       const explicit = element.getAttribute('role');
       if (explicit) return explicit;
@@ -71,7 +77,8 @@ export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
         if (element.type === 'number') return 'spinbutton';
         if (['text', 'search', 'email', 'tel', 'url'].includes(element.type) && element.hasAttribute('list')) return 'combobox';
         if (element.type === 'search') return 'searchbox';
-        if (['button', 'submit', 'reset', 'image'].includes(element.type)) return 'button';
+        // HTML-AAM: input[type=file] отображается в роль button.
+        if (['button', 'submit', 'reset', 'image', 'file'].includes(element.type)) return 'button';
         if (['text', 'email', 'tel', 'url', 'password'].includes(element.type)) return 'textbox';
         return null;
       }
@@ -115,12 +122,10 @@ export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
       testIdGroups.set(testid, group);
     }
 
-    return Array.from(document.querySelectorAll<HTMLElement>(selector)).flatMap((element, position) => {
-      const role = inferredRole(element);
-      if (role === null) return [];
+    function describe(element: HTMLElement, position: number, role: string): RawElement {
       const testid = element.dataset.testid;
       const testIdGroup = testid === undefined ? [] : testIdGroups.get(testid)!;
-      return [{
+      return {
         position,
         role,
         type: element instanceof HTMLInputElement ? element.type : element.tagName.toLowerCase(),
@@ -134,14 +139,26 @@ export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
         css: cssSelector(element),
         semanticRole: role !== 'generic',
         formControl: element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement,
-      }];
-    });
-  }, interactiveSelector);
+      };
+    }
 
+    if (point !== undefined) {
+      const hit = document.elementFromPoint(point.x, point.y);
+      if (!(hit instanceof HTMLElement)) return [];
+      return [describe(hit, Array.from(document.querySelectorAll(selector)).indexOf(hit), inferredRole(hit) ?? 'generic')];
+    }
+
+    return Array.from(document.querySelectorAll<HTMLElement>(selector)).flatMap((element, position) => {
+      const role = inferredRole(element);
+      if (role === null) return [];
+      return [describe(element, position, role)];
+    });
+  }, { selector: interactiveSelector, point });
+}
+
+async function toSnapshots(page: Page, entries: Array<{ raw: RawElement; locator: Locator }>): Promise<ElementSnapshot[]> {
   const visible: Array<Omit<ElementSnapshot, 'id' | 'name'> & { fullName: string }> = [];
-  const candidates = page.locator(interactiveSelector);
-  for (const raw of rawElements) {
-    const locator = candidates.nth(raw.position);
+  for (const { raw, locator } of entries) {
     if (!await locator.isVisible()) continue;
     const fullName = await accessibleName(locator, raw.fallbackName);
     let semanticLocator: SemanticLocator;
@@ -185,6 +202,29 @@ export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
       locator: (counts.get(key) ?? 0) > 1 ? { ...element.locator, index } : element.locator,
     };
   });
+}
+
+export async function collectElements(page: Page): Promise<ElementSnapshot[]> {
+  const rawElements = await collectRaw(page);
+  const candidates = page.locator(interactiveSelector);
+  return toSnapshots(page, rawElements.map((raw) => ({ raw, locator: candidates.nth(raw.position) })));
+}
+
+/** Элемент под точкой viewport: цель координатного действия, в том числе canvas без DOM-семантики. */
+export async function elementAtPoint(page: Page, at: { x: number; y: number }): Promise<ElementSnapshot | null> {
+  const [raw] = await collectRaw(page, at);
+  if (raw === undefined) return null;
+  const locator = raw.position >= 0
+    ? page.locator(interactiveSelector).nth(raw.position)
+    : page.locator(raw.css);
+  const [snapshot] = await toSnapshots(page, [{ raw, locator }]);
+  if (snapshot === undefined) return null;
+  // Точка может попасть в контейнер вроде body: его текст не бывает точным локатором,
+  // поэтому длинный текст заменяется css-путём до того же элемента.
+  if (snapshot.locator.kind === 'text' && snapshot.locator.value.length > 80) {
+    return { ...snapshot, locator: { kind: 'css', value: raw.css } };
+  }
+  return snapshot;
 }
 
 export function toPlaywrightLocator(locator: SemanticLocator): string {

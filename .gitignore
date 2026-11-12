@@ -17,3 +17,6 @@ bughunter-gate/
 .env
 .env.*
 .qwen/settings.local.json
+
+# SDD-воркспейсы (ledger, briefs) — рабочий скретч, не артефакт
+.superpowers/
