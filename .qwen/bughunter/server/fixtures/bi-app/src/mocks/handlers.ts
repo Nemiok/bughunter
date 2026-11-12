@@ -2,7 +2,7 @@ import { delay, http, HttpResponse } from 'msw';
 import { dataset, SEED_VERSION, type Dataset } from './seed.ts';
 import { RESET_ENDPOINT, type ScenarioName } from './scenarios.ts';
 
-function json(body: unknown) {
+function json(body: object) {
   return HttpResponse.json(body, { headers: { 'x-bh-seed': SEED_VERSION } });
 }
 

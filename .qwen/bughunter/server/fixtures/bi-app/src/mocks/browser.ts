@@ -40,7 +40,7 @@ export async function startMocks(): Promise<void> {
     }
   });
 
-  await worker.start({ onUnhandledRequest: 'bypass', quiet: true });
+  await worker.start({ quiet: true });
 
   window.__BHScenario = {
     current: currentScenario,

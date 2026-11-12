@@ -85,12 +85,43 @@ async function withPage(run: (page: Page) => Promise<void>): Promise<void> {
   }
 }
 
+/** Экран дашборда готов, когда все четыре запроса виджетов завершились (успехом или ошибкой). */
+async function openDashboard(page: Page, path = '/dashboard/1'): Promise<void> {
+  await openFixture(page, path);
+  await page.getByTestId('dashboard-ready').waitFor({ state: 'visible', timeout: 20_000 });
+}
+
 async function setScenarioFlag(page: Page, scenario: string): Promise<void> {
   await page.evaluate(([key, value]) => window.localStorage.setItem(key, value), [SCENARIO_KEY, scenario]);
 }
 
 function currentScenarioOf(page: Page): Promise<string> {
   return page.evaluate(() => (window as unknown as { __BHScenario: { current(): string } }).__BHScenario.current());
+}
+
+/** Контракт `window.__BHProfile` из `fixtures/bi-app/src/bh-profile.ts` — в тестах повторяется намеренно как внешний контракт. */
+type WidgetDescriptor = { widget: string; kind: string; node: string };
+type WidgetPoint = { locator: string; text: string; box: { x: number; y: number; width: number; height: number } };
+type ResolvedPoint = { locator: string; text: string; role?: string } | null;
+
+function profileWidgets(page: Page): Promise<WidgetDescriptor[]> {
+  return page.evaluate(() => (window as unknown as { __BHProfile: { widgets(): WidgetDescriptor[] } }).__BHProfile.widgets());
+}
+
+function profileExtract(page: Page, widget: string): Promise<unknown> {
+  return page.evaluate((name) => (window as unknown as { __BHProfile: { extract(widget: string): unknown } }).__BHProfile.extract(name), widget);
+}
+
+function profilePoints(page: Page, widget: string): Promise<WidgetPoint[]> {
+  return page.evaluate((name) => (window as unknown as { __BHProfile: { points(widget: string): WidgetPoint[] } }).__BHProfile.points(name), widget);
+}
+
+function profileResolvePoint(page: Page, point: { x: number; y: number }): Promise<ResolvedPoint> {
+  return page.evaluate((at) => (window as unknown as { __BHProfile: { resolvePoint(point: { x: number; y: number }): ResolvedPoint } }).__BHProfile.resolvePoint(at), point);
+}
+
+function profileSceneInfo(page: Page): Promise<{ objects: number; layers: string[] } | null> {
+  return page.evaluate(() => (window as unknown as { __BHProfile: { sceneInfo(): { objects: number; layers: string[] } | null } }).__BHProfile.sceneInfo());
 }
 
 test('app shell renders navigation and serves the spa fallback', async () => {
@@ -197,4 +228,131 @@ test('big scenario serves thousands of rows and the page stays clean', async () 
   } finally {
     await context.close();
   }
+});
+
+test('every screen route renders its own content', async () => {
+  const routes: Array<[string, string]> = [
+    ['/dashboards', 'dashboards-list'],
+    ['/reports', 'reports-list'],
+    ['/wizard', 'wizard-step'],
+    ['/settings', 'settings-form'],
+    ['/clean', 'clean-marker'],
+    ['/report/r-001', 'report-title'],
+    ['/dashboard/1', 'widget-table'],
+  ];
+  await withPage(async (page) => {
+    for (const [path, marker] of routes) {
+      await openFixture(page, path);
+      assert.ok(await page.getByTestId(marker).isVisible(), `${path}: не отрендерил ${marker}`);
+    }
+  });
+});
+
+test('dashboard screen renders four widgets and exposes them through __BHProfile', async () => {
+  await withPage(async (page) => {
+    await openDashboard(page);
+
+    const widgets = await profileWidgets(page);
+    assert.deepEqual(widgets.map((widget) => widget.widget).sort(), ['bars', 'line', 'scene', 'table']);
+    assert.deepEqual(
+      widgets.map((widget) => [widget.widget, widget.kind]).sort(),
+      [['bars', 'chart'], ['line', 'chart'], ['scene', 'scene'], ['table', 'table']].sort(),
+    );
+
+    const table = await profileExtract(page, 'table') as { rows: Array<{ value: number }>; total: number };
+    assert.equal(table.rows.length, dataset('normal').widgets.table.rows.length);
+    assert.equal(typeof table.total, 'number');
+
+    const bars = await profileExtract(page, 'bars') as { bars: unknown[] };
+    assert.equal(bars.bars.length, dataset('normal').widgets.bars.bars.length);
+
+    // Четыре разные технологии рендеринга на одном экране.
+    assert.ok(await page.getByTestId('widget-table').isVisible());
+    assert.ok(await page.locator('[data-testid="widget-line"] svg').isVisible());
+    assert.ok(await page.locator('[data-testid="widget-bars"] canvas').isVisible());
+    assert.ok(await page.locator('[data-testid="widget-scene"] canvas').isVisible());
+  });
+});
+
+test('konva bar is reachable by coordinates through the profile hook', async () => {
+  await withPage(async (page) => {
+    await openDashboard(page);
+
+    const points = await profilePoints(page, 'bars');
+    assert.ok(points.length >= 12, `ожидалось не меньше 12 целей, получено ${points.length}`);
+    const third = points[2]!;
+    const center = {
+      x: Math.round(third.box.x + third.box.width / 2),
+      y: Math.round(third.box.y + third.box.height / 2),
+    };
+
+    const resolved = await profileResolvePoint(page, center);
+    assert.equal(resolved?.locator, third.locator);
+    assert.equal(resolved?.text, third.text);
+    assert.ok(third.box.width > 0 && third.box.height > 0);
+
+    // Точка вне виджетов не должна превращаться в цель: иначе координатный клик
+    // по пустому месту выглядел бы как осмысленное действие.
+    assert.equal(await profileResolvePoint(page, { x: 3, y: 3 }), null);
+  });
+});
+
+test('3d scene renders in headless chrome without extra launch args', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  try {
+    await openDashboard(page);
+    const info = await profileSceneInfo(page);
+    assert.ok(info !== null, 'sceneInfo вернул null — сцена не собрана');
+    assert.ok(info.objects >= 3, `ожидалось не меньше 3 объектов сцены, получено ${info.objects}`);
+    assert.ok(info.layers.length >= 1);
+    assert.deepEqual(pageErrors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('dashboard ids template into one inventory entry while report slugs stay distinct', async () => {
+  await withPage(async (page) => {
+    await openFixture(page, '/dashboards');
+    // Ссылки появляются только после ответа API: ждать нужно их, а не маркер оболочки.
+    await page.waitForFunction(
+      () => document.querySelectorAll('a[href^="/dashboard/"]').length === 120,
+      undefined,
+      { timeout: 20_000 },
+    );
+    const dashboardLinks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href^="/dashboard/"]')).map((link) => link.getAttribute('href') ?? ''));
+    assert.equal(dashboardLinks.length, 120);
+    assert.ok(dashboardLinks.every((href) => /^\/dashboard\/\d+$/.test(href)), 'ссылки дашбордов должны быть числовыми, чтобы шаблонизироваться в /dashboard/:id');
+
+    await openFixture(page, '/reports');
+    await page.waitForFunction(
+      () => document.querySelectorAll('a[href^="/report/"]').length === 120,
+      undefined,
+      { timeout: 20_000 },
+    );
+    const reportLinks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href^="/report/"]')).map((link) => link.getAttribute('href') ?? ''));
+    assert.equal(reportLinks.length, 120);
+    assert.equal(new Set(reportLinks).size, 120);
+    // Нечисловой slug не сворачивается в :id — это и даёт 120 отдельных экранов в инвентаре.
+    assert.ok(reportLinks.every((href) => !/^\/report\/\d+$/.test(href)), 'slug отчёта не должен выглядеть как числовой идентификатор');
+  });
+});
+
+test('wizard moves a field onto the shelf by drag and drop', async () => {
+  await withPage(async (page) => {
+    await openFixture(page, '/wizard');
+    assert.match(await page.getByTestId('wizard-step').innerText(), /Шаг 1/);
+    assert.equal((await page.getByTestId('shelf-items').innerText()).trim(), '');
+
+    await page.getByTestId('field-revenue').dragTo(page.getByTestId('shelf'));
+
+    assert.match(await page.getByTestId('shelf-items').innerText(), /Выручка/);
+    await page.getByTestId('wizard-next').click();
+    assert.match(await page.getByTestId('wizard-step').innerText(), /Шаг 2/);
+  });
 });
