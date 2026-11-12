@@ -1,13 +1,23 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app.tsx';
+import { startMocks } from './mocks/browser.ts';
 import './styles.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root container is missing');
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+function render(): void {
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+// Приложение не рендерится до запуска моков: ни один fetch не должен уйти мимо хука эталона.
+void startMocks()
+  .catch((error: unknown) => {
+    window.__bhMockError = String(error);
+  })
+  .then(render);

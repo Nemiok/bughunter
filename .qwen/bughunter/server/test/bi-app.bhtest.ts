@@ -1,13 +1,33 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { after, before, test } from 'node:test';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import type { ViteDevServer } from '../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
+import { SEED_VERSION, dataset } from '../fixtures/bi-app/src/mocks/seed.ts';
+import { RESET_ENDPOINT, SCENARIO_KEY } from '../fixtures/bi-app/src/mocks/scenarios.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../fixtures/bi-app');
 let vite: ViteDevServer | undefined;
 let browser: Browser;
 let baseUrl: string;
+
+/** Форма, в которой хук эталона виден из Node-теста. */
+type HookResponse = { url: string; status: number; body: unknown; at: string };
+
+function hookResponses(page: Page): Promise<HookResponse[]> {
+  return page.evaluate(() => (window as unknown as { __bhResponses: HookResponse[] }).__bhResponses);
+}
+
+function recordedFor(responses: HookResponse[], fragment: string): HookResponse | undefined {
+  return responses.find((response) => response.url.includes(fragment));
+}
+
+async function fetchJson(page: Page, url: string): Promise<unknown> {
+  return page.evaluate(async (path) => {
+    const response = await fetch(path);
+    return { status: response.status, body: await response.json().catch(() => null), seed: response.headers.get('x-bh-seed') };
+  }, url);
+}
 
 /**
  * Общий запуск фикстуры для всех тестов bi-app: её собственный vite на свободном порту,
@@ -46,20 +66,135 @@ export function fixtureBrowser(): Browser {
   return browser;
 }
 
-test('app shell renders navigation and serves the spa fallback', async () => {
-  const page = await (await browser.newContext()).newPage();
+/**
+ * Приложение рендерится только после запуска MSW-worker'а, то есть позже `domcontentloaded`:
+ * без ожидания маркера оболочки тесты проверяли бы пустой DOM.
+ */
+async function openFixture(page: Page, path: string): Promise<void> {
+  await page.goto(fixtureUrl(path), { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('route-marker').waitFor({ state: 'visible', timeout: 15_000 });
+}
+
+async function withPage(run: (page: Page) => Promise<void>): Promise<void> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
   try {
-    await page.goto(fixtureUrl('/'), { waitUntil: 'domcontentloaded' });
+    await run(page);
+  } finally {
+    await context.close();
+  }
+}
+
+async function setScenarioFlag(page: Page, scenario: string): Promise<void> {
+  await page.evaluate(([key, value]) => window.localStorage.setItem(key, value), [SCENARIO_KEY, scenario]);
+}
+
+function currentScenarioOf(page: Page): Promise<string> {
+  return page.evaluate(() => (window as unknown as { __BHScenario: { current(): string } }).__BHScenario.current());
+}
+
+test('app shell renders navigation and serves the spa fallback', async () => {
+  await withPage(async (page) => {
+    await openFixture(page, '/');
     assert.match(await page.title(), /Bughunter BI/);
     for (const label of ['Дашборды', 'Отчёты', 'Мастер', 'Настройки']) {
       assert.ok(await page.getByRole('link', { name: label, exact: true }).isVisible(), `нет ссылки ${label}`);
     }
+    assert.match(await page.getByTestId('seed-info').innerText(), new RegExp(SEED_VERSION));
 
     // Прямой заход на вложенный маршрут: без SPA-fallback vite отдал бы 404.
     const direct = await page.goto(fixtureUrl('/settings'), { waitUntil: 'domcontentloaded' });
     assert.equal(direct?.status(), 200);
-    assert.ok(await page.getByRole('link', { name: 'Настройки', exact: true }).isVisible());
+    await page.getByTestId('route-marker').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.match(await page.getByTestId('route-marker').innerText(), /\/settings/);
+  });
+});
+
+test('msw serves seeded datasets and records every mocked response', async () => {
+  await withPage(async (page) => {
+    await openFixture(page, '/');
+
+    // Экраны появятся в следующей задаче, поэтому слой моков проверяется прямым запросом.
+    const response = await fetchJson(page, '/api/dashboards') as { status: number; body: unknown[]; seed: string | null };
+    assert.equal(response.status, 200);
+    assert.equal(response.seed, SEED_VERSION);
+    assert.equal(response.body.length, dataset('normal').dashboards.length);
+
+    const recorded = recordedFor(await hookResponses(page), '/api/dashboards');
+    assert.ok(recorded, 'хук эталона не записал ответ /api/dashboards');
+    assert.equal(recorded.status, 200);
+    assert.equal((recorded.body as unknown[]).length, dataset('normal').dashboards.length);
+    assert.match(recorded.at, /^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+test('scenario flag switches datasets and the reset endpoint restores the seed', async () => {
+  await withPage(async (page) => {
+    await openFixture(page, '/');
+
+    await setScenarioFlag(page, 'empty');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('route-marker').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await currentScenarioOf(page), 'empty');
+    const empty = await fetchJson(page, '/api/dashboards') as { body: unknown[] };
+    assert.deepEqual(empty.body, []);
+
+    await page.evaluate((endpoint) => fetch(endpoint, { method: 'POST' }), RESET_ENDPOINT);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('route-marker').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await currentScenarioOf(page), 'normal');
+    const restored = await fetchJson(page, '/api/dashboards') as { body: unknown[] };
+    assert.equal(restored.body.length, dataset('normal').dashboards.length);
+  });
+});
+
+test('response hook exists before the first fetch on a cold load', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    const seenByPlaywright: string[] = [];
+    page.on('response', (response) => {
+      if (response.url().includes('/api/')) seenByPlaywright.push(new URL(response.url()).pathname);
+    });
+
+    await openFixture(page, '/');
+    await page.waitForFunction(() => (window as unknown as { __bhResponses: unknown[] }).__bhResponses.length > 0, undefined, { timeout: 15_000 });
+
+    const seenByHook = (await hookResponses(page)).map((response) => new URL(response.url).pathname);
+    assert.ok(seenByHook.length >= 1, 'хук не записал ни одного ответа');
+    // Если бы хук регистрировался после первого fetch, списки разошлись бы именно началом.
+    assert.deepEqual(seenByHook, seenByPlaywright);
+    assert.ok(seenByHook.includes('/api/meta'));
   } finally {
-    await page.close();
+    await context.close();
+  }
+});
+
+test('big scenario serves thousands of rows and the page stays clean', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await openFixture(page, '/');
+    await setScenarioFlag(page, 'big');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('route-marker').waitFor({ state: 'visible', timeout: 15_000 });
+
+    const response = await fetchJson(page, '/api/dashboards/1/widgets/table') as { body: { rows: unknown[] } };
+    assert.ok(response.body.rows.length >= 5000, `ожидалось не меньше 5000 строк, получено ${response.body.rows.length}`);
+
+    const recorded = recordedFor(await hookResponses(page), '/widgets/table');
+    assert.ok(recorded, 'большой ответ не записан хуком');
+    assert.equal(((recorded.body as { rows: unknown[] }).rows).length, response.body.rows.length);
+
+    const title = await page.title();
+    for (const anomaly of ['undefined', 'NaN', '[object Object]', 'Invalid Date']) {
+      assert.ok(!title.includes(anomaly), `в заголовке оказалась аномалия ${anomaly}`);
+    }
+    assert.deepEqual(pageErrors, []);
+  } finally {
+    await context.close();
   }
 });
