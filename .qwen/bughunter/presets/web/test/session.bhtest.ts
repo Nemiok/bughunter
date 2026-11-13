@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { SessionManager } from '../src/browser/session.ts';
 import type { ActInput, CandidateInput, ProbeKind } from '../src/browser/session.ts';
-import { writeJsonAtomic } from '../src/run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
 import type { Config, Journal, Step } from '@bughunter/core';
 
 const demoOrigin = 'http://127.0.0.1:4173';

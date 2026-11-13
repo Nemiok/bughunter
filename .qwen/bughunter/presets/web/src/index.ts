@@ -63,10 +63,11 @@ async function main(): Promise<void> {
   const { ensureConfig, loadConfig } = await import('./config.ts');
   const { findProjectRoot } = core;
   const {
-    completeExplorationLease, createRun, finishRun, leaseNextExploration, readRun, reclaimExplorationLeases,
+    completeExplorationLease, readRun, reclaimExplorationLeases,
     recordCandidateTest, recordRouteExploration, recordRunStage, releaseExplorationLease, resumeRun, triageCandidate,
     validateExplorationLease,
-  } = await import('./run-store.ts');
+  } = await import('@bughunter/core');
+  const { createRun, finishRun, leaseNextExploration } = await import('./runs.ts');
   const { reproduceCandidate } = await import('./reproduce.ts');
   const { exportE2e } = await import('./export/playwright.ts');
   const { detectWebTests, verifyWebRed } = await import('./test-runner.ts');

@@ -8,7 +8,8 @@ import { promisify } from 'node:util';
 import { after, test } from 'node:test';
 import { defaultElementsPerSnapshot, ensureConfig, loadConfig } from '../src/config.ts';
 import { findProjectRoot } from '@bughunter/core';
-import { createRun, readRun, updateRun, writeJsonAtomic } from '../src/run-store.ts';
+import { readRun, updateRun, writeJsonAtomic } from '@bughunter/core';
+import { createRun } from '../src/runs.ts';
 import type { Config } from '@bughunter/core';
 
 const execFile = promisify(execFileCallback);
@@ -200,19 +201,23 @@ test('atomic writes leave valid JSON when a writer is interrupted', async () => 
   const root = await temporaryDirectory('bh-atomic-');
   const file = join(root, 'value.json');
   await writeJsonAtomic(file, { version: 'initial' });
-  const moduleUrl = pathToFileURL(join(process.cwd(), 'src/run-store.ts')).href;
+  const moduleUrl = pathToFileURL(join(import.meta.dirname, '../../../core/src/run-store.ts')).href;
   const child = spawn(process.execPath, [
     '--input-type=module',
     '--eval',
     `import { writeJsonAtomic } from ${JSON.stringify(moduleUrl)}; let version = 0; while (true) { await writeJsonAtomic(process.argv[1], { version: version++, payload: 'x'.repeat(100000) }); }`,
     file,
   ]);
+  // Слушатель навешивается до kill: если ребёнок умер сам (например, модуль не найден),
+  // событие 'exit' уже не повторится и тест завис бы навсегда вместо понятного провала.
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code, signal) => resolveExit({ code, signal }));
+  });
   await new Promise((resolve) => setTimeout(resolve, 100));
   child.kill('SIGKILL');
-  await new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', resolve);
-  });
+  const outcome = await exited;
+  assert.equal(outcome.signal, 'SIGKILL', `писатель должен быть убит тестом, а не завершиться сам (code ${outcome.code})`);
   const value = JSON.parse(await readFile(file, 'utf8'));
   assert.ok(value.version === 'initial' || typeof value.version === 'number');
   const temporaryFiles = (await readdir(root)).filter((name) => name.endsWith('.tmp'));

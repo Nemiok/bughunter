@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import { writeJsonAtomic } from './run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
 import type { Config } from '@bughunter/core';
 
 import { defaultStateDir } from './paths.ts';

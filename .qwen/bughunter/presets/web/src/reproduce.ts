@@ -8,7 +8,7 @@ import { toPlaywrightLocator } from './browser/elements.ts';
 import { loadConfig } from './config.ts';
 import { loadProfile } from './profile/load.ts';
 import { findAnomalyTexts, signalSignature } from './detectors/signals.ts';
-import { readRun, writeJsonAtomic } from './run-store.ts';
+import { readRun, writeJsonAtomic } from '@bughunter/core';
 import type { Candidate, Check, Config, Journal, Signal, Step } from '@bughunter/core';
 
 const maximumEvaluations = 20;

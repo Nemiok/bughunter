@@ -8,7 +8,8 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { attachNetworkCapture, maxResponseBodyBytes } from '../src/browser/network.ts';
 import { SessionManager } from '../src/browser/session.ts';
-import { createRun, writeJsonAtomic } from '../src/run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
+import { createRun } from '../src/runs.ts';
 import type { Config } from '@bughunter/core';
 
 let browser: Browser;

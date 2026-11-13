@@ -13,7 +13,7 @@ import { loadProfile } from './profile/load.ts';
 import type { Profile } from './profile/types.ts';
 import {
   findingPath, readFindings, readRun, recordRouteExploration, recordRunStage, writeFinding, writeJsonAtomic,
-} from './run-store.ts';
+} from '@bughunter/core';
 import type { Candidate, Check, Finding, Journal, SweepProgress } from '@bughunter/core';
 
 export const defaultScreensPerSweep = 25;

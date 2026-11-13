@@ -5,8 +5,8 @@ import { loadConfig } from '../config.ts';
 import { loadActiveProfile, resolveTestDataFile } from '../profile/load.ts';
 import type { Profile } from '../profile/types.ts';
 import { findProjectRoot } from '@bughunter/core';
-import { readCandidate, readRun, readSharedMemory, recordCandidateTest } from '../run-store.ts';
-import type { SharedMemoryEntry } from '../run-store.ts';
+import { readCandidate, readRun, readSharedMemory, recordCandidateTest } from '@bughunter/core';
+import type { SharedMemoryEntry } from '@bughunter/core';
 import type { Candidate, Config, Journal, Step } from '@bughunter/core';
 
 import { defaultStateDir } from '../paths.ts';

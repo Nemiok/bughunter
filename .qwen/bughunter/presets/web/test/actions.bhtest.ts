@@ -9,7 +9,8 @@ import type { ActInput } from '../src/browser/session.ts';
 import { generatePlaywrightTest } from '../src/export/playwright.ts';
 import type { Profile } from '../src/profile/types.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
-import { createRun, writeJsonAtomic } from '../src/run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
+import { createRun } from '../src/runs.ts';
 import type { Candidate, Config, ElementSnapshot, Journal, Step } from '@bughunter/core';
 
 const directories: string[] = [];

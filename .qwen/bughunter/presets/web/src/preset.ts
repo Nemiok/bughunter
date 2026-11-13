@@ -1,6 +1,7 @@
 import type { Preset } from '@bughunter/core';
 
-import { EXPLORER_PERSONAS } from './run-store.ts';
+import { EXPLORER_PERSONAS } from './personas.ts';
+import { webReportFormat } from './report-format.ts';
 import { webTestRunner } from './test-runner.ts';
 
 /**
@@ -39,5 +40,5 @@ export const webPreset: Preset = {
   reset: { supported: true, apply: pending('reset.apply') },
   exportTarget: { dir: pending('exportTarget.dir'), kind: 'e2e', fileName: pending('exportTarget.fileName') },
   errors: { codes: {} },
-  report: { finding: pending('report.finding'), candidate: pending('report.candidate') },
+  report: webReportFormat,
 };

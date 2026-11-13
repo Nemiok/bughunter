@@ -4,8 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
-  createRun,
-  finishRun,
   readCandidate,
   readRun,
   recordCandidateTest,
@@ -15,8 +13,9 @@ import {
   triageCandidate,
   updateRun,
   writeJsonAtomic,
-} from '../src/run-store.ts';
+} from '@bughunter/core';
 import type { Candidate, Config, Step } from '@bughunter/core';
+import { createRun, finishRun } from '../src/runs.ts';
 
 const createdAt = '2026-11-10T00:00:00.000Z';
 

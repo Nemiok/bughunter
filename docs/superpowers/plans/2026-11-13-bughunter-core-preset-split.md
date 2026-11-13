@@ -216,7 +216,7 @@ git add core presets/web && git commit -m "refactor(core): extract the test runn
 
 **Files:**
 - Create: `core/src/run-store.ts`, `presets/web/src/personas.ts`, `presets/web/src/report-format.ts`
-- Move: `presets/web/src/config.ts` → `core/src/config.ts` (загрузчик, валидация, шаблон, `CONFIG_CREATED`; разделение полей на общие и preset-специфичные — в задаче 9)
+- Move: перенос `config.ts` в core **перенесён в задачу 9** — делить поля на общие и preset-специфичные и переименовывать их нужно одним движением, иначе файл пришлось бы резать дважды
 - Modify: `presets/web/src/run-store.ts` (удаляется), `presets/web/src/index.ts`
 - Test: `core/test/run-store.bhtest.ts` (новые тесты), перенос `presets/web/test/{explore-queue,report-resume,config-store}.bhtest.ts` в `core/test/` там, где они проверяют core-логику
 
@@ -409,7 +409,8 @@ git commit -m "refactor(core)!: own export placement and rename bh_export_e2e to
 ### Task 9: Нейтральная лексика схемы состояния
 
 **Files:**
-- Modify: `core/src/types.ts`, `core/src/run-store.ts`, `core/src/config.ts`, `core/src/candidate.ts`, `core/src/sweep.ts`, `core/src/session-lifecycle.ts`, `presets/web/src/**` (все, где встречаются старые имена), `presets/web/test/**`, `core/test/**`
+- Move: `presets/web/src/config.ts` → `core/src/config.ts` (загрузчик, валидация, шаблон, `CONFIG_CREATED`) с одновременным разделением полей на общие и preset-специфичные
+- Modify: `core/src/types.ts`, `core/src/run-store.ts`, `core/src/candidate.ts`, `core/src/sweep.ts`, `core/src/session-lifecycle.ts`, `presets/web/src/**` (все, где встречаются старые имена), `presets/web/test/**`, `core/test/**`
 - Modify: `.qwen/bughunter/fixtures/*/bughunter-config.json` и `state/config.json` в фикстурах, `.qwen/agents/*.md`, `.qwen/skills/*/SKILL.md`, `.qwen/bughunter/README.md`
 
 **Interfaces:**

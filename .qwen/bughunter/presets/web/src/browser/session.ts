@@ -4,7 +4,7 @@ import { join, relative, sep } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
 import { scanSignals } from '../detectors/index.ts';
 import type { Profile } from '../profile/types.ts';
-import { writeJsonAtomic } from '../run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
 import { resolveTestDataFile } from '../profile/load.ts';
 import type {
   Candidate,

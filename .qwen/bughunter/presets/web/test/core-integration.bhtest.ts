@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SessionManager } from '../src/browser/session.ts';
-import { createRun } from '../src/run-store.ts';
+import { createRun } from '../src/runs.ts';
 import type { Config, Signal } from '@bughunter/core';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');

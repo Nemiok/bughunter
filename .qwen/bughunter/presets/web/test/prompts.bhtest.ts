@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { EXPLORER_PERSONAS } from '../src/run-store.ts';
+import { EXPLORER_PERSONAS } from '../src/personas.ts';
 
 const projectRoot = join(import.meta.dirname, '../../../../..');
 const finalResultInstruction = 'последнее сообщение — полный самостоятельный результат для вызывающего агента';

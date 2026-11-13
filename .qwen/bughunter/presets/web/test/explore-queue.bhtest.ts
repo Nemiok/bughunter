@@ -7,16 +7,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
   completeExplorationLease,
-  createRun,
-  EXPLORER_PERSONAS,
-  leaseNextExploration,
   readRun,
   reclaimExplorationLeases,
   releaseExplorationLease,
   updateRun,
   validateExplorationLease,
-} from '../src/run-store.ts';
+} from '@bughunter/core';
 import type { Config, Run } from '@bughunter/core';
+import { createRun, leaseNextExploration } from '../src/runs.ts';
+import { EXPLORER_PERSONAS } from '../src/personas.ts';
 
 const serverRoot = resolve(import.meta.dirname, '..');
 const temporaryDirectories: string[] = [];

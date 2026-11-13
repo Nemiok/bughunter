@@ -9,7 +9,8 @@ import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
 import { signalSignature } from '../src/detectors/signals.ts';
 import { checkViolated, replayAndMinimize, reproduceCandidate } from '../src/reproduce.ts';
-import { createRun, writeJsonAtomic } from '../src/run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
+import { createRun } from '../src/runs.ts';
 import type { Candidate, Config, Step } from '@bughunter/core';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');

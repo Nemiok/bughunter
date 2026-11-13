@@ -7,8 +7,9 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { upsertScreens } from '../src/discovery/screens-store.ts';
 import {
-  createRun, finishRun, readCandidate, readFindings, readRun, triageCandidate, writeJsonAtomic,
-} from '../src/run-store.ts';
+  readCandidate, readFindings, readRun, triageCandidate, writeJsonAtomic,
+} from '@bughunter/core';
+import { createRun, finishRun } from '../src/runs.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { applyReset, promoteFindingToCandidate, runSweep } from '../src/sweep.ts';
 import type { Config } from '@bughunter/core';

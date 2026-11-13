@@ -3,10 +3,10 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope, Step } from '@bughunter/core';
+import type { ReportFormat } from './preset.ts';
+import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope } from './types.ts';
 
 const execFile = promisify(execFileCallback);
-import { defaultStateDir } from './paths.ts';
 
 function validateRunId(runId: string): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId) || runId === '.' || runId === '..') {
@@ -14,9 +14,9 @@ function validateRunId(runId: string): void {
   }
 }
 
-function runPath(runId: string, stateDir: string | undefined): string {
+function runPath(runId: string, stateDir: string): string {
   validateRunId(runId);
-  return join(stateDir ?? defaultStateDir, 'runs', runId, 'run.json');
+  return join(stateDir, 'runs', runId, 'run.json');
 }
 
 async function writeAtomic(file: string, contents: string): Promise<void> {
@@ -76,7 +76,7 @@ async function diffRoutes(config: Config, projectRoot: string): Promise<string[]
 export async function createRun(
   scope: Scope,
   route: string | undefined,
-  deps: { config: Config; projectRoot: string; stateDir: string },
+  deps: { config: Config; projectRoot: string; stateDir: string; personas: readonly string[] },
 ): Promise<Run> {
   let routes: string[];
   if (scope === 'route') {
@@ -115,7 +115,7 @@ export async function createRun(
       ? { sweep: 'pending', findings: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' }
       : { explore: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' },
     routeStages: Object.fromEntries(routes.map((route) => [route, 'pending'])),
-    ...(deterministic ? {} : { exploreQueue: buildExploreQueue(routes) }),
+    ...(deterministic ? {} : { exploreQueue: buildExploreQueue(routes, deps.personas) }),
     createdAt: timestamp.toISOString(),
     updatedAt: timestamp.toISOString(),
   };
@@ -123,11 +123,9 @@ export async function createRun(
   return run;
 }
 
-export const EXPLORER_PERSONAS = ['новичок', 'нетерпеливый', 'граничный ввод'] as const;
-
-function buildExploreQueue(routes: string[]): ExploreQueueItem[] {
+function buildExploreQueue(routes: string[], personas: readonly string[]): ExploreQueueItem[] {
   return routes.flatMap((route) =>
-    EXPLORER_PERSONAS.map((persona) => ({
+    personas.map((persona) => ({
       id: `${route}::${persona}`,
       route,
       persona,
@@ -143,22 +141,22 @@ export type ExploreNextResult =
 
 const defaultStaleLeaseMs = 30 * 60 * 1000;
 
-function queueFor(run: Run): ExploreQueueItem[] {
+function queueFor(run: Run, personas: readonly string[]): ExploreQueueItem[] {
   // Прогоны, созданные до появления очереди, получают её лениво: уже завершённые маршруты не переисследуются.
-  return run.exploreQueue ?? buildExploreQueue(run.routes.filter((route) => run.routeStages[route] !== 'done'));
+  return run.exploreQueue ?? buildExploreQueue(run.routes.filter((route) => run.routeStages[route] !== 'done'), personas);
 }
 
 export async function leaseNextExploration(
   runId: string,
-  options: { route?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
-  stateDir?: string,
+  options: { personas: readonly string[]; route?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
+  stateDir: string,
 ): Promise<ExploreNextResult> {
   const run = await readRun(runId, stateDir);
   const now = options.now?.() ?? Date.now();
   const staleLeaseMs = options.staleLeaseMs ?? defaultStaleLeaseMs;
   const keep = options.keepLeaseIds ?? new Set<string>();
   let changed = run.exploreQueue === undefined;
-  const queue = queueFor(run).map((item) => {
+  const queue = queueFor(run, options.personas).map((item) => {
     // Lease живой в этом процессе сессии не является устаревшим, сколько бы он ни длился.
     if (
       item.status === 'leased' && item.leasedAt !== undefined && item.leaseId !== undefined
@@ -201,7 +199,7 @@ export async function validateExplorationLease(
   leaseId: string,
   route: string,
   persona: string,
-  stateDir?: string,
+  stateDir: string,
 ): Promise<void> {
   const run = await readRun(runId, stateDir);
   const item = findLease(run, leaseId);
@@ -215,7 +213,7 @@ async function settleLease(
   runId: string,
   leaseId: string,
   status: 'done' | 'pending',
-  stateDir?: string,
+  stateDir: string,
 ): Promise<void> {
   const run = await readRun(runId, stateDir);
   const item = findLease(run, leaseId);
@@ -227,17 +225,17 @@ async function settleLease(
   }, stateDir);
 }
 
-export async function completeExplorationLease(runId: string, leaseId: string, stateDir?: string): Promise<void> {
+export async function completeExplorationLease(runId: string, leaseId: string, stateDir: string): Promise<void> {
   await settleLease(runId, leaseId, 'done', stateDir);
 }
 
-export async function releaseExplorationLease(runId: string, leaseId: string, stateDir?: string): Promise<void> {
+export async function releaseExplorationLease(runId: string, leaseId: string, stateDir: string): Promise<void> {
   await settleLease(runId, leaseId, 'pending', stateDir);
 }
 
 export async function reclaimExplorationLeases(
   runId: string,
-  stateDir?: string,
+  stateDir: string,
   keepLeaseIds?: ReadonlySet<string>,
 ): Promise<void> {
   const run = await readRun(runId, stateDir);
@@ -252,7 +250,7 @@ export async function reclaimExplorationLeases(
   }, stateDir);
 }
 
-export async function readRun(runId: string, stateDir?: string): Promise<Run> {
+export async function readRun(runId: string, stateDir: string): Promise<Run> {
   const file = runPath(runId, stateDir);
   try {
     return JSON.parse(await readFile(file, 'utf8')) as Run;
@@ -264,7 +262,7 @@ export async function readRun(runId: string, stateDir?: string): Promise<Run> {
   }
 }
 
-export async function updateRun(runId: string, patch: Partial<Run>, stateDir?: string): Promise<Run> {
+export async function updateRun(runId: string, patch: Partial<Run>, stateDir: string): Promise<Run> {
   const file = runPath(runId, stateDir);
   const current = await readRun(runId, stateDir);
   const updated: Run = { ...current, ...patch, id: current.id, updatedAt: new Date().toISOString() };
@@ -276,7 +274,7 @@ export async function recordRunStage(
   runId: string,
   stage: keyof Run['stages'],
   status: OperationStage,
-  stateDir?: string,
+  stateDir: string,
 ): Promise<Run> {
   const run = await readRun(runId, stateDir);
   const stageStatus: Partial<Record<keyof Run['stages'], Run['status']>> = {
@@ -309,7 +307,7 @@ export async function recordRouteExploration(
   runId: string,
   route: string,
   status: RouteStage,
-  stateDir?: string,
+  stateDir: string,
 ): Promise<Run> {
   const run = await readRun(runId, stateDir);
   const routeStages: Record<string, RouteStage> = {
@@ -345,18 +343,18 @@ export type TriageInput = {
   verdict: 'confirmed' | 'rejected' | 'duplicate';
   reason: string;
   suppress?: boolean;
-  stateDir?: string;
+  stateDir: string;
 };
 
-function candidatePath(runId: string, candidateId: string, stateDir: string | undefined): string {
+function candidatePath(runId: string, candidateId: string, stateDir: string): string {
   validateRunId(runId);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(candidateId) || candidateId === '.' || candidateId === '..') {
     throw new Error(`CANDIDATE_ID_INVALID: ${candidateId}`);
   }
-  return join(stateDir ?? defaultStateDir, 'runs', runId, 'candidates', `${candidateId}.json`);
+  return join(stateDir, 'runs', runId, 'candidates', `${candidateId}.json`);
 }
 
-export async function readCandidate(runId: string, candidateId: string, stateDir?: string): Promise<Candidate> {
+export async function readCandidate(runId: string, candidateId: string, stateDir: string): Promise<Candidate> {
   try {
     return JSON.parse(await readFile(candidatePath(runId, candidateId, stateDir), 'utf8')) as Candidate;
   } catch (error) {
@@ -364,7 +362,7 @@ export async function readCandidate(runId: string, candidateId: string, stateDir
       // Находка детерминированного обхода — не кандидат: у неё нет журнала сессии, поэтому
       // triage или экспорт по её id были бы молчаливой подменой сущности.
       if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(candidateId)) {
-        const finding = join(stateDir ?? defaultStateDir, 'runs', runId, 'findings', `${candidateId}.json`);
+        const finding = join(stateDir, 'runs', runId, 'findings', `${candidateId}.json`);
         try {
           await readFile(finding, 'utf8');
         } catch {
@@ -378,12 +376,12 @@ export async function readCandidate(runId: string, candidateId: string, stateDir
   }
 }
 
-export function findingPath(runId: string, findingId: string, stateDir?: string): string {
-  return join(stateDir ?? defaultStateDir, 'runs', runId, 'findings', `${findingId}.json`);
+export function findingPath(runId: string, findingId: string, stateDir: string): string {
+  return join(stateDir, 'runs', runId, 'findings', `${findingId}.json`);
 }
 
-export async function readFindings(runId: string, stateDir?: string): Promise<Finding[]> {
-  const directory = join(stateDir ?? defaultStateDir, 'runs', runId, 'findings');
+export async function readFindings(runId: string, stateDir: string): Promise<Finding[]> {
+  const directory = join(stateDir, 'runs', runId, 'findings');
   let files: string[];
   try {
     files = await readdir(directory);
@@ -396,12 +394,12 @@ export async function readFindings(runId: string, stateDir?: string): Promise<Fi
   return findings.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
-export async function writeFinding(finding: Finding, stateDir?: string): Promise<void> {
+export async function writeFinding(finding: Finding, stateDir: string): Promise<void> {
   await writeJsonAtomic(findingPath(finding.runId, finding.id, stateDir), finding);
 }
 
-async function readCandidates(runId: string, stateDir?: string): Promise<Candidate[]> {
-  const directory = join(stateDir ?? defaultStateDir, 'runs', runId, 'candidates');
+async function readCandidates(runId: string, stateDir: string): Promise<Candidate[]> {
+  const directory = join(stateDir, 'runs', runId, 'candidates');
   let files: string[];
   try {
     files = await readdir(directory);
@@ -423,17 +421,17 @@ function requiresWork(candidate: Candidate): boolean {
   return candidate.reproduction?.status !== 'unreproduced' || candidate.reproduction.attempts === 0;
 }
 
-export async function resumeRun(runId: string, stateDir?: string): Promise<{ run: Run; pendingCandidates: Candidate[] }> {
+export async function resumeRun(runId: string, stateDir: string): Promise<{ run: Run; pendingCandidates: Candidate[] }> {
   const run = await readRun(runId, stateDir);
   const candidates = await readCandidates(runId, stateDir);
   return { run, pendingCandidates: candidates.filter(requiresWork) };
 }
 
-function storedTestPath(file: string, runId: string, stateDir?: string): string {
+function storedTestPath(file: string, runId: string, stateDir: string): string {
   const root = dirname(runPath(runId, stateDir));
   const absolute = isAbsolute(file)
     ? resolve(file)
-    : resolve(file.replaceAll('\\', '/').startsWith(`runs/${runId}/`) ? join(stateDir ?? defaultStateDir, file) : join(root, file));
+    : resolve(file.replaceAll('\\', '/').startsWith(`runs/${runId}/`) ? join(stateDir, file) : join(root, file));
   const relativePath = relative(root, absolute);
   const insideRun = relativePath !== '' && relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
   return (insideRun ? relativePath : absolute).split(sep).join('/');
@@ -442,9 +440,9 @@ function storedTestPath(file: string, runId: string, stateDir?: string): string 
 export async function recordCandidateTest(
   runId: string,
   candidateId: string,
-  kind: 'e2e' | 'unit',
+  kind: string,
   file: string,
-  stateDir?: string,
+  stateDir: string,
 ): Promise<Candidate> {
   const candidate = await readCandidate(runId, candidateId, stateDir);
   if (candidate.runId !== runId) throw new Error(`CANDIDATE_RUN_MISMATCH: ${candidateId}`);
@@ -456,9 +454,9 @@ export async function recordCandidateTest(
   return updated;
 }
 
-export async function readSharedMemory(name: 'known-bugs.json' | 'suppressions.json', stateDir?: string): Promise<SharedMemoryEntry[]> {
+export async function readSharedMemory(name: 'known-bugs.json' | 'suppressions.json', stateDir: string): Promise<SharedMemoryEntry[]> {
   try {
-    const value = JSON.parse(await readFile(join(stateDir ?? defaultStateDir, name), 'utf8')) as unknown;
+    const value = JSON.parse(await readFile(join(stateDir, name), 'utf8')) as unknown;
     if (!Array.isArray(value)) throw new Error(`SHARED_MEMORY_INVALID: ${name}`);
     return value as SharedMemoryEntry[];
   } catch (error) {
@@ -488,8 +486,8 @@ export async function triageCandidate(input: TriageInput): Promise<Candidate> {
   if (candidate.reproduction?.status !== 'reproduced') {
     throw new Error(`CANDIDATE_UNREPRODUCED: ${input.candidateId}`);
   }
-  const knownPath = join(input.stateDir ?? defaultStateDir, 'known-bugs.json');
-  const suppressionsPath = join(input.stateDir ?? defaultStateDir, 'suppressions.json');
+  const knownPath = join(input.stateDir, 'known-bugs.json');
+  const suppressionsPath = join(input.stateDir, 'suppressions.json');
   let duplicateOf = candidate.duplicateOf;
 
   if (input.verdict === 'confirmed') {
@@ -529,7 +527,7 @@ export async function triageCandidate(input: TriageInput): Promise<Candidate> {
   return updated;
 }
 
-function escapeMarkdown(value: string): string {
+export function escapeMarkdown(value: string): string {
   return value.replace(/\s+/g, ' ').trim().replace(/[\\`*_{}\[\]<>()#+!|]/g, '\\$&');
 }
 
@@ -537,7 +535,7 @@ function portablePath(value: string): string {
   return value.split(sep).join('/');
 }
 
-function artifactPath(file: string, runId: string, stateDir?: string): string {
+function artifactPath(file: string, runId: string, stateDir: string): string {
   const root = dirname(runPath(runId, stateDir));
   const normalized = file.replaceAll('\\', '/');
   const stored = normalized.startsWith(`runs/${runId}/`) ? normalized.slice(`runs/${runId}/`.length) : file;
@@ -549,7 +547,7 @@ function artifactPath(file: string, runId: string, stateDir?: string): string {
   return portablePath(relativePath);
 }
 
-function reportTestPath(file: string, runId: string, stateDir?: string): string {
+function reportTestPath(file: string, runId: string, stateDir: string): string {
   const normalized = file.replaceAll('\\', '/');
   const prefix = `runs/${runId}/`;
   if (normalized.startsWith(prefix)) return normalized.slice(prefix.length);
@@ -561,15 +559,6 @@ function reportTestPath(file: string, runId: string, stateDir?: string): string 
     : portablePath(resolve(file));
 }
 
-function stepText(step: Step): string {
-  if (step.kind === 'act') {
-    const target = step.locator ?? step.elementId ?? 'unknown element';
-    return `${step.action ?? 'act'} ${target}${step.value === undefined ? '' : ` value=${step.value}`}`;
-  }
-  if (step.kind === 'navigate') return `navigate ${step.path ?? 'unknown path'}`;
-  return `probe ${step.probe ?? 'unknown probe'}`;
-}
-
 function candidateHeader(candidate: Candidate): string[] {
   return [
     `### ${escapeMarkdown(candidate.title)}`,
@@ -579,15 +568,15 @@ function candidateHeader(candidate: Candidate): string[] {
   ];
 }
 
-function confirmedReport(candidate: Candidate, runId: string, stateDir?: string): string {
+function confirmedReport(candidate: Candidate, runId: string, stateDir: string, format: ReportFormat): string {
   const lines = candidateHeader(candidate);
   lines.push(`- Expected: ${escapeMarkdown(candidate.expected)}`);
   lines.push(`- Actual: ${escapeMarkdown(candidate.actual)}`);
   if (candidate.review) lines.push(`- Review: ${escapeMarkdown(candidate.review.reason)}`);
   lines.push('', '#### Steps', '');
-  const steps = candidate.minimalSteps ?? candidate.steps;
-  if (steps.length === 0) lines.push('None.');
-  else lines.push(...steps.map((step, index) => `${index + 1}. ${escapeMarkdown(stepText(step))}`));
+  const stepLines = format.candidate(candidate);
+  if (stepLines.length === 0) lines.push('None.');
+  else lines.push(...stepLines);
   lines.push('', '- Artifacts:');
   if (candidate.artifacts.length === 0) lines.push('  - None.');
   else lines.push(...candidate.artifacts.map((file) => `  - ${escapeMarkdown(artifactPath(file, runId, stateDir))}`));
@@ -616,19 +605,7 @@ function reportSection(title: string, entries: string[]): string {
   return [`## ${title}`, '', entries.length > 0 ? entries.join('\n\n') : 'None.', ''].join('\n');
 }
 
-function findingReport(finding: Finding): string {
-  return [
-    `### ${finding.kind}: ${finding.screenTemplate}`, '',
-    `- Finding: ${finding.id}`,
-    ...(finding.widget === undefined ? [] : [`- Widget: ${finding.widget}`]),
-    `- Detail: ${finding.detail.replaceAll('\n', ' ')}`,
-    `- Status: ${finding.status}`,
-    ...(finding.candidateId === undefined ? [] : [`- Candidate: ${finding.candidateId}`]),
-    `- Responses: ${finding.responseHashes.length}`,
-  ].join('\n');
-}
-
-function renderReport(run: Run, candidates: Candidate[], findings: Finding[], stateDir?: string): string {
+function renderReport(run: Run, candidates: Candidate[], findings: Finding[], stateDir: string, format: ReportFormat): string {
   const confirmed = candidates.filter((candidate) => candidate.status === 'confirmed');
   const rejected = candidates.filter((candidate) => candidate.status === 'rejected');
   const duplicates = candidates.filter((candidate) => candidate.status === 'duplicate');
@@ -639,17 +616,17 @@ function renderReport(run: Run, candidates: Candidate[], findings: Finding[], st
   const pending = candidates.filter(requiresWork);
   return [
     '# Bughunter report', '', `- Run: ${run.id}`, `- Scope: ${run.scope}`, '',
-    reportSection('Confirmed', confirmed.map((candidate) => confirmedReport(candidate, run.id, stateDir))),
+    reportSection('Confirmed', confirmed.map((candidate) => confirmedReport(candidate, run.id, stateDir, format))),
     reportSection('Rejected', rejected.map(reviewedReport)),
     reportSection('Duplicates', duplicates.map(reviewedReport)),
     reportSection('Unreproduced', unreproduced.map(pendingReport)),
     reportSection('Pending', pending.map(pendingReport)),
     // Секция появляется только у прогонов с находками: отчёты существующих областей не меняются.
-    ...(findings.length === 0 ? [] : [reportSection('Findings', findings.map(findingReport))]),
+    ...(findings.length === 0 ? [] : [reportSection('Findings', findings.map((finding) => format.finding(finding).join('\n')))]),
   ].join('\n');
 }
 
-export async function finishRun(runId: string, stateDir?: string): Promise<{ report: string }> {
+export async function finishRun(runId: string, stateDir: string, format: ReportFormat): Promise<{ report: string }> {
   const { pendingCandidates } = await resumeRun(runId, stateDir);
   if (pendingCandidates.length > 0) {
     throw new Error(`RUN_INCOMPLETE: ${pendingCandidates.map((candidate) => candidate.id).join(',')}`);
@@ -665,7 +642,7 @@ export async function finishRun(runId: string, stateDir?: string): Promise<{ rep
     throw new Error(`RUN_INCOMPLETE: routes ${incompleteRoutes.join(',')}`);
   }
   const [candidates, findings] = await Promise.all([readCandidates(runId, stateDir), readFindings(runId, stateDir)]);
-  const contents = renderReport(run, candidates, findings, stateDir);
+  const contents = renderReport(run, candidates, findings, stateDir, format);
   const report = join(dirname(runPath(runId, stateDir)), 'report.md');
   await writeAtomic(report, contents);
   if (run.status !== 'finished') await updateRun(runId, { status: 'finished' }, stateDir);

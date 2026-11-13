@@ -9,7 +9,7 @@ import { describeScreen, maxExtractorSummaryLength } from '../src/browser/screen
 import { defaultElementsPerSnapshot } from '../src/config.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { Profile } from '../src/profile/types.ts';
-import { writeJsonAtomic } from '../src/run-store.ts';
+import { writeJsonAtomic } from '@bughunter/core';
 import type { Config, ElementSnapshot } from '@bughunter/core';
 
 const directories: string[] = [];
