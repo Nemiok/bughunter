@@ -46,7 +46,7 @@ type BugEvidence = {
 const redAssertions = [
   'expect(matched).toBe(false);',
   'expect(matched).toBe(false);',
-  'expect(page.getByText("Order 4: 10", { exact: true }).first()).not.toBeVisible();',
+  'page.getByText("Order 4: 10", { exact: true }); const total = await matches.count()',
   'expect(matched).toBe(false);',
   'expect(matched).toBe(false);',
 ];

@@ -129,14 +129,23 @@ function replaySource(candidate: Candidate, config: Config, profile: Profile | n
   }).join('');
 }
 
+/**
+ * Проверка текста в экспорте обязана совпадать с ядром (`hasVisibleText` в reproduce.ts):
+ * `.first()` попадает в скрытый узел (option фильтра, шаблон, aria-live), из-за чего спек
+ * оставался красным после починки или, что хуже, зелёным при живом баге.
+ */
+function visibleTextPoll(target: string, expected: boolean): string {
+  return `await expect.poll(async () => { const matches = page.getByText(${JSON.stringify(target)}, { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }).toBe(${expected});`;
+}
+
 function checkAssertion(candidate: Candidate): string {
   if (!candidate.check) throw new Error('CANDIDATE_ORACLE_REQUIRED');
   const check = candidate.check;
   switch (check.kind) {
     case 'visibleText':
-      return `await expect(page.getByText(${JSON.stringify(check.target)}, { exact: true }).first()).toBeVisible();`;
+      return visibleTextPoll(check.target, true);
     case 'notVisibleText':
-      return `await expect(page.getByText(${JSON.stringify(check.target)}, { exact: true }).first()).not.toBeVisible();`;
+      return visibleTextPoll(check.target, false);
     case 'elementCount': {
       const expected = check.expected ?? 0;
       if (typeof expected !== 'number' || !Number.isFinite(expected) || !Number.isInteger(expected) || expected < 0) {
