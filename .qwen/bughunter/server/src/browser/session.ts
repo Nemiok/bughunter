@@ -452,6 +452,17 @@ export class SessionManager {
       return signal;
     });
     const route = this.currentRoute(session.page);
+    if (input.check?.kind === 'elementCount') {
+      // У elementCount `target` — селектор Playwright, а не текст. Ошибка парсинга иначе всплывёт
+      // только внутри bh_reproduce, где её проглотит catch, и кандидат молча станет «не воспроизведён»
+      // после трёх попыток. Проверяем здесь, пока автор check ещё в цикле и может его поправить.
+      try {
+        await session.page.locator(input.check.target).count();
+      } catch (error) {
+        const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+        throw new Error(`CHECK_INVALID: elementCount.target должен быть селектором, для текста используйте text=…: ${reason}`);
+      }
+    }
     let signature: string;
     if (referencedSignals.length > 0) {
       signature = referencedSignals[0]!.signature;

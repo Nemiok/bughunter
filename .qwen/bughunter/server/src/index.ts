@@ -24,7 +24,7 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
-  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND)\b/.test(message)) {
+  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND|CHECK_INVALID)\b/.test(message)) {
     return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
@@ -373,7 +373,7 @@ async function main(): Promise<void> {
         kind: z.enum(['visibleText', 'notVisibleText', 'elementCount']),
         target: z.string().min(1),
         expected: z.union([z.string(), z.number()]).optional(),
-      }).optional(),
+      }).describe('Оракул — проверяемое нарушение. target: видимый текст для visibleText/notVisibleText; селектор Playwright для elementCount, а не текст (для подсчёта по тексту пишите text=<текст> или [data-testid="…"]). expected у elementCount — правильное количество: нарушение фиксируется, когда фактическое количество отличается. Неверный селектор отклоняется как CHECK_INVALID').optional(),
     }),
   }, async (input) => invoke(() => promoteFindingToCandidate({ ...input, stateDir })));
 
@@ -389,7 +389,7 @@ async function main(): Promise<void> {
         kind: z.enum(['visibleText', 'notVisibleText', 'elementCount']),
         target: z.string().min(1),
         expected: z.union([z.string(), z.number()]).optional(),
-      }).optional(),
+      }).describe('Оракул — проверяемое нарушение. target: видимый текст для visibleText/notVisibleText; селектор Playwright для elementCount, а не текст (для подсчёта по тексту пишите text=<текст> или [data-testid="…"]). expected у elementCount — правильное количество: нарушение фиксируется, когда фактическое количество отличается. Неверный селектор отклоняется как CHECK_INVALID').optional(),
     }),
   }, async ({ sessionId: id, ...input }) => invoke(async () => (await manager()).reportCandidate(id, input)));
 

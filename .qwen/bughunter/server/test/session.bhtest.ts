@@ -422,3 +422,34 @@ test('check-only signatures use fixed field order and preserve expected counts',
     await manager.closeAll();
   }
 });
+
+test('elementCount target that is not a selector is rejected at report time', async () => {
+  const { manager } = await createManager();
+  try {
+    const { sessionId } = await manager.open('run-check-invalid', '/profile', 'newbie');
+    const candidate = (check: CandidateInput['check']): CandidateInput => ({
+      title: 'Duplicate row', expected: 'One row', actual: 'Two rows', signalIds: [], check,
+    });
+
+    // Обычный текст вместо селектора: без проверки ошибка всплыла бы только в bh_reproduce
+    // и молча превратилась бы в «не воспроизведено» после трёх попыток.
+    await assert.rejects(
+      () => manager.reportCandidate(sessionId, candidate({ kind: 'elementCount', target: 'Позиция 7', expected: 1 })),
+      /CHECK_INVALID: elementCount\.target/,
+    );
+
+    const asText = await manager.reportCandidate(
+      sessionId,
+      candidate({ kind: 'elementCount', target: 'text=Позиция 7', expected: 1 }),
+    );
+    assert.ok(asText.candidateId);
+
+    const otherKinds = await manager.reportCandidate(
+      sessionId,
+      candidate({ kind: 'visibleText', target: 'Nothing here' }),
+    );
+    assert.ok(otherKinds.candidateId);
+  } finally {
+    await manager.closeAll();
+  }
+});
