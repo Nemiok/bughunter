@@ -184,15 +184,15 @@ test('golden visibleText source asserts the saved expected text', () => {
     signalIds: [],
     check: { kind: 'visibleText', target: 'Saved "Alice"', expected: 'Saved "Alice"' },
   }), config());
-  assert.equal(source, expectedCheckSource('await expect.poll(async () => { const matches = page.getByText("Saved \\"Alice\\"", { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }).toBe(true);'));
+  assert.equal(source, expectedCheckSource('await expect.poll(async () => { const matches = page.getByText("Saved \\"Alice\\"", { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }, { timeout: 5000 }).toBe(true);'));
 });
 
-test('golden notVisibleText source asserts concrete absence', () => {
+test('golden notVisibleText source observes an absence window', () => {
   const source = generatePlaywrightTest(candidate({
     signalIds: [],
     check: { kind: 'notVisibleText', target: 'Saved Alice' },
   }), config());
-  assert.equal(source, expectedCheckSource('await expect.poll(async () => { const matches = page.getByText("Saved Alice", { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }).toBe(false);'));
+  assert.equal(source, expectedCheckSource('const symptomAppeared = await (async () => { try { await expect.poll(async () => { const matches = page.getByText("Saved Alice", { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }, { timeout: 3000 }).toBe(true); return true; } catch { return false; } })(); expect(symptomAppeared).toBe(false);'));
 });
 
 test('golden elementCount source asserts the saved count', () => {

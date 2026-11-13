@@ -410,5 +410,5 @@ test('export generates code for every new action kind', async () => {
   assert.ok(source.includes('await page.mouse.click(120, 220);'), source);
   assert.ok(source.includes('await page.mouse.move(120, 340);'), source);
   assert.ok(source.includes(`await page.getByTestId("file").setInputFiles(${JSON.stringify(join(directory, 'sample.csv'))});`), source);
-  assert.ok(source.includes('await expect.poll(async () => { const matches = page.getByText("TOTAL 42", { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }).toBe(true);'), source);
+  assert.ok(source.includes('await expect.poll(async () => { const matches = page.getByText("TOTAL 42", { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }, { timeout: 5000 }).toBe(true);'), source);
 });

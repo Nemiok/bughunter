@@ -129,13 +129,29 @@ function replaySource(candidate: Candidate, config: Config, profile: Profile | n
   }).join('');
 }
 
+/** Сколько миллисекунд спек ждёт появления ожидаемого текста. */
+const textAppearTimeoutMs = 5_000;
+/** Сколько миллисекунд спек наблюдает отсутствие текста: симптом может отрисоваться позже первого опроса. */
+const absenceWindowMs = 3_000;
+
+function visibleTextCallback(target: string): string {
+  return `async () => { const matches = page.getByText(${JSON.stringify(target)}, { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }`;
+}
+
 /**
  * Проверка текста в экспорте обязана совпадать с ядром (`hasVisibleText` в reproduce.ts):
  * `.first()` попадает в скрытый узел (option фильтра, шаблон, aria-live), из-за чего спек
  * оставался красным после починки или, что хуже, зелёным при живом баге.
+ *
+ * Отрицание при этом нельзя проверять ни одним снимком, ни `expect.poll(...).toBe(false)`:
+ * poll прекращает опрос на первом совпадении с ожиданием, поэтому симптом, отрисованный позже
+ * первого опроса, давал зелёный спек при живом баге (дубль заказа проявлялся только так).
+ * Отсутствие наблюдается окном: ждём появления текста и считаем симптомом всё, что возникло
+ * за отведённое время.
  */
 function visibleTextPoll(target: string, expected: boolean): string {
-  return `await expect.poll(async () => { const matches = page.getByText(${JSON.stringify(target)}, { exact: true }); const total = await matches.count(); for (let index = 0; index < total; index += 1) { if (await matches.nth(index).isVisible()) return true; } return false; }).toBe(${expected});`;
+  if (expected) return `await expect.poll(${visibleTextCallback(target)}, { timeout: ${textAppearTimeoutMs} }).toBe(true);`;
+  return `const symptomAppeared = await (async () => { try { await expect.poll(${visibleTextCallback(target)}, { timeout: ${absenceWindowMs} }).toBe(true); return true; } catch { return false; } })(); expect(symptomAppeared).toBe(false);`;
 }
 
 function checkAssertion(candidate: Candidate): string {
