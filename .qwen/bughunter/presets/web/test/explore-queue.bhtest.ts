@@ -13,7 +13,8 @@ import {
   updateRun,
   validateExplorationLease,
 } from '@bughunter/core';
-import type { Config, Run } from '@bughunter/core';
+import type { Run } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 import { createRun, leaseNextExploration } from '../src/runs.ts';
 import { EXPLORER_PERSONAS } from '../src/personas.ts';
 
@@ -35,7 +36,7 @@ function queueConfig(): Config {
     baseUrl: 'http://127.0.0.1:4173',
     allowedOrigins: ['http://127.0.0.1:4173'],
     routes: ['/', '/orders', '/profile'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -46,7 +47,7 @@ function queueConfig(): Config {
       anomalyTexts: ['undefined', 'NaN'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -54,7 +55,7 @@ test('createRun builds a route-major queue with the three MVP personas', async (
   const stateDir = await temporaryDirectory('bh-queue-');
   const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
   assert.deepEqual(
-    run.exploreQueue?.map((item) => [item.route, item.persona, item.status]),
+    run.exploreQueue?.map((item) => [item.target, item.persona, item.status]),
     [
       ['/', 'новичок', 'pending'],
       ['/', 'нетерпеливый', 'pending'],
@@ -74,9 +75,9 @@ test('createRun builds a route-major queue with the three MVP personas', async (
 
 test('createRun for route scope queues only the selected route', async () => {
   const stateDir = await temporaryDirectory('bh-queue-');
-  const run = await createRun('route', '/orders', { config: queueConfig(), projectRoot: stateDir, stateDir });
+  const run = await createRun('target', '/orders', { config: queueConfig(), projectRoot: stateDir, stateDir });
   assert.equal(run.exploreQueue?.length, EXPLORER_PERSONAS.length);
-  assert.ok(run.exploreQueue?.every((item) => item.route === '/orders'));
+  assert.ok(run.exploreQueue?.every((item) => item.target === '/orders'));
 });
 
 test('leaseNextExploration leases one item at a time and completes in order', async () => {
@@ -86,18 +87,18 @@ test('leaseNextExploration leases one item at a time and completes in order', as
   const first = await leaseNextExploration(run.id, {}, stateDir);
   assert.equal(first.status, 'task');
   if (first.status !== 'task') return;
-  assert.equal(first.route, '/');
+  assert.equal(first.target, '/');
   assert.equal(first.persona, 'новичок');
   assert.ok(first.leaseId.length > 0);
 
   const busy = await leaseNextExploration(run.id, {}, stateDir);
-  assert.deepEqual(busy, { status: 'busy', activeRoute: '/' });
+  assert.deepEqual(busy, { status: 'busy', activeTarget: '/' });
 
   await completeExplorationLease(run.id, first.leaseId, stateDir);
   const second = await leaseNextExploration(run.id, {}, stateDir);
   assert.equal(second.status, 'task');
   if (second.status !== 'task') return;
-  assert.equal(second.route, '/');
+  assert.equal(second.target, '/');
   assert.equal(second.persona, 'нетерпеливый');
   assert.notEqual(second.leaseId, first.leaseId);
 
@@ -120,15 +121,15 @@ test('leaseNextExploration leases one item at a time and completes in order', as
 test('leaseNextExploration route filter leases the first pending item of that route only', async () => {
   const stateDir = await temporaryDirectory('bh-queue-');
   const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
-  const task = await leaseNextExploration(run.id, { route: '/profile' }, stateDir);
+  const task = await leaseNextExploration(run.id, { target: '/profile' }, stateDir);
   assert.equal(task.status, 'task');
   if (task.status !== 'task') return;
-  assert.equal(task.route, '/profile');
+  assert.equal(task.target, '/profile');
   assert.equal(task.persona, 'новичок');
-  const filteredBusy = await leaseNextExploration(run.id, { route: '/orders' }, stateDir);
-  assert.deepEqual(filteredBusy, { status: 'busy', activeRoute: '/profile' });
+  const filteredBusy = await leaseNextExploration(run.id, { target: '/orders' }, stateDir);
+  assert.deepEqual(filteredBusy, { status: 'busy', activeTarget: '/profile' });
   await completeExplorationLease(run.id, task.leaseId, stateDir);
-  const again = await leaseNextExploration(run.id, { route: '/profile' }, stateDir);
+  const again = await leaseNextExploration(run.id, { target: '/profile' }, stateDir);
   assert.equal(again.status, 'task');
   if (again.status !== 'task') return;
   assert.equal(again.persona, 'нетерпеливый');
@@ -143,7 +144,7 @@ test('stale leases are reclaimed before a new task is handed out', async () => {
   const stale = await leaseNextExploration(run.id, { staleLeaseMs: 0 }, stateDir);
   assert.equal(stale.status, 'task', 'a zero-TTL lease must be reclaimed as stale');
   if (stale.status !== 'task') return;
-  assert.equal(stale.route, first.route);
+  assert.equal(stale.target, first.target);
   assert.equal(stale.persona, first.persona);
   assert.notEqual(stale.leaseId, first.leaseId);
   const stored = await readRun(run.id, stateDir);
@@ -158,7 +159,7 @@ test('live session leases are never reclaimed as stale or by resume', async () =
   if (task.status !== 'task') return;
   const keep = new Set([task.leaseId]);
   const busy = await leaseNextExploration(run.id, { staleLeaseMs: 0, keepLeaseIds: keep }, stateDir);
-  assert.deepEqual(busy, { status: 'busy', activeRoute: '/' }, 'a live lease must survive zero TTL');
+  assert.deepEqual(busy, { status: 'busy', activeTarget: '/' }, 'a live lease must survive zero TTL');
   await reclaimExplorationLeases(run.id, stateDir, keep);
   const stored = await readRun(run.id, stateDir);
   assert.equal(stored.exploreQueue?.[0]?.status, 'leased');
@@ -171,9 +172,9 @@ test('validateExplorationLease accepts the exact task and rejects mismatches', a
   const task = await leaseNextExploration(run.id, {}, stateDir);
   assert.equal(task.status, 'task');
   if (task.status !== 'task') return;
-  await validateExplorationLease(run.id, task.leaseId, task.route, task.persona, stateDir);
+  await validateExplorationLease(run.id, task.leaseId, task.target, task.persona, stateDir);
   await assert.rejects(
-    validateExplorationLease(run.id, 'no-such-lease', task.route, task.persona, stateDir),
+    validateExplorationLease(run.id, 'no-such-lease', task.target, task.persona, stateDir),
     /LEASE_UNKNOWN/,
   );
   await assert.rejects(
@@ -181,12 +182,12 @@ test('validateExplorationLease accepts the exact task and rejects mismatches', a
     /LEASE_MISMATCH/,
   );
   await assert.rejects(
-    validateExplorationLease(run.id, task.leaseId, task.route, 'другая персона', stateDir),
+    validateExplorationLease(run.id, task.leaseId, task.target, 'другая персона', stateDir),
     /LEASE_MISMATCH/,
   );
   await completeExplorationLease(run.id, task.leaseId, stateDir);
   await assert.rejects(
-    validateExplorationLease(run.id, task.leaseId, task.route, task.persona, stateDir),
+    validateExplorationLease(run.id, task.leaseId, task.target, task.persona, stateDir),
     /LEASE_UNKNOWN/,
   );
 });
@@ -204,7 +205,7 @@ test('releaseExplorationLease returns the item to pending for retry', async () =
   const retry = await leaseNextExploration(run.id, {}, stateDir);
   assert.equal(retry.status, 'task');
   if (retry.status !== 'task') return;
-  assert.equal(retry.route, task.route);
+  assert.equal(retry.target, task.target);
   assert.equal(retry.persona, task.persona);
 });
 
@@ -223,17 +224,17 @@ test('legacy runs without a queue lazily build one and skip done routes', async 
   const stateDir = await temporaryDirectory('bh-queue-');
   const run = await createRun('full', undefined, { config: queueConfig(), projectRoot: stateDir, stateDir });
   const legacy: Run = { ...run, exploreQueue: undefined };
-  legacy.routeStages = { '/': 'done', '/orders': 'pending', '/profile': 'pending' };
-  await updateRun(run.id, { exploreQueue: undefined, routeStages: legacy.routeStages }, stateDir);
+  legacy.targetStages = { '/': 'done', '/orders': 'pending', '/profile': 'pending' };
+  await updateRun(run.id, { exploreQueue: undefined, targetStages: legacy.targetStages }, stateDir);
   assert.equal((await readRun(run.id, stateDir)).exploreQueue, undefined);
 
   const task = await leaseNextExploration(run.id, {}, stateDir);
   assert.equal(task.status, 'task');
   if (task.status !== 'task') return;
-  assert.equal(task.route, '/orders', 'done routes must not be re-queued');
+  assert.equal(task.target, '/orders', 'done routes must not be re-queued');
   const stored = await readRun(run.id, stateDir);
   assert.equal(stored.exploreQueue?.length, 2 * EXPLORER_PERSONAS.length);
-  assert.ok(stored.exploreQueue?.every((item) => item.route !== '/'));
+  assert.ok(stored.exploreQueue?.every((item) => item.target !== '/'));
 });
 
 async function callValue(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -289,15 +290,15 @@ test('MCP exploration queue hands out one lease, requires it on open, and surviv
     const busies = payloads.filter((payload) => payload.status === 'busy');
     assert.equal(tasks.length, 1, JSON.stringify(payloads));
     assert.equal(busies.length, 2, JSON.stringify(payloads));
-    assert.deepEqual(busies, [{ status: 'busy', activeRoute: '/' }, { status: 'busy', activeRoute: '/' }]);
+    assert.deepEqual(busies, [{ status: 'busy', activeTarget: '/' }, { status: 'busy', activeTarget: '/' }]);
 
-    const task = tasks[0] as { leaseId: string; route: string; persona: string };
+    const task = tasks[0] as { leaseId: string; target: string; persona: string };
 
-    const noLease = await callError(client, 'bh_open', { runId, route: task.route, persona: task.persona });
+    const noLease = await callError(client, 'bh_open', { runId, target: task.target, persona: task.persona });
     assert.equal(noLease.code, 'LEASE_REQUIRED');
-    const wrongLease = await callError(client, 'bh_open', { runId, route: task.route, persona: task.persona, leaseId: 'wrong' });
+    const wrongLease = await callError(client, 'bh_open', { runId, target: task.target, persona: task.persona, leaseId: 'wrong' });
     assert.equal(wrongLease.code, 'LEASE_UNKNOWN');
-    const mismatch = await callError(client, 'bh_open', { runId, route: '/orders', persona: task.persona, leaseId: task.leaseId });
+    const mismatch = await callError(client, 'bh_open', { runId, target: '/orders', persona: task.persona, leaseId: task.leaseId });
     assert.equal(mismatch.code, 'LEASE_MISMATCH');
 
     const stored = await readRun(runId, stateDir);

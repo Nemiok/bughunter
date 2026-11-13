@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 import { loadConfig } from '../src/config.ts';
 import { loadActiveProfile, loadProfile } from '../src/profile/load.ts';
-import type { Config } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const temporaryDirectories: string[] = [];
 
@@ -24,7 +24,7 @@ function baseConfig(): Config {
     baseUrl: 'https://dev-stand.example.local',
     allowedOrigins: ['https://dev-stand.example.local'],
     routes: ['/', '/orders'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -35,7 +35,7 @@ function baseConfig(): Config {
       anomalyTexts: ['NaN'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 

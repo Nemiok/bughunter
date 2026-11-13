@@ -1,7 +1,10 @@
 import { resolve } from 'node:path';
 
 import { exportTest as exportCoreTest } from '@bughunter/core';
-import type { Candidate, Config, ExportTarget, Step, TestGenerator } from '@bughunter/core';
+import type { Candidate, ExportTarget, TestGenerator } from '@bughunter/core';
+import type { WebConfig as Config } from './config.ts';
+import type { WebCheck } from './checks.ts';
+import type { Step } from './types.ts';
 
 import { isValidScroll, scrollDeltas } from './browser/point.ts';
 import { loadConfig } from './config.ts';
@@ -17,7 +20,7 @@ function allowedUrl(path: string, config: Config): string {
   try {
     target = new URL(path, config.baseUrl);
   } catch {
-    throw new Error(`ROUTE_NOT_ALLOWED: ${path}`);
+    throw new Error(`TARGET_NOT_ALLOWED: ${path}`);
   }
   // Граница та же, что у рантайм-навигации (SessionManager.isAllowed): разрешённый origin.
   // config.routes — область исследования, а не allowlist переходов, иначе легально
@@ -33,7 +36,7 @@ function allowedUrl(path: string, config: Config): string {
         return false;
       }
     });
-  if (!allowed) throw new Error(`ROUTE_NOT_ALLOWED: ${path}`);
+  if (!allowed) throw new Error(`TARGET_NOT_ALLOWED: ${path}`);
   return target.href;
 }
 
@@ -109,7 +112,7 @@ function actionSource(step: Step, profile: Profile | null): string {
 }
 
 function replaySource(candidate: Candidate, config: Config, profile: Profile | null): string {
-  const steps = (candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps;
+  const steps = ((candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) as Step[];
   return steps.map((step) => {
     if (step.kind === 'act') return `  ${actionSource(step, profile)}\n`;
     if (step.kind === 'navigate') {
@@ -156,7 +159,7 @@ function visibleTextPoll(target: string, expected: boolean): string {
 
 function checkAssertion(candidate: Candidate): string {
   if (!candidate.check) throw new Error('CANDIDATE_ORACLE_REQUIRED');
-  const check = candidate.check;
+  const check = candidate.check as WebCheck;
   switch (check.kind) {
     case 'visibleText':
       return visibleTextPoll(check.target, true);
@@ -185,9 +188,9 @@ test(${JSON.stringify(candidate.title)}, async ({ page }) => {
     .replace(/\\d+(?:\\.\\d+)?/g, '<number>')
     .replace(/\\s+/g, ' ')
     .trim();
-  const signature = (input: { kind: string; message: string; route: string; stack?: string }): string => {
+  const signature = (input: { kind: string; message: string; target: string; stack?: string }): string => {
     const topFrame = input.stack?.split('\\n').find((line) => /^\\s*at\\s+/.test(line)) ?? '';
-    return createHash('sha256').update([input.kind, normalize(input.message), normalize(input.route), normalize(topFrame)].join('\\n')).digest('hex');
+    return createHash('sha256').update([input.kind, normalize(input.message), normalize(input.target), normalize(topFrame)].join('\\n')).digest('hex');
   };
   const route = (): string => {
     try {
@@ -197,30 +200,30 @@ test(${JSON.stringify(candidate.title)}, async ({ page }) => {
     }
   };
   page.on('pageerror', (error) => {
-    if (signature({ kind: 'pageerror', message: error.message, route: route(), ...(error.stack === undefined ? {} : { stack: error.stack }) }) === ${signature}) matched = true;
+    if (signature({ kind: 'pageerror', message: error.message, target: route(), ...(error.stack === undefined ? {} : { stack: error.stack }) }) === ${signature}) matched = true;
   });
   page.on('console', (message) => {
-    if (message.type() === 'error' && signature({ kind: 'console', message: message.text(), route: route() }) === ${signature}) matched = true;
+    if (message.type() === 'error' && signature({ kind: 'console', message: message.text(), target: route() }) === ${signature}) matched = true;
   });
   page.on('requestfailed', (request) => {
     const url = request.url();
     const reason = request.failure()?.errorText ?? 'Request failed';
-    if (signature({ kind: 'requestfailed', message: \`\${request.method()} \${url}: \${reason}\`, route: route() }) === ${signature}) matched = true;
+    if (signature({ kind: 'requestfailed', message: \`\${request.method()} \${url}: \${reason}\`, target: route() }) === ${signature}) matched = true;
   });
   page.on('response', (response) => {
     const status = response.status();
     const url = response.url();
-    if (status >= 400 && signature({ kind: 'response', message: \`\${response.request().method()} \${url}: HTTP \${status}\`, route: route() }) === ${signature}) matched = true;
+    if (status >= 400 && signature({ kind: 'response', message: \`\${response.request().method()} \${url}: HTTP \${status}\`, target: route() }) === ${signature}) matched = true;
   });
-  const observedAnomalies: Array<{ text: string; route: string }> = [];
-  await page.exposeFunction('__bughunterReportAnomalies', (entries: Array<{ text: string; route: string }>) => {
+  const observedAnomalies: Array<{ text: string; target: string }> = [];
+  await page.exposeFunction('__bughunterReportAnomalies', (entries: Array<{ text: string; target: string }>) => {
     for (const entry of entries) observedAnomalies.push(entry);
   });
   await page.addInitScript((anomalyTexts: string[]) => {
     const target = window as unknown as Window & {
       __bughunterAnomalyObserver?: MutationObserver;
       __bughunterSeenAnomalies?: Set<string>;
-      __bughunterReportAnomalies: (entries: Array<{ text: string; route: string }>) => void;
+      __bughunterReportAnomalies: (entries: Array<{ text: string; target: string }>) => void;
     };
     if (target.__bughunterAnomalyObserver) return;
     target.__bughunterSeenAnomalies = new Set();
@@ -240,7 +243,7 @@ test(${JSON.stringify(candidate.title)}, async ({ page }) => {
         const key = \`\${token}\\n\${observedRoute}\`;
         if (target.__bughunterSeenAnomalies!.has(key)) continue;
         target.__bughunterSeenAnomalies!.add(key);
-        target.__bughunterReportAnomalies([{ text: token, route: observedRoute }]);
+        target.__bughunterReportAnomalies([{ text: token, target: observedRoute }]);
       }
     };
     target.__bughunterAnomalyObserver = new MutationObserver(scan);
@@ -252,17 +255,17 @@ ${replay}  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch((
   const bodyText = await page.locator('body').innerText();
   for (const text of ${JSON.stringify(config.detectors.anomalyTexts)}) {
     const escaped = text.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
-    if (text.length > 0 && new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(bodyText) && signature({ kind: 'anomaly', message: text, route: route() }) === ${signature}) matched = true;
+    if (text.length > 0 && new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(bodyText) && signature({ kind: 'anomaly', message: text, target: route() }) === ${signature}) matched = true;
   }
   for (const entry of observedAnomalies) {
-    if (signature({ kind: 'anomaly', message: entry.text, route: entry.route }) === ${signature}) matched = true;
+    if (signature({ kind: 'anomaly', message: entry.text, target: entry.target }) === ${signature}) matched = true;
   }
   const boundaries = page.locator(${JSON.stringify(config.detectors.errorBoundarySelector)});
   for (let index = 0; index < await boundaries.count(); index += 1) {
     const boundary = boundaries.nth(index);
     if (await boundary.isVisible()) {
       const text = (await boundary.innerText()).trim() || ${JSON.stringify(config.detectors.errorBoundarySelector)};
-      if (signature({ kind: 'errorBoundary', message: text, route: route() }) === ${signature}) matched = true;
+      if (signature({ kind: 'errorBoundary', message: text, target: route() }) === ${signature}) matched = true;
     }
   }
   expect(matched).toBe(false);
@@ -273,12 +276,12 @@ ${replay}  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch((
 export function generatePlaywrightTest(
   candidate: Candidate,
   config: Config,
-  initialRoute = candidate.route,
+  initialRoute = candidate.target,
   profile: Profile | null = null,
 ): string {
   allowedUrl(initialRoute, config);
   const replay = replaySource(candidate, config, profile);
-  for (const step of (candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) {
+  for (const step of ((candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) as Step[]) {
     if (step.kind === 'navigate' && step.path) allowedUrl(step.path, config);
   }
   if (candidate.signalIds.length > 0) return signalSource(candidate, config, initialRoute, replay);
@@ -293,7 +296,7 @@ ${replay}  ${checkAssertion(candidate)}
 
 /** Каталог назначения: сгенерированный тест живёт там, где его запустит раннер пресета. */
 export const webExportTarget: ExportTarget = {
-  dir: (config) => config.tests.e2e.dir,
+  dir: (config) => config.tests.generated.dir,
   kind: 'e2e',
   fileName: (bugId) => `${bugId}.spec.ts`,
 };

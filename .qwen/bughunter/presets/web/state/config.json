@@ -9,7 +9,7 @@
     "/orders/new",
     "/profile"
   ],
-  "routeMap": {
+  "targetMap": {
     "src/pages/orders/**": [
       "/orders",
       "/orders/new"
@@ -44,7 +44,7 @@
     "unit": {
       "command": null
     },
-    "e2e": {
+    "generated": {
       "dir": "e2e/bughunter"
     }
   }

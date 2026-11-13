@@ -10,7 +10,10 @@ import { loadProfile } from './profile/load.ts';
 import { signalSignature } from '@bughunter/core';
 import { findAnomalyTexts } from './detectors/signals.ts';
 import { readRun, writeJsonAtomic } from '@bughunter/core';
-import type { Candidate, Check, Config, Journal, Signal, Step } from '@bughunter/core';
+import type { Candidate, Check, Journal, Signal } from '@bughunter/core';
+import type { WebConfig as Config } from './config.ts';
+import type { WebCheck } from './checks.ts';
+import type { Step } from './types.ts';
 
 const maximumEvaluations = 20;
 const maximumDurationMs = 300_000;
@@ -149,7 +152,7 @@ async function hasVisibleText(page: Page, target: string): Promise<boolean> {
 }
 
 export async function checkViolated(page: Page, check: Check): Promise<boolean> {
-  switch (check.kind) {
+  switch ((check as WebCheck).kind) {
     case 'visibleText':
       return !await hasVisibleText(page, check.target);
     case 'notVisibleText':
@@ -169,7 +172,7 @@ async function observeReplayAnomaly(page: Page, config: Config, signature: strin
       route = page.url();
     }
     for (const message of findAnomalyTexts(text, config.detectors.anomalyTexts)) {
-      if (signalSignature({ kind: 'anomaly', message, route }) === signature) observed.matched = true;
+      if (signalSignature({ kind: 'anomaly', message, target: route }) === signature) observed.matched = true;
     }
   });
   await page.addInitScript(() => {
@@ -225,7 +228,7 @@ async function executeReplay(
   let sessionId: string | undefined;
   let matched = false;
   try {
-    const opened = await manager.open(candidate.runId, journal.route, journal.persona);
+    const opened = await manager.open(candidate.runId, journal.target, journal.persona);
     sessionId = opened.sessionId;
     const observedAnomaly = await observeReplayAnomaly(pageFor(manager, sessionId), config, candidate.signature);
     const signals: Signal[] = [];
@@ -299,7 +302,7 @@ export async function reproduceCandidate(input: {
   const replayArtifacts: string[] = [];
   let activeReplay: Promise<ReplayOutcome> | undefined;
   try {
-    const algorithm = await replayAndMinimize(candidate.steps, attempts, (steps) => {
+    const algorithm = await replayAndMinimize(candidate.steps as Step[], attempts, (steps) => {
       const operation = executeReplay(manager, config, stateDir, candidate, journal, steps);
       activeReplay = operation;
       return operation.then((outcome) => {

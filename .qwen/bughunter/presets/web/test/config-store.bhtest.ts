@@ -10,7 +10,7 @@ import { defaultElementsPerSnapshot, ensureConfig, loadConfig } from '../src/con
 import { findProjectRoot } from '@bughunter/core';
 import { readRun, updateRun, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Config } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const execFile = promisify(execFileCallback);
 const temporaryDirectories: string[] = [];
@@ -30,7 +30,7 @@ function configTemplate(): Config {
     baseUrl: 'https://dev-stand.example.local',
     allowedOrigins: ['https://dev-stand.example.local'],
     routes: ['/', '/orders', '/orders/new', '/profile'],
-    routeMap: { 'src/pages/orders/**': ['/orders', '/orders/new'] },
+    targetMap: { 'src/pages/orders/**': ['/orders', '/orders/new'] },
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20, elementsPerSnapshot: defaultElementsPerSnapshot },
     safety: { forbiddenActionText: ['удалить', 'delete', 'оплатить'], readOnly: false },
@@ -41,7 +41,7 @@ function configTemplate(): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -131,58 +131,58 @@ test('project root is found by walking up to .git', async () => {
   assert.equal(await findProjectRoot(nested), root);
 });
 
-test('diff run uses git diff and routeMap to select routes', async () => {
+test('diff run uses git diff and targetMap to select targets', async () => {
   const projectRoot = await createDiffRepository('src/pages/orders/details.ts');
   const stateDir = await temporaryDirectory('bh-run-');
   const run = await createRun('diff', undefined, { config: configTemplate(), projectRoot, stateDir });
-  assert.deepEqual(run.routes, ['/orders', '/orders/new']);
+  assert.deepEqual(run.targets, ['/orders', '/orders/new']);
   assert.equal(run.scope, 'diff');
   assert.match(run.id, /^\d{8}T\d{6}\.\d{3}Z-[a-f0-9]+$/);
-  assert.deepEqual((await readRun(run.id, stateDir)).routes, run.routes);
+  assert.deepEqual((await readRun(run.id, stateDir)).targets, run.targets);
 });
 
 test('diff run falls back to all routes when no route-map glob matches', async () => {
   const projectRoot = await createDiffRepository('README.md');
   const stateDir = await temporaryDirectory('bh-run-');
   const run = await createRun('diff', undefined, { config: configTemplate(), projectRoot, stateDir });
-  assert.deepEqual(run.routes, configTemplate().routes);
+  assert.deepEqual(run.targets, configTemplate().routes);
 });
 
 test('route glob ** matches zero directories below a literal segment', async () => {
   const projectRoot = await createDiffRepository('src/index.ts');
   const stateDir = await temporaryDirectory('bh-run-');
   const config = configTemplate();
-  config.routeMap = { 'src/**/index.ts': ['/profile'] };
+  config.targetMap = { 'src/**/index.ts': ['/profile'] };
   const run = await createRun('diff', undefined, { config, projectRoot, stateDir });
-  assert.deepEqual(run.routes, ['/profile']);
+  assert.deepEqual(run.targets, ['/profile']);
 });
 
 test('route glob ** matches zero directories at the repository root', async () => {
   const projectRoot = await createDiffRepository('foo.ts');
   const stateDir = await temporaryDirectory('bh-run-');
   const config = configTemplate();
-  config.routeMap = { '**/foo.ts': ['/profile'] };
+  config.targetMap = { '**/foo.ts': ['/profile'] };
   const run = await createRun('diff', undefined, { config, projectRoot, stateDir });
-  assert.deepEqual(run.routes, ['/profile']);
+  assert.deepEqual(run.targets, ['/profile']);
 });
 
 test('route glob * matches within a single path segment', async () => {
   const projectRoot = await createDiffRepository('src/pages/orders/index.ts');
   const stateDir = await temporaryDirectory('bh-run-');
   const config = configTemplate();
-  config.routeMap = { 'src/pages/*/index.ts': ['/orders'] };
+  config.targetMap = { 'src/pages/*/index.ts': ['/orders'] };
   const run = await createRun('diff', undefined, { config, projectRoot, stateDir });
-  assert.deepEqual(run.routes, ['/orders']);
+  assert.deepEqual(run.targets, ['/orders']);
 });
 
 test('route run requires one allowed configured route', async () => {
   const projectRoot = await temporaryDirectory('bh-project-');
   const stateDir = await temporaryDirectory('bh-run-');
   const deps = { config: configTemplate(), projectRoot, stateDir };
-  const run = await createRun('route', '/orders', deps);
-  assert.deepEqual(run.routes, ['/orders']);
-  await assert.rejects(createRun('route', undefined, deps), /ROUTE_REQUIRED/);
-  await assert.rejects(createRun('route', '/admin', deps), /ROUTE_NOT_ALLOWED/);
+  const run = await createRun('target', '/orders', deps);
+  assert.deepEqual(run.targets, ['/orders']);
+  await assert.rejects(createRun('target', undefined, deps), /TARGET_REQUIRED/);
+  await assert.rejects(createRun('target', '/admin', deps), /TARGET_NOT_ALLOWED/);
 });
 
 test('run updates persist and unknown or unsafe IDs fail clearly', async () => {

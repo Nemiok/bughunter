@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 export type SignatureInput = {
   kind: string;
   message: string;
-  route: string;
+  target: string;
   stack?: string;
 };
 
@@ -25,7 +25,7 @@ export function signalSignature(input: SignatureInput): string {
   const value = [
     input.kind,
     normalizeMessage(input.message),
-    normalizeMessage(input.route),
+    normalizeMessage(input.target),
     normalizeMessage(topFrame),
   ].join('\n');
   return createHash('sha256').update(value).digest('hex');

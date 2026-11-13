@@ -110,7 +110,7 @@ async function journalTarget(candidate: Candidate, stateDir: string): Promise<st
   if (journal.runId !== candidate.runId || journal.sessionId !== candidate.sessionId) {
     throw new Error(`JOURNAL_MISMATCH: ${candidate.sessionId}`);
   }
-  return journal.route;
+  return journal.target;
 }
 
 export type ExportInput = {

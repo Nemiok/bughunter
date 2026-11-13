@@ -11,7 +11,9 @@ import { signalSignature } from '@bughunter/core';
 import { checkViolated, replayAndMinimize, reproduceCandidate } from '../src/reproduce.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Candidate, Config, Step } from '@bughunter/core';
+import type { Candidate } from '@bughunter/core';
+import type { Step } from '../src/types.ts';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 let vite: ViteDevServer;
@@ -39,7 +41,7 @@ function demoConfig(): Config {
     baseUrl,
     allowedOrigins: [baseUrl],
     routes: ['/', '/profile', '/orders', '/orders/new', '/clean'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -50,7 +52,7 @@ function demoConfig(): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -73,7 +75,7 @@ async function clickRole(manager: SessionManager, sessionId: string, role: 'link
 }
 
 async function candidateFixture(
-  route: string,
+  target: string,
   explore: (manager: SessionManager, sessionId: string) => Promise<CandidateInput>,
   expectedReproduction: '0/1' | '1/1' = '1/1',
 ): Promise<{ result: Awaited<ReturnType<typeof reproduceCandidate>>; candidate: Candidate & { minimalSteps?: Step[] } }> {
@@ -85,7 +87,7 @@ async function candidateFixture(
   await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
   const manager = new SessionManager(config, stateDir);
   try {
-    const { sessionId } = await manager.open(run.id, route, 'replay-test');
+    const { sessionId } = await manager.open(run.id, target, 'replay-test');
     const input = await explore(manager, sessionId);
     const { candidateId } = await manager.reportCandidate(sessionId, input);
     await manager.close(sessionId);
@@ -126,7 +128,7 @@ test('real Chrome reproduces and minimizes all five seeded bug symptoms', { time
         title: 'Empty profile throws', expected: 'Validation', actual: 'Unhandled error', signalIds: [],
       }, clicked.signals, 'pageerror');
     });
-    assert.deepEqual(candidate.minimalSteps?.map((step) => step.action), ['click']);
+    assert.deepEqual((candidate.minimalSteps as Step[] | undefined)?.map((step) => step.action), ['click']);
   });
 
   await t.test('2: zero quantity HTTP 500', async () => {
@@ -138,7 +140,7 @@ test('real Chrome reproduces and minimizes all five seeded bug symptoms', { time
         title: 'Zero quantity fails', expected: 'Validation', actual: 'HTTP 500', signalIds: [],
       }, clicked.signals, 'response');
     });
-    assert.deepEqual(candidate.minimalSteps?.map((step) => step.action), ['fill', 'click']);
+    assert.deepEqual((candidate.minimalSteps as Step[] | undefined)?.map((step) => step.action), ['fill', 'click']);
   });
 
   await t.test('3: double click violates the pre-action order count', async () => {
@@ -186,7 +188,7 @@ test('every replay starts clean and notVisibleText checks retain the required ac
       check: { kind: 'notVisibleText', target: 'Saved Alice' },
     };
   });
-  assert.deepEqual(candidate.minimalSteps?.map((step) => step.action), ['fill', 'click']);
+  assert.deepEqual((candidate.minimalSteps as Step[] | undefined)?.map((step) => step.action), ['fill', 'click']);
 });
 
 test('final-page visibleText violation reproduces and minimizes against real Chrome', async () => {
@@ -229,7 +231,7 @@ test('signal-backed candidates ignore a violated check when the normalized signa
     await manager.close(sessionId);
     const candidatePath = join(stateDir, 'runs', run.id, 'candidates', `${candidateId}.json`);
     const candidate = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate;
-    candidate.signature = signalSignature({ kind: 'pageerror', message: 'A different error 42', route: '/profile' });
+    candidate.signature = signalSignature({ kind: 'pageerror', message: 'A different error 42', target: '/profile' });
     await writeJsonAtomic(candidatePath, candidate);
     const result = await reproduceCandidate({ runId: run.id, candidateId, attempts: 1, stateDir });
     const saved = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate & { minimalSteps?: Step[] };
@@ -249,7 +251,7 @@ function algorithmSteps(count: number): Step[] {
     kind: 'probe',
     probe: 'mobile_viewport',
     timestamp: '2026-11-10T00:00:00.000Z',
-    routeTemplate: '/',
+    targetRef: '/',
   }));
 }
 

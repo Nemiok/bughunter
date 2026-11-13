@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { findAnomalyTexts, scanSignals } from '../src/detectors/index.ts';
-import type { Config } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 let browser: Browser;
 let server: Server;
@@ -46,7 +46,7 @@ function configTemplate(): Config {
     baseUrl: 'http://127.0.0.1',
     allowedOrigins: ['http://127.0.0.1'],
     routes: ['/'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: [], readOnly: false },
@@ -57,7 +57,7 @@ function configTemplate(): Config {
       anomalyTexts: ['NaN', 'undefined', '[object Object]'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -107,7 +107,7 @@ test('scanSignals captures browser, network, text, and boundary signals and appl
     assert.ok(signals.some((signal) => signal.kind === 'requestfailed' && signal.url?.includes('/failed')));
     assert.ok(signals.some((signal) => signal.kind === 'errorBoundary' && signal.message.includes('Something went wrong')));
     assert.ok(signals.every((signal) => !signal.message.includes('Ignore me') && !signal.url?.includes('/ignored')));
-    assert.ok(signals.every((signal) => signal.signature.length === 64 && signal.route === '/'));
+    assert.ok(signals.every((signal) => signal.signature.length === 64 && signal.target === '/'));
     assert.deepEqual(await scanSignals(page, config), []);
   } finally {
     await page.close();

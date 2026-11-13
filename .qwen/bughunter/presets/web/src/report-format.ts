@@ -1,5 +1,6 @@
 import { escapeMarkdown } from '@bughunter/core';
-import type { Finding, ReportFormat, Step } from '@bughunter/core';
+import type { Finding, ReportFormat } from '@bughunter/core';
+import type { Step } from './types.ts';
 
 function stepText(step: Step): string {
   if (step.kind === 'act') {
@@ -12,12 +13,12 @@ function stepText(step: Step): string {
 
 export const webReportFormat: ReportFormat = {
   candidate(candidate) {
-    const steps = candidate.minimalSteps ?? candidate.steps;
+    const steps = (candidate.minimalSteps ?? candidate.steps) as Step[];
     return steps.map((step, index) => `${index + 1}. ${escapeMarkdown(stepText(step))}`);
   },
   finding(finding: Finding) {
     return [
-      `### ${finding.kind}: ${finding.screenTemplate}`, '',
+      `### ${finding.kind}: ${finding.targetRef}`, '',
       `- Finding: ${finding.id}`,
       ...(finding.widget === undefined ? [] : [`- Widget: ${finding.widget}`]),
       `- Detail: ${finding.detail.replaceAll('\n', ' ')}`,

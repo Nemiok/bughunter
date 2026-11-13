@@ -18,13 +18,13 @@ test('signatures ignore dynamic IDs but include signal type and top stack frame'
   const first = signalSignature({
     kind: 'pageerror',
     message: 'Order 42 failed for 550e8400-e29b-41d4-a716-446655440000',
-    route: '/orders/42',
+    target: '/orders/42',
     stack: 'Error: Order 42 failed\n    at save (/app.js:10:2)\n    at click (/app.js:20:3)',
   });
   const changedIds = signalSignature({
     kind: 'pageerror',
     message: 'Order 99 failed for 123e4567-e89b-42d3-a456-426614174000',
-    route: '/orders/99',
+    target: '/orders/99',
     stack: 'Error: Order 99 failed\n    at save (/app.js:10:2)\n    at other (/other.js:30:4)',
   });
   assert.equal(first, changedIds);
@@ -32,13 +32,13 @@ test('signatures ignore dynamic IDs but include signal type and top stack frame'
   assert.notEqual(first, signalSignature({
     kind: 'console',
     message: 'Order 42 failed for 550e8400-e29b-41d4-a716-446655440000',
-    route: '/orders/42',
+    target: '/orders/42',
     stack: 'Error: Order 42 failed\n    at save (/app.js:10:2)',
   }));
   assert.notEqual(first, signalSignature({
     kind: 'pageerror',
     message: 'Order 42 failed for 550e8400-e29b-41d4-a716-446655440000',
-    route: '/orders/42',
+    target: '/orders/42',
     stack: 'Error: Order 42 failed\n    at submit (/app.js:10:2)',
   }));
 });

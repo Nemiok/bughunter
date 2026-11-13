@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { TargetRef } from './preset.ts';
 import { candidatePath, writeJsonAtomic } from './run-store.ts';
-import type { Candidate, Check, Step } from './types.ts';
+import type { Candidate, Check, StepBase } from './types.ts';
 
 /**
  * Сигнатура кандидата: у сигнала она уже есть, у нарушения инварианта считается из оракула и цели.
@@ -47,7 +47,7 @@ export async function reportCandidate(input: {
   title: string;
   expected: string;
   actual: string;
-  steps: Step[];
+  steps: StepBase[];
   signalIds: string[];
   signalSignature?: string;
   check?: Check;
@@ -60,7 +60,7 @@ export async function reportCandidate(input: {
     id: candidateId,
     runId: input.runId,
     sessionId: input.sessionId,
-    route: input.target,
+    target: input.target,
     title: input.title,
     expected: input.expected,
     actual: input.actual,

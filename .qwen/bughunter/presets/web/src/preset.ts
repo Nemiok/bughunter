@@ -1,5 +1,8 @@
 import type { Preset } from '@bughunter/core';
 
+import { webCheckKinds } from './checks.ts';
+import { webConfigSchema } from './config.ts';
+
 import { webFindingKinds } from './finding-kinds.ts';
 import { webErrors } from './errors.ts';
 import { webExportTarget, webTestGenerator } from './export-playwright.ts';
@@ -20,7 +23,7 @@ const pending = (hook: string) => (): never => {
 
 export const webPreset: Preset = {
   name: 'web',
-  configSchema: {},
+  configSchema: webConfigSchema,
   inventory: webInventory,
   session: { open: pending('session.open') },
   snapshot: webSnapshot,
@@ -29,7 +32,7 @@ export const webPreset: Preset = {
     scan: pending('detectors.scan'),
   },
   checks: {
-    kinds: ['visibleText', 'notVisibleText', 'elementCount'],
+    kinds: [...webCheckKinds],
     validate: pending('checks.validate'),
     violated: pending('checks.violated'),
   },

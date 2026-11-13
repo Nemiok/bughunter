@@ -10,7 +10,8 @@ import { defaultElementsPerSnapshot } from '../src/config.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { Profile } from '../src/profile/types.ts';
 import { writeJsonAtomic } from '@bughunter/core';
-import type { Config, ElementSnapshot } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
+import type { ElementSnapshot } from '../src/types.ts';
 
 const directories: string[] = [];
 const managers: SessionManager[] = [];
@@ -55,7 +56,7 @@ function configTemplate(): Config {
     baseUrl: origin,
     allowedOrigins: [origin],
     routes: ['/screen'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -66,7 +67,7 @@ function configTemplate(): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 

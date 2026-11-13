@@ -10,7 +10,7 @@ import { createRun, readCandidate, writeJsonAtomic } from '../src/run-store.ts';
 import type { SharedMemoryEntry } from '../src/run-store.ts';
 import type { Candidate, Config, Journal } from '../src/types.ts';
 
-const config = { routes: ['/a'], routeMap: {}, baseBranch: 'main' } as unknown as Config;
+const config = { targetMap: {}, baseBranch: 'main' } as unknown as Config;
 const createdAt = '2026-11-13T00:00:00.000Z';
 const journalRoute = '/orders/12';
 
@@ -27,15 +27,15 @@ type Fixture = { runId: string; bugId: string; candidateId: string };
 
 /** Подтверждённый и воспроизведённый баг: ровно то состояние, при котором экспорт разрешён. */
 async function confirmedBug(stateDir: string, patch: Partial<Candidate> = {}): Promise<Fixture> {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'] });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   const journal: Journal = {
-    sessionId: 'sess-1', runId: run.id, route: journalRoute, persona: 'p', steps: [], createdAt,
+    sessionId: 'sess-1', runId: run.id, target: journalRoute, persona: 'p', steps: [], createdAt,
   };
   const candidate: Candidate = {
     id: 'cand-1',
     runId: run.id,
     sessionId: 'sess-1',
-    route: journalRoute,
+    target: journalRoute,
     title: 'Итог заказа не считается',
     expected: 'видна сумма 30',
     actual: 'виден NaN',

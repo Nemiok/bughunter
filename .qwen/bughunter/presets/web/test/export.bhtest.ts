@@ -7,7 +7,9 @@ import { signalSignature } from '@bughunter/core';
 import { exportTest, generatePlaywrightTest } from '../src/export-playwright.ts';
 import { triageCandidate, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Candidate, Config, Step } from '@bughunter/core';
+import type { Candidate } from '@bughunter/core';
+import type { Step } from '../src/types.ts';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const createdAt = '2026-11-10T00:00:00.000Z';
 
@@ -16,7 +18,7 @@ function config(): Config {
     baseUrl: 'https://example.test/app/',
     allowedOrigins: ['https://example.test'],
     routes: ['/', '/profile', '/orders'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: [], readOnly: false },
@@ -27,17 +29,17 @@ function config(): Config {
       anomalyTexts: ['NaN', '[object Object]'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
-function candidate(patch: Partial<Candidate> & { minimalSteps?: Step[] } = {}): Candidate & { minimalSteps?: Step[] } {
+function candidate(patch: Partial<Omit<Candidate, 'steps' | 'minimalSteps'>> & { steps?: Step[]; minimalSteps?: Step[] } = {}): Candidate & { minimalSteps?: Step[] } {
   const { minimalSteps, ...candidatePatch } = patch;
   return {
     id: 'candidate-one',
     runId: 'run-one',
     sessionId: 'session-one',
-    route: '/profile',
+    target: '/profile',
     title: 'Profile "save" fails\nsafely',
     expected: 'Profile saves',
     actual: 'Unhandled error',
@@ -65,9 +67,9 @@ test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
     .replace(/\\d+(?:\\.\\d+)?/g, '<number>')
     .replace(/\\s+/g, ' ')
     .trim();
-  const signature = (input: { kind: string; message: string; route: string; stack?: string }): string => {
+  const signature = (input: { kind: string; message: string; target: string; stack?: string }): string => {
     const topFrame = input.stack?.split('\\n').find((line) => /^\\s*at\\s+/.test(line)) ?? '';
-    return createHash('sha256').update([input.kind, normalize(input.message), normalize(input.route), normalize(topFrame)].join('\\n')).digest('hex');
+    return createHash('sha256').update([input.kind, normalize(input.message), normalize(input.target), normalize(topFrame)].join('\\n')).digest('hex');
   };
   const route = (): string => {
     try {
@@ -77,30 +79,30 @@ test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
     }
   };
   page.on('pageerror', (error) => {
-    if (signature({ kind: 'pageerror', message: error.message, route: route(), ...(error.stack === undefined ? {} : { stack: error.stack }) }) === ${JSON.stringify(signature)}) matched = true;
+    if (signature({ kind: 'pageerror', message: error.message, target: route(), ...(error.stack === undefined ? {} : { stack: error.stack }) }) === ${JSON.stringify(signature)}) matched = true;
   });
   page.on('console', (message) => {
-    if (message.type() === 'error' && signature({ kind: 'console', message: message.text(), route: route() }) === ${JSON.stringify(signature)}) matched = true;
+    if (message.type() === 'error' && signature({ kind: 'console', message: message.text(), target: route() }) === ${JSON.stringify(signature)}) matched = true;
   });
   page.on('requestfailed', (request) => {
     const url = request.url();
     const reason = request.failure()?.errorText ?? 'Request failed';
-    if (signature({ kind: 'requestfailed', message: \`\${request.method()} \${url}: \${reason}\`, route: route() }) === ${JSON.stringify(signature)}) matched = true;
+    if (signature({ kind: 'requestfailed', message: \`\${request.method()} \${url}: \${reason}\`, target: route() }) === ${JSON.stringify(signature)}) matched = true;
   });
   page.on('response', (response) => {
     const status = response.status();
     const url = response.url();
-    if (status >= 400 && signature({ kind: 'response', message: \`\${response.request().method()} \${url}: HTTP \${status}\`, route: route() }) === ${JSON.stringify(signature)}) matched = true;
+    if (status >= 400 && signature({ kind: 'response', message: \`\${response.request().method()} \${url}: HTTP \${status}\`, target: route() }) === ${JSON.stringify(signature)}) matched = true;
   });
-  const observedAnomalies: Array<{ text: string; route: string }> = [];
-  await page.exposeFunction('__bughunterReportAnomalies', (entries: Array<{ text: string; route: string }>) => {
+  const observedAnomalies: Array<{ text: string; target: string }> = [];
+  await page.exposeFunction('__bughunterReportAnomalies', (entries: Array<{ text: string; target: string }>) => {
     for (const entry of entries) observedAnomalies.push(entry);
   });
   await page.addInitScript((anomalyTexts: string[]) => {
     const target = window as unknown as Window & {
       __bughunterAnomalyObserver?: MutationObserver;
       __bughunterSeenAnomalies?: Set<string>;
-      __bughunterReportAnomalies: (entries: Array<{ text: string; route: string }>) => void;
+      __bughunterReportAnomalies: (entries: Array<{ text: string; target: string }>) => void;
     };
     if (target.__bughunterAnomalyObserver) return;
     target.__bughunterSeenAnomalies = new Set();
@@ -120,7 +122,7 @@ test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
         const key = \`\${token}\\n\${observedRoute}\`;
         if (target.__bughunterSeenAnomalies!.has(key)) continue;
         target.__bughunterSeenAnomalies!.add(key);
-        target.__bughunterReportAnomalies([{ text: token, route: observedRoute }]);
+        target.__bughunterReportAnomalies([{ text: token, target: observedRoute }]);
       }
     };
     target.__bughunterAnomalyObserver = new MutationObserver(scan);
@@ -132,17 +134,17 @@ test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
   const bodyText = await page.locator('body').innerText();
   for (const text of ["NaN","[object Object]"]) {
     const escaped = text.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
-    if (text.length > 0 && new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(bodyText) && signature({ kind: 'anomaly', message: text, route: route() }) === ${JSON.stringify(signature)}) matched = true;
+    if (text.length > 0 && new RegExp(\`(?<![\\\\p{L}\\\\p{N}_])\${escaped}(?![\\\\p{L}\\\\p{N}_])\`, 'u').test(bodyText) && signature({ kind: 'anomaly', message: text, target: route() }) === ${JSON.stringify(signature)}) matched = true;
   }
   for (const entry of observedAnomalies) {
-    if (signature({ kind: 'anomaly', message: entry.text, route: entry.route }) === ${JSON.stringify(signature)}) matched = true;
+    if (signature({ kind: 'anomaly', message: entry.text, target: entry.target }) === ${JSON.stringify(signature)}) matched = true;
   }
   const boundaries = page.locator("[data-error-boundary]");
   for (let index = 0; index < await boundaries.count(); index += 1) {
     const boundary = boundaries.nth(index);
     if (await boundary.isVisible()) {
       const text = (await boundary.innerText()).trim() || "[data-error-boundary]";
-      if (signature({ kind: 'errorBoundary', message: text, route: route() }) === ${JSON.stringify(signature)}) matched = true;
+      if (signature({ kind: 'errorBoundary', message: text, target: route() }) === ${JSON.stringify(signature)}) matched = true;
     }
   }
   expect(matched).toBe(false);
@@ -151,18 +153,18 @@ test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
 }
 
 const signalCases = [
-  { name: 'pageerror signature', input: { kind: 'pageerror', message: 'Profile is empty 42', route: '/profile', stack: 'Error: Profile is empty 42\n    at save (app.ts:10:1)' } },
-  { name: 'failed request', input: { kind: 'requestfailed', message: 'GET https://example.test/api/profile: net::ERR_FAILED', route: '/profile' } },
-  { name: 'response status', input: { kind: 'response', message: 'POST https://example.test/api/orders: HTTP 500', route: '/orders' } },
-  { name: 'anomaly text', input: { kind: 'anomaly', message: 'NaN', route: '/orders' } },
-  { name: 'error boundary', input: { kind: 'errorBoundary', message: 'Something went wrong', route: '/profile' } },
+  { name: 'pageerror signature', input: { kind: 'pageerror', message: 'Profile is empty 42', target: '/profile', stack: 'Error: Profile is empty 42\n    at save (app.ts:10:1)' } },
+  { name: 'failed request', input: { kind: 'requestfailed', message: 'GET https://example.test/api/profile: net::ERR_FAILED', target: '/profile' } },
+  { name: 'response status', input: { kind: 'response', message: 'POST https://example.test/api/orders: HTTP 500', target: '/orders' } },
+  { name: 'anomaly text', input: { kind: 'anomaly', message: 'NaN', target: '/orders' } },
+  { name: 'error boundary', input: { kind: 'errorBoundary', message: 'Something went wrong', target: '/profile' } },
 ];
 
 for (const signalCase of signalCases) {
   test(`golden Playwright source detects ${signalCase.name} by its stable signature`, () => {
     const signature = signalSignature(signalCase.input);
-    const source = generatePlaywrightTest(candidate({ signature, route: signalCase.input.route }), config());
-    assert.equal(source, expectedSignalSource(signature).replace('new URL("/profile"', `new URL(${JSON.stringify(signalCase.input.route)}`));
+    const source = generatePlaywrightTest(candidate({ signature, target: signalCase.input.target }), config());
+    assert.equal(source, expectedSignalSource(signature).replace('new URL("/profile"', `new URL(${JSON.stringify(signalCase.input.target)}`));
     assert.equal(source.match(/^test\(/gm)?.length, 1);
     assert.equal(source.match(/\bexpect\(/g)?.length, 1);
     assert.ok(!source.includes('waitForTimeout'));
@@ -206,17 +208,17 @@ test('golden elementCount source asserts the saved count', () => {
 
 test('golden replay preserves semantic locator indexes, every action, navigation, and all probes', () => {
   const steps: Step[] = [
-    { id: '1', kind: 'act', action: 'click', locator: 'page.getByTestId("save").nth(2)', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '2', kind: 'act', action: 'fill', value: `Alice");\nthrow new Error("injected')`, locator: 'page.getByRole("textbox", { name: "Name", exact: true })', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '3', kind: 'act', action: 'select', value: 'two', locator: 'page.getByText("Choice", { exact: true })', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '4', kind: 'act', action: 'press', value: 'Enter', locator: 'page.locator("#name")', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '5', kind: 'act', action: 'check', locator: 'page.getByTestId("enabled")', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '6', kind: 'act', action: 'hover', locator: 'page.getByRole("button", { name: "More", exact: true })', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '7', kind: 'act', action: 'dblclick', locator: 'page.getByText("Save", { exact: true })', timestamp: createdAt, routeTemplate: '/profile' },
-    { id: '8', kind: 'navigate', path: '/orders?page=2', timestamp: createdAt, routeTemplate: '/orders' },
-    { id: '9', kind: 'probe', probe: 'reload', timestamp: createdAt, routeTemplate: '/orders' },
-    { id: '10', kind: 'probe', probe: 'back', timestamp: createdAt, routeTemplate: '/orders' },
-    { id: '11', kind: 'probe', probe: 'mobile_viewport', timestamp: createdAt, routeTemplate: '/profile' },
+    { id: '1', kind: 'act', action: 'click', locator: 'page.getByTestId("save").nth(2)', timestamp: createdAt, targetRef: '/profile' },
+    { id: '2', kind: 'act', action: 'fill', value: `Alice");\nthrow new Error("injected')`, locator: 'page.getByRole("textbox", { name: "Name", exact: true })', timestamp: createdAt, targetRef: '/profile' },
+    { id: '3', kind: 'act', action: 'select', value: 'two', locator: 'page.getByText("Choice", { exact: true })', timestamp: createdAt, targetRef: '/profile' },
+    { id: '4', kind: 'act', action: 'press', value: 'Enter', locator: 'page.locator("#name")', timestamp: createdAt, targetRef: '/profile' },
+    { id: '5', kind: 'act', action: 'check', locator: 'page.getByTestId("enabled")', timestamp: createdAt, targetRef: '/profile' },
+    { id: '6', kind: 'act', action: 'hover', locator: 'page.getByRole("button", { name: "More", exact: true })', timestamp: createdAt, targetRef: '/profile' },
+    { id: '7', kind: 'act', action: 'dblclick', locator: 'page.getByText("Save", { exact: true })', timestamp: createdAt, targetRef: '/profile' },
+    { id: '8', kind: 'navigate', path: '/orders?page=2', timestamp: createdAt, targetRef: '/orders' },
+    { id: '9', kind: 'probe', probe: 'reload', timestamp: createdAt, targetRef: '/orders' },
+    { id: '10', kind: 'probe', probe: 'back', timestamp: createdAt, targetRef: '/orders' },
+    { id: '11', kind: 'probe', probe: 'mobile_viewport', timestamp: createdAt, targetRef: '/profile' },
   ];
   const source = generatePlaywrightTest(candidate({
     signalIds: [], steps, minimalSteps: steps,
@@ -239,12 +241,12 @@ test('golden replay preserves semantic locator indexes, every action, navigation
 });
 
 test('generation accepts any same-origin route and rejects other origins and protocols', () => {
-  const source = generatePlaywrightTest(candidate({ route: '/admin/deep' }), config());
+  const source = generatePlaywrightTest(candidate({ target: '/admin/deep' }), config());
   assert.ok(source.includes('new URL("/admin/deep", "https://example.test/app/")'));
   for (const path of ['https://evil.test/profile', 'file:///etc/passwd', 'javascript:alert(1)']) {
     assert.throws(() => generatePlaywrightTest(candidate({
-      steps: [{ id: '1', kind: 'navigate', path, timestamp: createdAt, routeTemplate: '/profile' }],
-    }), config()), /ROUTE_NOT_ALLOWED/, path);
+      steps: [{ id: '1', kind: 'navigate', path, timestamp: createdAt, targetRef: '/profile' }],
+    }), config()), /TARGET_NOT_ALLOWED/, path);
   }
 });
 
@@ -254,7 +256,7 @@ type TriageFixture = {
   candidate: Candidate;
 };
 
-async function triageFixture(patch: Partial<Candidate> = {}): Promise<TriageFixture> {
+async function triageFixture(patch: Partial<Omit<Candidate, 'steps' | 'minimalSteps'>> & { steps?: Step[]; minimalSteps?: Step[] } = {}): Promise<TriageFixture> {
   const stateDir = await mkdtemp(join(tmpdir(), 'bh-triage-'));
   const projectRoot = join(stateDir, 'project');
   const run = await createRun('full', undefined, { config: config(), projectRoot, stateDir });
@@ -284,7 +286,7 @@ test('confirmed triage atomically creates and updates stable shared known-bug me
   assert.equal(known[0]?.sourceCandidate, fixture.candidate.id);
   assert.equal(known[0]?.signature, fixture.candidate.signature);
   assert.equal(known[0]?.title, fixture.candidate.title);
-  assert.equal(known[0]?.route, fixture.candidate.route);
+  assert.equal(known[0]?.target, fixture.candidate.target);
   assert.equal(known[0]?.reason, 'Reproduced locally');
   assert.equal(typeof known[0]?.createdAt, 'string');
   assert.equal(typeof known[0]?.updatedAt, 'string');
@@ -325,7 +327,7 @@ test('duplicate triage links and retains duplicateOf without creating another kn
   const fixture = await triageFixture({ duplicateOf: 'stable-known-id' });
   t.after(() => rm(fixture.stateDir, { recursive: true, force: true }));
   await writeJsonAtomic(join(fixture.stateDir, 'known-bugs.json'), [{
-    id: 'stable-known-id', signature: fixture.candidate.signature, title: 'Known', route: '/profile', reason: 'Original',
+    id: 'stable-known-id', signature: fixture.candidate.signature, title: 'Known', target: '/profile', reason: 'Original',
     sourceCandidate: 'original-candidate', createdAt, updatedAt: createdAt,
   }]);
   const duplicate = await triageCandidate({
@@ -371,10 +373,10 @@ async function exportFixture(options: { playwright: boolean; reproduced?: boolea
   });
   await writeJsonAtomic(join(stateDir, 'runs', run.id, 'candidates', `${value.id}.json`), value);
   await writeJsonAtomic(join(stateDir, 'runs', run.id, 'journals', `${value.sessionId}.json`), {
-    sessionId: value.sessionId, runId: run.id, route: value.route, persona: 'export-test', steps: value.steps, createdAt,
+    sessionId: value.sessionId, runId: run.id, target: value.target, persona: 'export-test', steps: value.steps, createdAt,
   });
   await writeJsonAtomic(join(stateDir, 'known-bugs.json'), [{
-    id: 'stable-bug-id', signature: value.signature, title: value.title, route: value.route, reason: 'Confirmed',
+    id: 'stable-bug-id', signature: value.signature, title: value.title, target: value.target, reason: 'Confirmed',
     sourceCandidate: 'original-candidate', createdAt, updatedAt: createdAt,
   }]);
   await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
@@ -431,16 +433,16 @@ test('export starts at the persisted journal route before an SPA step that reach
   t.after(() => rm(fixture.stateDir, { recursive: true, force: true }));
   const spaStep: Step = {
     id: 'spa-profile', kind: 'act', action: 'click',
-    locator: 'page.getByRole("link", { name: "Profile", exact: true })', timestamp: createdAt, routeTemplate: '/',
+    locator: 'page.getByRole("link", { name: "Profile", exact: true })', timestamp: createdAt, targetRef: '/',
   };
   const candidatePath = join(fixture.stateDir, 'runs', fixture.runId, 'candidates', `${fixture.candidateId}.json`);
   const saved = await readJson(candidatePath) as Candidate & { minimalSteps?: Step[] };
-  saved.route = '/profile';
+  saved.target = '/profile';
   saved.steps = [spaStep];
   saved.minimalSteps = [spaStep];
   await writeJsonAtomic(candidatePath, saved);
   await writeJsonAtomic(join(fixture.stateDir, 'runs', fixture.runId, 'journals', `${saved.sessionId}.json`), {
-    sessionId: saved.sessionId, runId: fixture.runId, route: '/', persona: 'export-test', steps: [spaStep], createdAt,
+    sessionId: saved.sessionId, runId: fixture.runId, target: '/', persona: 'export-test', steps: [spaStep], createdAt,
   });
 
   const exported = await exportTest({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });

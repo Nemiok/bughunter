@@ -10,7 +10,7 @@ import { attachNetworkCapture, maxResponseBodyBytes } from '../src/browser/netwo
 import { SessionManager } from '../src/browser/session.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Config } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 let browser: Browser;
 let server: Server;
@@ -288,7 +288,7 @@ test('session journal records response hashes on a step', async () => {
     baseUrl: origin,
     allowedOrigins: [origin],
     routes: ['/'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: [], readOnly: false },
@@ -299,10 +299,10 @@ test('session journal records response hashes on a step', async () => {
       anomalyTexts: ['NaN'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
   await writeJsonAtomic(join(stateDir, 'config.json'), config);
-  const run = await createRun('route', '/', { config, projectRoot: stateDir, stateDir });
+  const run = await createRun('target', '/', { config, projectRoot: stateDir, stateDir });
   const manager = new SessionManager(config, stateDir);
   try {
     const { sessionId } = await manager.open(run.id, '/', 'network-journal');

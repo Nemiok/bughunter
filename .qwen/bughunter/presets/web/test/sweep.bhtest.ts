@@ -14,7 +14,7 @@ import { reproduceCandidate } from '../src/reproduce.ts';
 import { applyReset } from '../src/reset.ts';
 import { promoteFindingToCandidate } from '../src/runs.ts';
 import { runSweep, webInventory } from '../src/sweep-visit.ts';
-import type { Config } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const directories: string[] = [];
 const resets: string[] = [];
@@ -79,7 +79,7 @@ function configTemplate(profileName?: string): Config {
     baseUrl: origin,
     allowedOrigins: [origin],
     routes: ['/'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     ...(profileName === undefined ? {} : { profile: profileName }),
     limits: { stepsPerSession: 60, candidatesPerRun: 20, responseSettleMs: 1500 },
@@ -91,7 +91,7 @@ function configTemplate(profileName?: string): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -124,7 +124,7 @@ test('sweep visits every inventoried screen without a model and records response
 
   const findings = await readFindings(run.id, stateDir);
   for (const template of result.visited) {
-    const own = findings.filter((finding) => finding.screenTemplate === template);
+    const own = findings.filter((finding) => finding.targetRef === template);
     assert.ok(own.length > 0, `нет находок для ${template}`);
     assert.ok(own.every((finding) => finding.status === 'new'), template);
   }
@@ -224,7 +224,7 @@ test('sweep reports an unreachable screen as visited and keeps going', async () 
   assert.equal(result.done, true);
   const findings = await readFindings(run.id, stateDir);
   assert.equal(findings.filter((finding) => finding.kind === 'navigation-failed').length, 1);
-  assert.ok(findings.some((finding) => finding.screenTemplate === '/' && finding.kind === 'response-captured'));
+  assert.ok(findings.some((finding) => finding.targetRef === '/' && finding.kind === 'response-captured'));
 });
 
 test('findings are not candidates until promoted', async () => {
@@ -292,8 +292,8 @@ test('screen scope restricts the run to one template', async () => {
     { template: '/orders/:id', sampleUrl: `${origin}/orders/12`, discoveredVia: ['test'], widgets: [] },
   ]);
 
-  const run = await createRun('screen', '/orders/:id', { config, projectRoot: stateDir, stateDir });
-  assert.deepEqual(run.routes, ['/orders/:id']);
+  const run = await createRun('sweep', '/orders/:id', { config, projectRoot: stateDir, stateDir });
+  assert.deepEqual(run.targets, ['/orders/:id']);
   assert.equal(run.exploreQueue, undefined);
   assert.equal(run.stages.sweep, 'pending');
   assert.equal(run.stages.explore, undefined);
@@ -304,13 +304,13 @@ test('screen scope restricts the run to one template', async () => {
   assert.equal(result.done, true);
 
   const after = await readRun(run.id, stateDir);
-  assert.equal(after.routeStages['/orders/:id'], 'done');
+  assert.equal(after.targetStages['/orders/:id'], 'done');
   const { report } = await finishRun(run.id, stateDir);
-  assert.match(await readFile(report, 'utf8'), /^- Scope: screen$/m);
+  assert.match(await readFile(report, 'utf8'), /^- Scope: sweep$/m);
 
-  const missing = await createRun('screen', '/unknown/:id', { config, projectRoot: stateDir, stateDir });
+  const missing = await createRun('sweep', '/unknown/:id', { config, projectRoot: stateDir, stateDir });
   await assert.rejects(() => runSweep({ runId: missing.id, stateDir }), /SCREEN_NOT_FOUND: \/unknown\/:id/);
-  await assert.rejects(() => createRun('screen', undefined, { config, projectRoot: stateDir, stateDir }), /ROUTE_REQUIRED/);
+  await assert.rejects(() => createRun('target', undefined, { config, projectRoot: stateDir, stateDir }), /TARGET_REQUIRED/);
 });
 
 test('applyReset writes the storage flag, calls the mock endpoint and refuses without a recipe', async () => {
@@ -340,9 +340,9 @@ test('sweep refuses a run of a model-driven scope', async () => {
   directories.push(stateDir);
   const config = { ...configTemplate(), routes: ['/'] };
   await writeJsonAtomic(join(stateDir, 'config.json'), config);
-  const run = await createRun('route', '/', { config, projectRoot: stateDir, stateDir });
+  const run = await createRun('target', '/', { config, projectRoot: stateDir, stateDir });
 
-  await assert.rejects(() => runSweep({ runId: run.id, stateDir }), /SWEEP_SCOPE_REQUIRED: route/);
+  await assert.rejects(() => runSweep({ runId: run.id, stateDir }), /SWEEP_SCOPE_REQUIRED: target/);
 });
 
 test('the inventory lists screen templates and folds identifier segments', async () => {

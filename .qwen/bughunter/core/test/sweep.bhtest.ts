@@ -11,7 +11,7 @@ import { createRun, readFindings, readRun } from '../src/run-store.ts';
 import { promoteFindingToCandidate, runSweep } from '../src/sweep.ts';
 import type { Config, FindingDraft } from '../src/types.ts';
 
-const config = { routes: ['/a'], routeMap: {}, baseBranch: 'main' } as unknown as Config;
+const config = { targetMap: {}, baseBranch: 'main' } as unknown as Config;
 const kinds = ['response-captured', 'navigation-failed', 'reset-unsupported'];
 
 async function withStateDir(run: (stateDir: string) => Promise<void>): Promise<void> {
@@ -52,21 +52,23 @@ function reset(events: string[], supported = true): Reset {
 const findingKinds: FindingKinds = {
   kinds,
   syntheticStep: async (finding) => ({
-    id: `step-${finding.id}`,
-    kind: 'navigate',
-    timestamp: 'SENTINEL_TIMESTAMP',
-    routeTemplate: finding.screenTemplate,
-    path: `/sample${finding.screenTemplate}`,
-    signalIds: [],
+    step: {
+      id: `step-${finding.id}`,
+      kind: 'navigate',
+      timestamp: 'SENTINEL_TIMESTAMP',
+      targetRef: finding.targetRef,
+      signalIds: [],
+    },
+    target: `/sample${finding.targetRef}`,
   }),
 };
 
 function captured(target: string): FindingDraft {
-  return { screenTemplate: target, kind: 'response-captured', detail: 'Ответов: 1, с телом: 1', responseHashes: [] };
+  return { targetRef: target, kind: 'response-captured', detail: 'Ответов: 1, с телом: 1', responseHashes: [] };
 }
 
 async function sweepRun(stateDir: string) {
-  return createRun('sweep', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'] });
+  return createRun('sweep', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
 }
 
 test('the cursor resumes an interrupted sweep without revisiting targets', () => withStateDir(async (stateDir) => {
@@ -116,7 +118,7 @@ test('an unreachable target is recorded in visited and does not stop the sweep',
   const run = await sweepRun(stateDir);
   const visit: SweepVisit = {
     visit: async ({ target }) => (target === '/dead'
-      ? [{ screenTemplate: target, kind: 'navigation-failed', detail: 'net::ERR_CONNECTION_REFUSED', responseHashes: [] }]
+      ? [{ targetRef: target, kind: 'navigation-failed', detail: 'net::ERR_CONNECTION_REFUSED', responseHashes: [] }]
       : [captured(target)]),
   };
 
@@ -130,7 +132,7 @@ test('an unreachable target is recorded in visited and does not stop the sweep',
   assert.equal(result.done, true);
   const findings = await readFindings(run.id, stateDir);
   assert.equal(findings.filter((finding) => finding.kind === 'navigation-failed').length, 1);
-  assert.ok(findings.some((finding) => finding.screenTemplate === '/a' && finding.kind === 'response-captured'));
+  assert.ok(findings.some((finding) => finding.targetRef === '/a' && finding.kind === 'response-captured'));
   assert.ok(findings.every((finding) => finding.status === 'new' && finding.runId === run.id && finding.id !== ''),
     'конверт находки заполняет core');
   const progress = JSON.parse(await readFile(join(stateDir, 'runs', run.id, 'sweep.json'), 'utf8')) as { cursor: number };
@@ -138,18 +140,19 @@ test('an unreachable target is recorded in visited and does not stop the sweep',
 
   // Область screen: недостижимая цель всё равно закрывает свою стадию, иначе прогон нельзя
   // завершить — `finishRun` требует `done` для каждой цели прогона.
-  const screenRun = await createRun('screen', '/dead', {
-    config: { ...config, routes: ['/dead'] } as unknown as Config,
+  const screenRun = await createRun('sweep', '/dead', {
+    config,
     projectRoot: stateDir,
     stateDir,
     personas: ['p'],
+    targets: ['/a'],
   });
   const screenResult = await runSweep({
     runId: screenRun.id, stateDir,
     inventory: inventory(['/dead']), session: session([]), visit, reset: reset([]), findingKinds,
   });
   assert.deepEqual(screenResult.visited, ['/dead']);
-  assert.equal((await readRun(screenRun.id, stateDir)).routeStages['/dead'], 'done');
+  assert.equal((await readRun(screenRun.id, stateDir)).targetStages['/dead'], 'done');
 }));
 
 test('an unsupported reset is reported once per run', () => withStateDir(async (stateDir) => {
@@ -175,7 +178,7 @@ test('a finding kind unknown to the preset is rejected', () => withStateDir(asyn
   const run = await sweepRun(stateDir);
   const events: string[] = [];
   const visit: SweepVisit = {
-    visit: async ({ target }) => [{ screenTemplate: target, kind: 'totally-unknown', detail: 'x', responseHashes: [] }],
+    visit: async ({ target }) => [{ targetRef: target, kind: 'totally-unknown', detail: 'x', responseHashes: [] }],
   };
 
   await assert.rejects(
@@ -203,7 +206,7 @@ test('an empty inventory stops the sweep before opening a session', () => withSt
   );
   assert.deepEqual(events, [], 'браузер не запускается, когда обходить нечего');
 
-  const missing = await createRun('screen', '/unknown/:id', { config, projectRoot: stateDir, stateDir, personas: ['p'] });
+  const missing = await createRun('sweep', '/unknown/:id', { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   await assert.rejects(
     () => runSweep({
       runId: missing.id, stateDir,
@@ -239,19 +242,19 @@ test('promote builds the synthetic step through the preset', () => withStateDir(
 
   const candidate = JSON.parse(await readFile(
     join(stateDir, 'runs', run.id, 'candidates', `${candidateId}.json`), 'utf8',
-  )) as { sessionId: string; route: string; status: string; reproduction: unknown; steps: Array<Record<string, unknown>> };
+  )) as { sessionId: string; target: string; status: string; reproduction: unknown; steps: Array<Record<string, unknown>> };
   assert.deepEqual(candidate.steps.map((step) => step.kind), ['navigate']);
   assert.equal(candidate.steps[0]?.timestamp, 'SENTINEL_TIMESTAMP');
-  assert.equal(candidate.steps[0]?.path, '/sample/a');
-  assert.equal(candidate.route, '/sample/a');
+  assert.equal(candidate.steps[0]?.targetRef, '/a');
+  assert.equal(candidate.target, '/sample/a');
   assert.equal(candidate.status, 'unprocessed');
   assert.deepEqual(candidate.reproduction, { status: 'unreproduced', attempts: 0 });
 
   const journal = JSON.parse(await readFile(
     join(stateDir, 'runs', run.id, 'journals', `${candidate.sessionId}.json`), 'utf8',
-  )) as { persona: string; route: string; steps: Array<{ id: string }> };
+  )) as { persona: string; target: string; steps: Array<{ id: string }> };
   assert.equal(journal.persona, 'sweep');
-  assert.equal(journal.route, '/sample/a');
+  assert.equal(journal.target, '/sample/a');
   assert.deepEqual(journal.steps.map((step) => step.id), [`step-${finding.id}`]);
 
   const promoted = (await readFindings(run.id, stateDir)).find((entry) => entry.id === finding.id);

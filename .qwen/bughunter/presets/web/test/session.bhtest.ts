@@ -8,7 +8,9 @@ import { after, before, test } from 'node:test';
 import { SessionManager } from '../src/browser/session.ts';
 import type { ActInput, CandidateInput, ProbeKind } from '../src/browser/session.ts';
 import { writeJsonAtomic } from '@bughunter/core';
-import type { Config, Journal, Step } from '@bughunter/core';
+import type { Journal } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
+import type { Step } from '../src/types.ts';
 
 const demoOrigin = 'http://127.0.0.1:4173';
 const temporaryDirectories: string[] = [];
@@ -88,7 +90,7 @@ function configTemplate(baseUrl: string): Config {
     baseUrl,
     allowedOrigins: [demoOrigin, controlsOrigin].filter((origin, index, origins) => origins.indexOf(origin) === index),
     routes: ['/', '/profile', '/orders', '/orders/new', '/clean', '/controls', '/other'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -99,7 +101,7 @@ function configTemplate(baseUrl: string): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -115,8 +117,10 @@ async function createManager(baseUrl = demoOrigin, patch?: (config: Config) => v
   return { manager, stateDir };
 }
 
-async function journal(stateDir: string, runId: string, sessionId: string): Promise<Journal> {
-  return JSON.parse(await readFile(join(stateDir, 'runs', runId, 'journals', `${sessionId}.json`), 'utf8')) as Journal;
+type WebJournal = Omit<Journal, 'steps'> & { steps: Step[] };
+
+async function journal(stateDir: string, runId: string, sessionId: string): Promise<WebJournal> {
+  return JSON.parse(await readFile(join(stateDir, 'runs', runId, 'journals', `${sessionId}.json`), 'utf8')) as WebJournal;
 }
 
 async function actNamed(manager: SessionManager, sessionId: string, name: string, input: Omit<ActInput, 'elementId'>) {
@@ -170,13 +174,13 @@ test('real demo session persists candidate journal prefix and non-empty close ar
     assert.equal(savedJournal.steps[0]?.value, generated);
     assert.equal(savedJournal.steps[2]?.kind, 'navigate');
     assert.equal(savedJournal.steps[2]?.path, '/clean');
-    assert.deepEqual(savedJournal.steps.map((step) => step.routeTemplate), ['/profile', '/profile', '/clean']);
+    assert.deepEqual(savedJournal.steps.map((step) => step.targetRef), ['/profile', '/profile', '/clean']);
 
     const candidatePath = join(stateDir, 'runs', 'run-lifecycle', 'candidates', `${reported.candidateId}.json`);
     const candidate = JSON.parse(await readFile(candidatePath, 'utf8'));
     assert.equal(candidate.status, 'unprocessed');
     assert.deepEqual(candidate.reproduction, { status: 'unreproduced', attempts: 0 });
-    assert.equal(candidate.route, '/profile');
+    assert.equal(candidate.target, '/profile');
     assert.equal(candidate.steps.length, 2);
     assert.deepEqual(candidate.steps.map((step: Step) => step.action), ['fill', 'click']);
 
@@ -223,7 +227,7 @@ test('all action and probe kinds are replayable journal steps with shared step a
     assert.deepEqual(savedJournal.steps.slice(7).map((step) => [step.kind, step.probe ?? step.path]), [
       ['probe', 'mobile_viewport'], ['probe', 'reload'], ['navigate', '/other'], ['probe', 'back'],
     ]);
-    assert.deepEqual(savedJournal.steps.map((step) => step.routeTemplate), [
+    assert.deepEqual(savedJournal.steps.map((step) => step.targetRef), [
       ...Array.from({ length: 9 }, () => '/controls'), '/other', '/controls',
     ]);
     assert.ok(savedJournal.steps.filter((step) => step.kind === 'act').every((step) => step.locator && step.timestamp));

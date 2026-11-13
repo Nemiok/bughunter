@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Candidate, Check, Config, Finding, FindingDraft, Signal, Step } from './types.ts';
+import type { Candidate, Check, Config, Finding, FindingDraft, Signal, StepBase } from './types.ts';
 
 /** Единица исследования: шаблон маршрута в web-пресете, эндпоинт в node-пресете. */
 export type TargetRef = string;
@@ -17,7 +17,7 @@ export type SessionHandle = {
   id: string;
   snapshot(): Promise<unknown>;
   act(payload: unknown): Promise<unknown>;
-  steps(): Step[];
+  steps(): StepBase[];
   artifacts(): string[];
   close(): Promise<void>;
 };
@@ -46,7 +46,7 @@ export type Checks = {
 
 /** Исполнение журнала шагов в чистой сессии; протокол повтора и минимизация — в core. */
 export type Replay = {
-  replay(steps: Step[], input: { target: TargetRef; persona: string; stateDir: string }): Promise<boolean>;
+  replay(steps: StepBase[], input: { target: TargetRef; persona: string; stateDir: string }): Promise<boolean>;
 };
 
 export type TestGenerator = {
@@ -97,9 +97,12 @@ export type Personas = {
  * Словарь находок детерминированного обхода и шаг журнала для промоции находки в кандидата.
  * Шаг строит пресет и асинхронно: конкретный адрес цели — знание инвентаря пресета, не core.
  */
+/** Шаг журнала для промоции находки и конкретная цель, к которой этот шаг относится. */
+export type SyntheticStep = { step: StepBase; target: TargetRef };
+
 export type FindingKinds = {
   kinds: string[];
-  syntheticStep(finding: Finding, stateDir: string): Promise<Step>;
+  syntheticStep(finding: Finding, stateDir: string): Promise<SyntheticStep>;
 };
 
 /** Визит одной цели обхода: дойти, снять, сравнить. Курсор и чекпоинты — в core. */

@@ -102,7 +102,7 @@ export const webSweepVisit: SweepVisit = {
     const screen = (await readScreens(stateDir)).find((entry) => entry.template === target);
     if (screen === undefined) {
       return [{
-        screenTemplate: target,
+        targetRef: target,
         kind: 'navigation-failed',
         detail: `SCREEN_NOT_FOUND: ${target}`,
         responseHashes: [],
@@ -111,7 +111,7 @@ export const webSweepVisit: SweepVisit = {
     try {
       await sweep.page.goto(screen.sampleUrl, { waitUntil: 'domcontentloaded', timeout: sweep.settleMs * 10 });
     } catch (error) {
-      return [{ screenTemplate: target, kind: 'navigation-failed', detail: messageOf(error), responseHashes: [] }];
+      return [{ targetRef: target, kind: 'navigation-failed', detail: messageOf(error), responseHashes: [] }];
     }
     await sweep.page.waitForLoadState('networkidle', { timeout: sweep.settleMs }).catch(() => undefined);
     await sweep.network.flush();
@@ -122,7 +122,7 @@ export const webSweepVisit: SweepVisit = {
     for (const widget of structure.widgets) {
       if (widget.error === undefined) continue;
       drafts.push({
-        screenTemplate: target,
+        targetRef: target,
         ...(widget.widget === undefined ? {} : { widget: widget.widget }),
         kind: 'extract-failed',
         detail: widget.error,
@@ -132,13 +132,13 @@ export const webSweepVisit: SweepVisit = {
     const hashes = responses.map((response) => response.hash).filter((hash): hash is string => hash !== undefined);
     drafts.push(hashes.length === 0 && responses.length === 0
       ? {
-        screenTemplate: target,
+        targetRef: target,
         kind: 'response-missing',
         detail: 'Экран не вернул ни одного ответа; сверка данных невозможна',
         responseHashes: [],
       }
       : {
-        screenTemplate: target,
+        targetRef: target,
         kind: 'response-captured',
         detail: `Ответов: ${responses.length}, с телом: ${hashes.length}`,
         responseHashes: hashes,

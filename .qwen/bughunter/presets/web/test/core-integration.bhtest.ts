@@ -9,7 +9,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SessionManager } from '../src/browser/session.ts';
 import { createRun } from '../src/runs.ts';
-import type { Config, Signal } from '@bughunter/core';
+import type { Signal } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 const serverRoot = resolve(import.meta.dirname, '..');
@@ -40,7 +41,7 @@ function demoConfig(baseUrl: string): Config {
     baseUrl,
     allowedOrigins: [baseUrl],
     routes: ['/', '/profile', '/orders', '/orders/new', '/clean'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -51,7 +52,7 @@ function demoConfig(baseUrl: string): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -147,15 +148,15 @@ async function callValue(client: Client, name: string, args: Record<string, unkn
   return value as Record<string, unknown>;
 }
 
-async function leaseFor(client: Client, runId: string, route: string): Promise<{ leaseId: string; route: string; persona: string }> {
-  const next = await callValue(client, 'bh_explore_next', { runId, route });
+async function leaseFor(client: Client, runId: string, target: string): Promise<{ leaseId: string; target: string; persona: string }> {
+  const next = await callValue(client, 'bh_explore_next', { runId, target });
   assert.equal(next.status, 'task', JSON.stringify(next));
-  return { leaseId: next.leaseId as string, route: next.route as string, persona: next.persona as string };
+  return { leaseId: next.leaseId as string, target: next.target as string, persona: next.persona as string };
 }
 
-async function openLeased(client: Client, runId: string, route: string): Promise<Record<string, unknown>> {
-  const task = await leaseFor(client, runId, route);
-  return callValue(client, 'bh_open', { runId, route: task.route, persona: task.persona, leaseId: task.leaseId });
+async function openLeased(client: Client, runId: string, target: string): Promise<Record<string, unknown>> {
+  const task = await leaseFor(client, runId, target);
+  return callValue(client, 'bh_open', { runId, target: task.target, persona: task.persona, leaseId: task.leaseId });
 }
 
 test('real MCP stdio client validates strict schemas and compact core results', { timeout: 60_000 }, async () => {
@@ -198,7 +199,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
       bh_start_run: ['scope'],
       bh_resume_run: ['runId'],
       bh_explore_next: ['runId'],
-      bh_open: ['persona', 'route', 'runId'],
+      bh_open: ['persona', 'runId', 'target'],
       bh_state: ['sessionId'],
       // elementId необязателен: координатные действия (clickAt, hoverAt) и скролл страницы цели не имеют.
       bh_act: ['action', 'sessionId'],
@@ -236,10 +237,10 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     assert.equal(verified.status, 'green', JSON.stringify(verified));
 
     const started = await callValue(client, 'bh_start_run', { scope: 'full' });
-    assert.deepEqual(Object.keys(started).sort(), ['routes', 'runId']);
+    assert.deepEqual(Object.keys(started).sort(), ['runId', 'targets']);
     const runId = started.runId;
     assert.equal(typeof runId, 'string');
-    assert.deepEqual(started.routes, config.routes);
+    assert.deepEqual(started.targets, config.routes);
 
     const opened = await openLeased(client, runId as string, '/profile');
     assert.deepEqual(Object.keys(opened), ['sessionId']);
@@ -322,8 +323,8 @@ test('real MCP stdio client validates strict schemas and compact core results', 
 
     const raceTask = await leaseFor(client, runId as string, '/orders');
     const contested = await Promise.all([
-      client.callTool({ name: 'bh_open', arguments: { runId, route: raceTask.route, persona: raceTask.persona, leaseId: raceTask.leaseId } }),
-      client.callTool({ name: 'bh_open', arguments: { runId, route: raceTask.route, persona: raceTask.persona, leaseId: raceTask.leaseId } }),
+      client.callTool({ name: 'bh_open', arguments: { runId, target: raceTask.target, persona: raceTask.persona, leaseId: raceTask.leaseId } }),
+      client.callTool({ name: 'bh_open', arguments: { runId, target: raceTask.target, persona: raceTask.persona, leaseId: raceTask.leaseId } }),
     ]);
     const succeeded = contested.filter((response) => response.isError !== true);
     const busyResponses = contested.filter((response) => response.isError === true);
@@ -333,9 +334,9 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     const busyContent = busyResponses[0]?.content[0] as { type: string; text: string };
     assert.equal((JSON.parse(busyContent.text) as { code?: string }).code, 'EXPLORER_BUSY');
     const contestedRun = JSON.parse(await readFile(join(stateDir, 'runs', runId as string, 'run.json'), 'utf8')) as {
-      routeStages: Record<string, string>;
+      targetStages: Record<string, string>;
     };
-    assert.equal(Object.values(contestedRun.routeStages).filter((status) => status === 'exploring').length, 1);
+    assert.equal(Object.values(contestedRun.targetStages).filter((status) => status === 'exploring').length, 1);
     assert.ok(Array.isArray(succeeded[0]?.content));
     const successContent = succeeded[0]?.content[0] as { type: string; text: string };
     const contestedSession = (JSON.parse(successContent.text) as { sessionId: string }).sessionId;
@@ -368,7 +369,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     assert.deepEqual(finished, { report: reportPath });
     const report = await readFile(reportPath, 'utf8');
     assert.ok(report.includes('Profile invariant'));
-    assert.ok(report.includes(`Unit: ${unitTestFile}`), report);
+    assert.ok(report.includes(`unit: ${unitTestFile}`), report);
     assert.deepEqual(await callValue(client, 'bh_finish_run', { runId }), finished);
     assert.equal(await readFile(reportPath, 'utf8'), report);
     const finishedResume = await callValue(client, 'bh_resume_run', { runId });
@@ -397,7 +398,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
 
     const pendingMcpId = 'pending-mcp-candidate';
     await writeFile(join(stateDir, 'runs', runId as string, 'candidates', `${pendingMcpId}.json`), JSON.stringify({
-      id: pendingMcpId, runId, sessionId: 'pending-mcp-session', route: '/profile',
+      id: pendingMcpId, runId, sessionId: 'pending-mcp-session', target: '/profile',
       title: 'Pending MCP candidate', expected: 'Expected', actual: 'Actual', signalIds: ['signal'],
       signature: 'pending-mcp-signature', steps: [], artifacts: [], status: 'unprocessed',
       createdAt: new Date().toISOString(), reproduction: { status: 'unreproduced', attempts: 0 },

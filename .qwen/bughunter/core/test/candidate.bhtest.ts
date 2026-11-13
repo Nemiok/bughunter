@@ -48,7 +48,7 @@ test('reportCandidate writes an unprocessed candidate with an unreproduced verdi
   const raw = JSON.parse(await readFile(join(stateDir, 'runs', 'run-1', 'candidates', `${candidateId}.json`), 'utf8'));
   assert.equal(raw.status, 'unprocessed');
   assert.deepEqual(raw.reproduction, { status: 'unreproduced', attempts: 0 });
-  assert.equal(raw.route, '/a');
+  assert.equal(raw.target, '/a');
   assert.equal(raw.check.target, 'Итого 42');
 }));
 

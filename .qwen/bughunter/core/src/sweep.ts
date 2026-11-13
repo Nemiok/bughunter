@@ -6,7 +6,7 @@ import type {
   FindingKinds, Reset, Session, SessionHandle, SweepVisit, TargetInventory,
 } from './preset.ts';
 import {
-  findingPath, readFindings, readRun, recordRouteExploration, recordRunStage, writeFinding, writeJsonAtomic,
+  findingPath, readFindings, readRun, recordTargetExploration, recordRunStage, writeFinding, writeJsonAtomic,
 } from './run-store.ts';
 import { signalSignature } from './signature.ts';
 import type { Candidate, Finding, FindingDraft, Journal, SweepProgress } from './types.ts';
@@ -61,12 +61,12 @@ async function readProgress(runId: string, stateDir: string): Promise<SweepProgr
 export async function runSweep(options: SweepOptions): Promise<SweepResult> {
   const stateDir = resolve(options.stateDir);
   const run = await readRun(options.runId, stateDir);
-  if (run.scope !== 'sweep' && run.scope !== 'screen') throw new Error(`SWEEP_SCOPE_REQUIRED: ${run.scope}`);
+  if (run.scope !== 'sweep') throw new Error(`SWEEP_SCOPE_REQUIRED: ${run.scope}`);
 
   const all = await options.inventory.list(stateDir);
   if (all.length === 0) throw new Error('INVENTORY_EMPTY');
-  const selected = run.scope === 'screen' ? all.filter((target) => run.routes.includes(target)) : all;
-  if (selected.length === 0) throw new Error(`TARGETS_EMPTY: ${run.routes[0] ?? options.runId}`);
+  const selected = run.targets.length > 0 ? all.filter((target) => run.targets.includes(target)) : all;
+  if (selected.length === 0) throw new Error(`TARGETS_EMPTY: ${run.targets[0] ?? options.runId}`);
 
   const startedAt = new Date().toISOString();
   const progress = await readProgress(options.runId, stateDir)
@@ -110,7 +110,7 @@ export async function runSweep(options: SweepOptions): Promise<SweepResult> {
           if (!resetReported) {
             resetReported = true;
             await record({
-              screenTemplate: target,
+              targetRef: target,
               kind: 'reset-unsupported',
               detail: messageOf(error),
               responseHashes: [],
@@ -132,7 +132,7 @@ export async function runSweep(options: SweepOptions): Promise<SweepResult> {
         // Цель обработана (курсор сдвинут, находки записаны), поэтому она обязана попасть
         // и в ответ вызывающей стороне: иначе модель решит, что цель ещё не пройдена.
         visited.push(target);
-        if (run.scope === 'screen') await recordRouteExploration(options.runId, target, 'done', stateDir);
+        if (run.targets.length > 0) await recordTargetExploration(options.runId, target, 'done', stateDir);
       }
     }
   } finally {
@@ -179,14 +179,13 @@ export async function promoteFindingToCandidate(input: {
   if (finding.status === 'promoted' && finding.candidateId !== undefined) {
     return { candidateId: finding.candidateId };
   }
-  const step = await input.findingKinds.syntheticStep(finding, stateDir);
-  const target = step.path ?? finding.screenTemplate;
+  const { step, target } = await input.findingKinds.syntheticStep(finding, stateDir);
   const sessionId = `finding-${input.findingId.replaceAll('-', '').slice(0, 12)}`;
   const timestamp = new Date().toISOString();
   const journal: Journal = {
     sessionId,
     runId: input.runId,
-    route: target,
+    target,
     persona: sweepPersona,
     steps: [step],
     createdAt: timestamp,
@@ -199,15 +198,15 @@ export async function promoteFindingToCandidate(input: {
     id: candidateId,
     runId: input.runId,
     sessionId,
-    route: target,
+    target,
     title: input.title,
     expected: input.expected,
     actual: input.actual,
     signalIds: [],
     signature: signalSignature({
       kind: 'finding',
-      message: `${finding.kind}: ${finding.screenTemplate}`,
-      route: finding.screenTemplate,
+      message: `${finding.kind}: ${finding.targetRef}`,
+      target: finding.targetRef,
     }),
     steps: journal.steps,
     artifacts: [],

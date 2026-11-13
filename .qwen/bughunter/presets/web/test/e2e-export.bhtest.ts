@@ -13,7 +13,9 @@ import { exportTest, generatePlaywrightTest } from '../src/export-playwright.ts'
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { triageCandidate, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Candidate, Config, Step } from '@bughunter/core';
+import type { Candidate } from '@bughunter/core';
+import type { Step } from '../src/types.ts';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 const repositoryRoot = resolve(import.meta.dirname, '../../../..');
@@ -87,7 +89,7 @@ function demoConfig(baseUrl: string): Config {
     baseUrl,
     allowedOrigins: [baseUrl],
     routes: ['/', '/profile', '/orders', '/orders/new', '/clean'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -98,7 +100,7 @@ function demoConfig(baseUrl: string): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -396,7 +398,7 @@ async function proveBug(id: number, suiteRoot: string): Promise<BugEvidence> {
     const candidate = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate & { minimalSteps?: Step[] };
     assert.equal(candidate.minimalSteps?.length, reproduction.minimalSteps);
     assert.equal(reproduction.steps, expectedOriginalSteps[id - 1]!.length);
-    assert.deepEqual(journalSteps(candidate.steps), expectedOriginalSteps[id - 1]);
+    assert.deepEqual(journalSteps(candidate.steps as Step[]), expectedOriginalSteps[id - 1]);
     assert.ok(candidate.minimalSteps);
     assert.deepEqual(journalSteps(candidate.minimalSteps), expectedMinimalSteps[id - 1]);
     const minimalSteps = candidate.minimalSteps.length;

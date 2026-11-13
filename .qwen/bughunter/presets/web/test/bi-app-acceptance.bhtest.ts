@@ -13,7 +13,8 @@ import { loadActiveProfile, loadProfile } from '../src/profile/load.ts';
 import { readFindings, readRun, writeJsonAtomic } from '@bughunter/core';
 import { createRun, finishRun } from '../src/runs.ts';
 import { runSweep } from '../src/sweep-visit.ts';
-import type { Config, ScreenEntry } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
+import type { ScreenEntry } from '../src/types.ts';
 import type { Profile } from '../src/profile/types.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/bi-app');
@@ -73,7 +74,7 @@ export async function biAcceptanceContext(): Promise<BiAcceptanceContext> {
     baseUrl,
     allowedOrigins: [baseUrl],
     routes: ['/dashboards', '/dashboard/1', '/reports', '/report/r-001', '/wizard', '/settings', '/clean'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     profile: 'bi',
     limits: {
@@ -91,7 +92,7 @@ export async function biAcceptanceContext(): Promise<BiAcceptanceContext> {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
   await writeJsonAtomic(join(stateDir, 'config.json'), config);
 
@@ -111,7 +112,7 @@ export async function biAcceptanceContext(): Promise<BiAcceptanceContext> {
  * Сессия ядра поверх живого приложения: отдельный stateDir на сессию, чтобы журналы и артефакты
  * разных тестов не смешивались. Конфиг берётся из стенда приёмки и при необходимости правится.
  */
-async function openSession(route: string, patch?: (config: Config) => void) {
+async function openSession(target: string, patch?: (config: Config) => void) {
   const stateDir = await mkdtemp(join(tmpdir(), 'bh-bi-session-'));
   temporaryDirectories.push(stateDir);
   await copyProfile(stateDir);
@@ -122,7 +123,7 @@ async function openSession(route: string, patch?: (config: Config) => void) {
   await writeJsonAtomic(join(stateDir, 'config.json'), config);
   const manager = new SessionManager(config, stateDir, profile);
   managers.push(manager);
-  const { sessionId } = await manager.open('run-acceptance', route, 'новичок');
+  const { sessionId } = await manager.open('run-acceptance', target, 'новичок');
   return { manager, sessionId, stateDir };
 }
 
@@ -303,7 +304,7 @@ test('sweep sees responses and projections on every screen', async () => {
 
   for (const screen of screens) {
     const captured = findings.find((finding) =>
-      finding.screenTemplate === screen.template && finding.kind === 'response-captured');
+      finding.targetRef === screen.template && finding.kind === 'response-captured');
     assert.ok(captured, `нет находки об ответах для ${screen.template}`);
     assert.ok(captured.responseHashes.length >= 1, `пустой набор ответов у ${screen.template}`);
     assert.match(captured.detail, /^Ответов: \d+, с телом: \d+$/);
@@ -466,13 +467,13 @@ test('sweep records findings for a failing screen and keeps going', async () => 
   assert.equal(result.done, true);
   assert.deepEqual(result.visited, ['/dashboard/:id', '/broken', '/clean'], 'обход обязан пройти все экраны');
   const findings = await readFindings(run.id, stateDir);
-  const broken = findings.filter((finding) => finding.screenTemplate === '/broken');
+  const broken = findings.filter((finding) => finding.targetRef === '/broken');
   assert.equal(broken.length, 1);
   assert.equal(broken[0]!.kind, 'navigation-failed');
   // Экран после битого всё равно пройден: обход не обрывается на недоступном URL.
-  assert.ok(findings.some((finding) => finding.screenTemplate === '/clean' && finding.kind === 'response-captured'));
+  assert.ok(findings.some((finding) => finding.targetRef === '/clean' && finding.kind === 'response-captured'));
 
-  const degraded = findings.find((finding) => finding.screenTemplate === '/dashboard/:id');
+  const degraded = findings.find((finding) => finding.targetRef === '/dashboard/:id');
   assert.equal(degraded?.kind, 'response-captured');
   assert.ok((degraded?.responseHashes.length ?? 0) >= 1, 'ответ 500 тоже должен попасть в набор эталонов');
 
@@ -502,7 +503,7 @@ test('phase 1 detectors see behavioral bugs but not the seeded data bugs', async
     const state = await dashboard.manager.state(dashboard.sessionId, { screen: true });
     assert.deepEqual(state.signals, [], 'засеянные баги данных не должны давать сигналов');
     const findings = await readFindings(sweepRunId, acceptance.stateDir);
-    const dashboardFindings = findings.filter((finding) => finding.screenTemplate === '/dashboard/:id');
+    const dashboardFindings = findings.filter((finding) => finding.targetRef === '/dashboard/:id');
     assert.deepEqual(
       dashboardFindings.map((finding) => finding.kind),
       ['response-captured'],
@@ -585,7 +586,7 @@ test('full inventory sweep measures cost per screen', { skip: !fullSweep }, asyn
   const findings = await readFindings(sweepRunId, acceptance.stateDir);
   const responsesPerScreen = screens.map((screen) => {
     const detail = findings.find((finding) =>
-      finding.screenTemplate === screen.template && finding.kind === 'response-captured')?.detail ?? '';
+      finding.targetRef === screen.template && finding.kind === 'response-captured')?.detail ?? '';
     return Number(/^Ответов: (\d+)/.exec(detail)?.[1] ?? 0);
   });
 

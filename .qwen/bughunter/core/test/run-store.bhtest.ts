@@ -6,11 +6,11 @@ import { test } from 'node:test';
 
 import type { ReportFormat } from '../src/preset.ts';
 import {
-  createRun, finishRun, recordCandidateTest, recordRouteExploration,
+  createRun, finishRun, recordCandidateTest, recordTargetExploration,
 } from '../src/run-store.ts';
 import type { Candidate, Config, Finding } from '../src/types.ts';
 
-const config = { routes: ['/a'], routeMap: {}, baseBranch: 'main' } as unknown as Config;
+const config = { targetMap: {}, baseBranch: 'main' } as unknown as Config;
 const createdAt = '2026-11-13T00:00:00.000Z';
 
 async function withStateDir(run: (stateDir: string) => Promise<void>): Promise<void> {
@@ -27,7 +27,7 @@ async function writeConfirmedCandidate(runId: string, stateDir: string, id = 'ca
     id,
     runId,
     sessionId: 'sess-1',
-    route: '/a',
+    target: '/a',
     title: 'Заголовок кандидата',
     expected: 'ожидалось одно',
     actual: 'получилось другое',
@@ -52,9 +52,10 @@ test('the persona roster comes from the caller, not from the store', () => withS
     projectRoot: stateDir,
     stateDir,
     personas: ['персона А', 'персона Б'],
+    targets: ['/a'],
   });
   assert.deepEqual(run.exploreQueue?.map((item) => item.persona), ['персона А', 'персона Б']);
-  assert.deepEqual(run.exploreQueue?.map((item) => item.route), ['/a', '/a']);
+  assert.deepEqual(run.exploreQueue?.map((item) => item.target), ['/a', '/a']);
 }));
 
 test('the report renders candidates and findings through the preset format', () => withStateDir(async (stateDir) => {
@@ -62,12 +63,12 @@ test('the report renders candidates and findings through the preset format', () 
     candidate: () => ['SENTINEL_STEPS'],
     finding: () => ['SENTINEL_FINDING'],
   };
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'] });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   await writeConfirmedCandidate(run.id, stateDir);
   const finding: Finding = {
     id: 'find-1',
     runId: run.id,
-    screenTemplate: '/a',
+    targetRef: '/a',
     kind: 'response-captured',
     detail: 'детали находки',
     responseHashes: [],
@@ -77,7 +78,7 @@ test('the report renders candidates and findings through the preset format', () 
   const findings = join(stateDir, 'runs', run.id, 'findings');
   await mkdir(findings, { recursive: true });
   await writeFile(join(findings, `${finding.id}.json`), `${JSON.stringify(finding, null, 2)}\n`, 'utf8');
-  await recordRouteExploration(run.id, '/a', 'done', stateDir);
+  await recordTargetExploration(run.id, '/a', 'done', stateDir);
 
   const { report } = await finishRun(run.id, stateDir, format);
   const contents = await readFile(report, 'utf8');
@@ -88,7 +89,7 @@ test('the report renders candidates and findings through the preset format', () 
 }));
 
 test('a test kind is an arbitrary preset string', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'] });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   await writeConfirmedCandidate(run.id, stateDir);
   await recordCandidateTest(run.id, 'cand-1', 'api', join(stateDir, 'runs', run.id, 'api', 'x.test.ts'), stateDir);
   const raw = JSON.parse(await readFile(

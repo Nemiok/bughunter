@@ -8,7 +8,7 @@ import { createRun, leaseNextExploration, readRun, updateRun } from '../src/run-
 import { createLifecycle } from '../src/session-lifecycle.ts';
 import type { Config } from '../src/types.ts';
 
-const config = { routes: ['/a', '/b'], routeMap: {}, baseBranch: 'main' } as unknown as Config;
+const config = { routes: ['/a', '/b'], targetMap: {}, baseBranch: 'main' } as unknown as Config;
 const personas = ['персона'];
 
 type Harness = {
@@ -64,18 +64,18 @@ async function leasedTask(runId: string, stateDir: string) {
 }
 
 test('a second concurrent open of the same run is refused', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle } = harness(stateDir);
   const task = await leasedTask(run.id, stateDir);
-  await lifecycle.open({ runId: run.id, target: task.route, persona: task.persona, leaseId: task.leaseId });
+  await lifecycle.open({ runId: run.id, target: task.target, persona: task.persona, leaseId: task.leaseId });
   await assert.rejects(
-    () => lifecycle.open({ runId: run.id, target: task.route, persona: task.persona, leaseId: task.leaseId }),
+    () => lifecycle.open({ runId: run.id, target: task.target, persona: task.persona, leaseId: task.leaseId }),
     /EXPLORER_BUSY/,
   );
 }));
 
 test('open without a lease is refused when the run has a queue', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle, opened } = harness(stateDir);
   await assert.rejects(
     () => lifecycle.open({ runId: run.id, target: '/a', persona: personas[0]! }),
@@ -85,7 +85,7 @@ test('open without a lease is refused when the run has a queue', () => withState
 }));
 
 test('a lease for another target is refused', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle, opened } = harness(stateDir);
   const task = await leasedTask(run.id, stateDir);
   await assert.rejects(
@@ -96,46 +96,46 @@ test('a lease for another target is refused', () => withStateDir(async (stateDir
 }));
 
 test('a failed open returns the task to the queue', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle, failOpen } = harness(stateDir);
   const task = await leasedTask(run.id, stateDir);
   failOpen();
   await assert.rejects(
-    () => lifecycle.open({ runId: run.id, target: task.route, persona: task.persona, leaseId: task.leaseId }),
+    () => lifecycle.open({ runId: run.id, target: task.target, persona: task.persona, leaseId: task.leaseId }),
     /OPEN_FAILED/,
   );
   const again = await leasedTask(run.id, stateDir);
-  assert.equal(again.route, task.route, 'задача снова выдана, а не потеряна');
+  assert.equal(again.target, task.target, 'задача снова выдана, а не потеряна');
 }));
 
 test('a successful close completes the lease and the target stage', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle, opened } = harness(stateDir);
   const task = await leasedTask(run.id, stateDir);
-  await lifecycle.open({ runId: run.id, target: task.route, persona: task.persona, leaseId: task.leaseId });
+  await lifecycle.open({ runId: run.id, target: task.target, persona: task.persona, leaseId: task.leaseId });
   await lifecycle.close(opened[0]!);
   const after = await readRun(run.id, stateDir);
-  assert.equal(after.routeStages[task.route], 'done');
+  assert.equal(after.targetStages[task.target], 'done');
   // После завершения lease очищается, поэтому элемент ищем по цели и персоне.
-  assert.equal(after.exploreQueue?.find((item) => item.route === task.route && item.persona === task.persona)?.status, 'done');
+  assert.equal(after.exploreQueue?.find((item) => item.target === task.target && item.persona === task.persona)?.status, 'done');
 }));
 
 test('a failed close releases the lease instead of completing it', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle, opened, failClose } = harness(stateDir);
   const task = await leasedTask(run.id, stateDir);
-  await lifecycle.open({ runId: run.id, target: task.route, persona: task.persona, leaseId: task.leaseId });
+  await lifecycle.open({ runId: run.id, target: task.target, persona: task.persona, leaseId: task.leaseId });
   failClose();
   await assert.rejects(() => lifecycle.close(opened[0]!), /CLOSE_FAILED/);
   const after = await readRun(run.id, stateDir);
-  assert.equal(after.exploreQueue?.find((item) => item.route === task.route && item.persona === task.persona)?.status, 'pending');
+  assert.equal(after.exploreQueue?.find((item) => item.target === task.target && item.persona === task.persona)?.status, 'pending');
 }));
 
 test('reclaim skips leases that are live in this process', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle, opened } = harness(stateDir);
   const task = await leasedTask(run.id, stateDir);
-  await lifecycle.open({ runId: run.id, target: task.route, persona: task.persona, leaseId: task.leaseId });
+  await lifecycle.open({ runId: run.id, target: task.target, persona: task.persona, leaseId: task.leaseId });
   const stale = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const current = await readRun(run.id, stateDir);
   await updateRun(run.id, {
@@ -149,7 +149,7 @@ test('reclaim skips leases that are live in this process', () => withStateDir(as
 }));
 
 test('leaseNext hands out one task at a time through the same lock', () => withStateDir(async (stateDir) => {
-  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas });
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a'] });
   const { lifecycle } = harness(stateDir);
   const first = await lifecycle.leaseNext(run.id, {});
   assert.equal(first.status, 'task');

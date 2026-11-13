@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Page } from 'playwright-core';
 import { normalizeMessage, signalSignature } from '@bughunter/core';
-import type { Config, Signal, SignatureInput } from '@bughunter/core';
+import type { Signal, SignatureInput } from '@bughunter/core';
+import type { WebConfig as Config } from '../config.ts';
 
 type PageState = {
   signals: Signal[];
@@ -28,14 +29,14 @@ function currentRoute(page: Page): string {
   }
 }
 
-function addSignal(page: Page, config: Config, input: Omit<SignatureInput, 'route'> & Partial<Signal>): Signal {
-  const route = currentRoute(page);
+function addSignal(page: Page, config: Config, input: Omit<SignatureInput, 'target'> & Partial<Signal>): Signal {
+  const target = currentRoute(page);
   const signal: Signal = {
     id: randomUUID(),
     kind: input.kind,
     message: input.message,
-    signature: signalSignature({ ...input, route }),
-    route,
+    signature: signalSignature({ ...input, target }),
+    target,
     timestamp: new Date().toISOString(),
     ...(input.stack === undefined ? {} : { stack: input.stack }),
     ...(input.url === undefined ? {} : { url: input.url }),

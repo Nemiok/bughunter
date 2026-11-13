@@ -4,7 +4,7 @@ import {
   leaseNextExploration,
   readRun,
   reclaimExplorationLeases,
-  recordRouteExploration,
+  recordTargetExploration,
   releaseExplorationLease,
   validateExplorationLease,
 } from './run-store.ts';
@@ -29,7 +29,7 @@ export type LifecycleDeps = {
 export type Lifecycle = {
   open(input: { runId: string; target: TargetRef; persona: string; leaseId?: string }): Promise<OpenedSession>;
   close(sessionId: string): Promise<void>;
-  leaseNext(runId: string, options?: { route?: TargetRef }): Promise<ExploreNextResult>;
+  leaseNext(runId: string, options?: { target?: TargetRef }): Promise<ExploreNextResult>;
   reclaim(runId: string): Promise<unknown>;
   liveLeaseIds(runId: string): Set<string>;
 };
@@ -40,7 +40,7 @@ export type Lifecycle = {
  * разошлось бы с ним.
  */
 export function createLifecycle(deps: LifecycleDeps): Lifecycle {
-  const explorations = new Map<string, { runId: string; route: TargetRef; leaseId?: string }>();
+  const explorations = new Map<string, { runId: string; target: TargetRef; leaseId?: string }>();
   const activeRuns = new Set<string>();
   const queueLocks = new Map<string, Promise<unknown>>();
 
@@ -83,10 +83,10 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
         }
         const opened = await deps.open({ runId, target, persona });
         try {
-          await recordRouteExploration(runId, target, 'exploring', deps.stateDir);
+          await recordTargetExploration(runId, target, 'exploring', deps.stateDir);
           explorations.set(opened.sessionId, {
             runId,
-            route: target,
+            target,
             ...(validatedLease === undefined ? {} : { leaseId: validatedLease }),
           });
           return opened;
@@ -111,7 +111,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       try {
         await deps.close(sessionId);
         if (exploration) {
-          await recordRouteExploration(exploration.runId, exploration.route, 'done', deps.stateDir);
+          await recordTargetExploration(exploration.runId, exploration.target, 'done', deps.stateDir);
           if (exploration.leaseId !== undefined) {
             await withQueueLock(exploration.runId, () =>
               completeExplorationLease(exploration.runId, exploration.leaseId!, deps.stateDir),
@@ -136,7 +136,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     leaseNext(runId, options) {
       return withQueueLock(runId, () => leaseNextExploration(runId, {
         personas: deps.personas,
-        ...(options?.route === undefined ? {} : { route: options.route }),
+        ...(options?.target === undefined ? {} : { target: options.target }),
         keepLeaseIds: liveLeaseIds(runId),
       }, deps.stateDir));
     },

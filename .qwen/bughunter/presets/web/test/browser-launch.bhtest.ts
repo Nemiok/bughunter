@@ -9,7 +9,7 @@ import type { Profile } from '../src/profile/types.ts';
 import { loadConfig } from '../src/config.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Config } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const temporaryDirectories: string[] = [];
 
@@ -28,7 +28,7 @@ function baseConfig(patch: Partial<Config> = {}): Config {
     baseUrl: 'http://127.0.0.1:1',
     allowedOrigins: ['http://127.0.0.1:1'],
     routes: ['/'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: [], readOnly: false },
@@ -39,7 +39,7 @@ function baseConfig(patch: Partial<Config> = {}): Config {
       anomalyTexts: ['NaN'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
     ...patch,
   };
 }
@@ -118,7 +118,7 @@ test('launch args reach the launched Chrome', async () => {
       browser: { launchArgs: ['--user-agent=BughunterProbe/1.0'] },
     });
     await writeJsonAtomic(join(stateDir, 'config.json'), config);
-    const run = await createRun('route', '/', { config, projectRoot: stateDir, stateDir });
+    const run = await createRun('target', '/', { config, projectRoot: stateDir, stateDir });
     const manager = new SessionManager(config, stateDir);
     try {
       const { sessionId } = await manager.open(run.id, '/', 'launch-args');

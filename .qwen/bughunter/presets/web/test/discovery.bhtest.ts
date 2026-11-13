@@ -10,7 +10,8 @@ import { crawlScreens } from '../src/discovery/crawl.ts';
 import { readScreens, templatisedPathname, upsertScreens } from '../src/discovery/screens-store.ts';
 import type { Profile } from '../src/profile/types.ts';
 import { writeJsonAtomic } from '@bughunter/core';
-import type { Config, ScreenEntry } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
+import type { ScreenEntry } from '../src/types.ts';
 
 const directories: string[] = [];
 let server: Server;
@@ -222,7 +223,7 @@ test('bh_crawl is reachable over real stdio MCP', async () => {
     baseUrl: origin,
     allowedOrigins: [origin],
     routes: ['/'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -233,7 +234,7 @@ test('bh_crawl is reachable over real stdio MCP', async () => {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
   await writeJsonAtomic(join(stateDir, 'config.json'), config);
   await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);

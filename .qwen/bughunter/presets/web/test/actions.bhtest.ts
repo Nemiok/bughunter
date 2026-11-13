@@ -11,7 +11,10 @@ import type { Profile } from '../src/profile/types.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
-import type { Candidate, Config, ElementSnapshot, Journal, Step } from '@bughunter/core';
+import type { Candidate, Journal } from '@bughunter/core';
+import type { Step } from '../src/types.ts';
+import type { WebConfig as Config } from '../src/config.ts';
+import type { ElementSnapshot } from '../src/types.ts';
 
 const directories: string[] = [];
 const managers: SessionManager[] = [];
@@ -97,7 +100,7 @@ function configTemplate(): Config {
     baseUrl: origin,
     allowedOrigins: [origin],
     routes: ['/flow'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -108,7 +111,7 @@ function configTemplate(): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -129,9 +132,11 @@ async function open(manager: SessionManager, runId = 'run-actions') {
   return sessionId;
 }
 
-async function readJournal(stateDir: string, runId: string, sessionId: string): Promise<Journal> {
+type WebJournal = Omit<Journal, 'steps'> & { steps: Step[] };
+
+async function readJournal(stateDir: string, runId: string, sessionId: string): Promise<WebJournal> {
   const path = join(stateDir, 'runs', runId, 'journals', `${sessionId}.json`);
-  return JSON.parse(await (await import('node:fs/promises')).readFile(path, 'utf8')) as Journal;
+  return JSON.parse(await (await import('node:fs/promises')).readFile(path, 'utf8')) as WebJournal;
 }
 
 async function byTestId(manager: SessionManager, sessionId: string, testId: string): Promise<ElementSnapshot> {
@@ -378,18 +383,18 @@ test('reproduce replays every new action kind', async () => {
 test('export generates code for every new action kind', async () => {
   const directory = await testDataDirectory();
   const steps: Step[] = [
-    { id: 'step-1', kind: 'act', timestamp: '2026-11-12T00:00:00.000Z', routeTemplate: '/flow', action: 'drag', locator: 'page.getByTestId("item")', to: { locator: 'page.getByTestId("zone-b")' } },
-    { id: 'step-2', kind: 'act', timestamp: '2026-11-12T00:00:01.000Z', routeTemplate: '/flow', action: 'scroll', locator: 'page.getByTestId("list")', scroll: { direction: 'down', delta: 400 } },
-    { id: 'step-3', kind: 'act', timestamp: '2026-11-12T00:00:02.000Z', routeTemplate: '/flow', action: 'scroll', scroll: { direction: 'down', delta: 400 } },
-    { id: 'step-4', kind: 'act', timestamp: '2026-11-12T00:00:03.000Z', routeTemplate: '/flow', action: 'clickAt', at: { x: 120, y: 220 }, resolvedLocator: 'page.getByTestId("ok")' },
-    { id: 'step-5', kind: 'act', timestamp: '2026-11-12T00:00:04.000Z', routeTemplate: '/flow', action: 'hoverAt', at: { x: 120, y: 340 }, resolvedLocator: 'page.getByTestId("hoverbox")' },
-    { id: 'step-6', kind: 'act', timestamp: '2026-11-12T00:00:05.000Z', routeTemplate: '/flow', action: 'upload', locator: 'page.getByTestId("file")', file: 'sample.csv' },
+    { id: 'step-1', kind: 'act', timestamp: '2026-11-12T00:00:00.000Z', targetRef: '/flow', action: 'drag', locator: 'page.getByTestId("item")', to: { locator: 'page.getByTestId("zone-b")' } },
+    { id: 'step-2', kind: 'act', timestamp: '2026-11-12T00:00:01.000Z', targetRef: '/flow', action: 'scroll', locator: 'page.getByTestId("list")', scroll: { direction: 'down', delta: 400 } },
+    { id: 'step-3', kind: 'act', timestamp: '2026-11-12T00:00:02.000Z', targetRef: '/flow', action: 'scroll', scroll: { direction: 'down', delta: 400 } },
+    { id: 'step-4', kind: 'act', timestamp: '2026-11-12T00:00:03.000Z', targetRef: '/flow', action: 'clickAt', at: { x: 120, y: 220 }, resolvedLocator: 'page.getByTestId("ok")' },
+    { id: 'step-5', kind: 'act', timestamp: '2026-11-12T00:00:04.000Z', targetRef: '/flow', action: 'hoverAt', at: { x: 120, y: 340 }, resolvedLocator: 'page.getByTestId("hoverbox")' },
+    { id: 'step-6', kind: 'act', timestamp: '2026-11-12T00:00:05.000Z', targetRef: '/flow', action: 'upload', locator: 'page.getByTestId("file")', file: 'sample.csv' },
   ];
   const candidate: Candidate = {
     id: 'candidate-actions',
     runId: 'run-actions',
     sessionId: 'session-actions',
-    route: '/flow',
+    target: '/flow',
     title: 'TOTAL disappears after the drop',
     expected: 'TOTAL 42 stays visible',
     actual: 'TOTAL 42 is hidden',

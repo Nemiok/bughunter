@@ -1,62 +1,38 @@
-export type Scope = 'diff' | 'full' | 'route' | 'screen' | 'sweep';
+/** Область прогона. `target` — одна цель из инвентаря пресета, `sweep` — весь инвентарь. */
+export type Scope = 'diff' | 'full' | 'target' | 'sweep';
 
+/**
+ * Общие поля `config.json`: их владеет core, а поля пресета объявляет его собственная схема,
+ * расширяющая общую. Core не знает ни адреса стенда, ни того, что такое экран или эндпоинт.
+ */
 export type Config = {
-  baseUrl: string;
-  allowedOrigins: string[];
-  routes: string[];
-  routeMap: Record<string, string[]>;
   baseBranch: string;
   profile?: string;
-  browser?: {
-    launchArgs?: string[];
-    proxy?: string;
-    ignoreHTTPSErrors?: boolean;
-  };
+  /** Карта «изменённый файл → цели прогона» для области `diff`. */
+  targetMap: Record<string, string[]>;
   limits: {
     stepsPerSession: number;
     candidatesPerRun: number;
-    /** Сколько элементов снимка отдавать модели за один вызов; остальное доступно через cursor. */
-    elementsPerSnapshot?: number;
-    /** Сколько миллисекунд детерминированный обход ждёт ответов приложения на экране. */
-    responseSettleMs?: number;
-    /** Сколько экранов обход проходит за один вызов `bh_sweep`; остальное — следующим курсором. */
-    screensPerSweep?: number;
   };
   safety: {
     forbiddenActionText: string[];
     readOnly: boolean;
   };
   testDataPrefix: string;
-  detectors: {
-    ignoreConsole: string[];
-    ignoreRequests: string[];
-    anomalyTexts: string[];
-    errorBoundarySelector: string;
-  };
   tests: {
     unit: { command: string | null };
-    e2e: { dir: string };
+    /** Каталог сгенерированных тестов относительно ближайшего проекта пресета. */
+    generated: { dir: string };
   };
-};
-
-/** Экран приложения в инвентаре: шаблон маршрута, а не конкретный URL. */
-export type ScreenEntry = {
-  template: string;
-  sampleUrl: string;
-  discoveredVia: string[];
-  widgets: string[];
-  lastCheckedAt?: string;
-  /** Позиция в инвентаре для прерванного обхода, чтобы не начинать заново. */
-  cursorState?: number;
 };
 
 export type RunStage = 'created' | 'exploring' | 'reproducing' | 'reviewing' | 'writing_tests' | 'finished';
 export type OperationStage = 'pending' | 'running' | 'done' | 'failed';
-export type RouteStage = 'pending' | 'exploring' | 'done' | 'failed';
+export type TargetStage = 'pending' | 'exploring' | 'done' | 'failed';
 
 /**
- * Набор стадий зависит от области: у `diff`/`full`/`route` есть `explore`,
- * у `screen`/`sweep` вместо него детерминированные `sweep` и `findings`.
+ * Набор стадий зависит от области: у `diff`/`full`/`target` есть `explore`,
+ * у `sweep` вместо него детерминированные `sweep` и `findings`.
  */
 export type RunStages = {
   explore?: OperationStage;
@@ -75,7 +51,7 @@ export type RunStages = {
 export type Finding = {
   id: string;
   runId: string;
-  screenTemplate: string;
+  targetRef: string;
   widget?: string;
   kind: string;
   detail: string;
@@ -97,7 +73,7 @@ export type SweepProgress = {
 
 export type ExploreQueueItem = {
   id: string;
-  route: string;
+  target: string;
   persona: string;
   status: 'pending' | 'leased' | 'done';
   leaseId?: string;
@@ -107,17 +83,18 @@ export type ExploreQueueItem = {
 export type Run = {
   id: string;
   scope: Scope;
-  routes: string[];
+  targets: string[];
   status: RunStage;
   stages: RunStages;
-  routeStages: Record<string, RouteStage>;
+  targetStages: Record<string, TargetStage>;
   exploreQueue?: ExploreQueueItem[];
   createdAt: string;
   updatedAt: string;
 };
 
+/** Нарушение инварианта. Словарь видов принадлежит пресету (`Checks.kinds`). */
 export type Check = {
-  kind: 'visibleText' | 'notVisibleText' | 'elementCount';
+  kind: string;
   target: string;
   expected?: string | number;
 };
@@ -127,61 +104,24 @@ export type Signal = {
   kind: string;
   message: string;
   signature: string;
-  route: string;
+  target: string;
   timestamp: string;
   stack?: string;
   url?: string;
   status?: number;
 };
 
-export type SemanticLocator =
-  | { kind: 'testid'; value: string; index?: number }
-  | { kind: 'role'; role: string; name: string; index?: number }
-  | { kind: 'text'; value: string; index?: number }
-  | { kind: 'css'; value: string; index?: number };
-
-export type ElementBox = { x: number; y: number; width: number; height: number };
-
-export type ElementSnapshot = {
+/**
+ * Конверт шага журнала: общая часть, которую core хранит, повторяет и включает в кандидат.
+ * Поля самого действия объявляет пресет — core их не интерпретирует. Форма на диске одна:
+ * шаг пресета структурно расширяет конверт, поэтому вложенность не вводится.
+ */
+export type StepBase = {
   id: string;
-  role: string;
-  name: string;
-  type: string;
-  value?: string;
-  disabled?: boolean;
-  locator: SemanticLocator;
-  /** Положение в координатах viewport на момент снимка: нужно ранжированию и координатным действиям. */
-  box: ElementBox;
-};
-
-export type StepAction =
-  | 'click' | 'dblclick' | 'fill' | 'select' | 'press' | 'check' | 'hover'
-  | 'drag' | 'scroll' | 'clickAt' | 'hoverAt' | 'upload';
-
-export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
-
-export type ScrollInput = { direction: ScrollDirection; delta: number };
-
-export type Step = {
-  id: string;
-  kind: 'act' | 'navigate' | 'probe';
+  /** Вид шага — словарь пресета (web: `act`, `navigate`, `probe`). */
+  kind: string;
   timestamp: string;
-  routeTemplate: string;
-  action?: StepAction;
-  elementId?: string;
-  value?: string;
-  path?: string;
-  probe?: 'reload' | 'back' | 'mobile_viewport';
-  locator?: string;
-  /** Цель drag: без неё шаг неоднозначен, а повтор невозможен. */
-  to?: { locator: string };
-  /** Точка в координатах viewport для clickAt/hoverAt. */
-  at?: { x: number; y: number };
-  /** Семантическая цель под точкой: доказательство того, что guard'ы видели реальный элемент. */
-  resolvedLocator?: string;
-  /** Путь файла загрузки относительно `profile.testData.dir` — абсолютный путь машины в журнал не попадает. */
-  file?: string;
-  scroll?: ScrollInput;
+  targetRef: string;
   signalIds?: string[];
   responseHashes?: string[];
 };
@@ -189,9 +129,9 @@ export type Step = {
 export type Journal = {
   sessionId: string;
   runId: string;
-  route: string;
+  target: string;
   persona: string;
-  steps: Step[];
+  steps: StepBase[];
   createdAt: string;
 };
 
@@ -199,13 +139,13 @@ export type Candidate = {
   id: string;
   runId: string;
   sessionId: string;
-  route: string;
+  target: string;
   title: string;
   expected: string;
   actual: string;
   signalIds: string[];
   signature: string;
-  steps: Step[];
+  steps: StepBase[];
   artifacts: string[];
   status: 'new' | 'unprocessed' | 'confirmed' | 'rejected' | 'duplicate';
   createdAt: string;
@@ -221,5 +161,5 @@ export type Candidate = {
   };
   /** Виды тестов — открытый словарь пресета (`TestRunner.kinds`, `ExportTarget.kind`). */
   tests?: Record<string, string>;
-  minimalSteps?: Step[];
+  minimalSteps?: StepBase[];
 };

@@ -4,7 +4,7 @@ import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type { ReportFormat } from './preset.ts';
-import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope } from './types.ts';
+import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, TargetStage, Run, Scope } from './types.ts';
 
 const execFile = promisify(execFileCallback);
 
@@ -59,63 +59,62 @@ function globMatches(pattern: string, path: string): boolean {
   return new RegExp(`^${source}$`).test(path);
 }
 
-async function diffRoutes(config: Config, projectRoot: string): Promise<string[]> {
+async function diffTargets(config: Config, targets: readonly string[], projectRoot: string): Promise<string[]> {
   const { stdout } = await execFile('git', ['diff', '--name-only', `${config.baseBranch}...HEAD`], {
     cwd: projectRoot,
     encoding: 'utf8',
   });
   const files = stdout.split(/\r?\n/).filter(Boolean).map((file) => file.replace(/\\/g, '/'));
-  const routes = config.routes.filter((route) =>
-    Object.entries(config.routeMap).some(([pattern, mappedRoutes]) =>
-      mappedRoutes.includes(route) && files.some((file) => globMatches(pattern, file)),
+  const matched = targets.filter((target) =>
+    Object.entries(config.targetMap).some(([pattern, mappedTargets]) =>
+      mappedTargets.includes(target) && files.some((file) => globMatches(pattern, file)),
     ),
   );
-  return routes.length > 0 ? routes : [...config.routes];
+  return matched.length > 0 ? [...matched] : [...targets];
 }
 
 export async function createRun(
   scope: Scope,
-  route: string | undefined,
-  deps: { config: Config; projectRoot: string; stateDir: string; personas: readonly string[] },
+  target: string | undefined,
+  deps: {
+    config: Config;
+    projectRoot: string;
+    stateDir: string;
+    personas: readonly string[];
+    /** Инвентарь целей пресета: web передаёт список из своего конфига, node — список эндпоинтов. */
+    targets: readonly string[];
+  },
 ): Promise<Run> {
-  let routes: string[];
-  if (scope === 'route') {
-    if (route === undefined) {
-      throw new Error('ROUTE_REQUIRED');
-    }
-    if (!deps.config.routes.includes(route)) {
-      throw new Error(`ROUTE_NOT_ALLOWED: ${route}`);
-    }
-    routes = [route];
-  } else if (scope === 'screen') {
-    // Шаблон экрана не обязан быть в config.routes: инвентарь шире списка настроенных маршрутов.
-    // Наличие шаблона проверяет обход — он единственный, кто читает screens.json.
-    if (route === undefined || !route.startsWith('/')) {
-      throw new Error('ROUTE_REQUIRED');
-    }
-    routes = [route];
+  let targets: string[];
+  if (scope === 'target') {
+    if (target === undefined) throw new Error('TARGET_REQUIRED');
+    if (!deps.targets.includes(target)) throw new Error(`TARGET_NOT_ALLOWED: ${target}`);
+    targets = [target];
   } else if (scope === 'sweep') {
-    routes = [];
+    // Пустой список — весь инвентарь пресета, одна цель — обход только её. Принадлежность
+    // цели инвентарю проверяет сам обход: только он читает инвентарь приложения.
+    if (target !== undefined && target.length === 0) throw new Error('TARGET_REQUIRED');
+    targets = target === undefined ? [] : [target];
   } else if (scope === 'diff') {
-    routes = await diffRoutes(deps.config, deps.projectRoot);
+    targets = await diffTargets(deps.config, deps.targets, deps.projectRoot);
   } else {
-    routes = [...deps.config.routes];
+    targets = [...deps.targets];
   }
 
-  // Детерминированные области не дают модели очередь исследования: экраны обходит bh_sweep.
-  const deterministic = scope === 'sweep' || scope === 'screen';
+  // Детерминированный обход не даёт модели очередь исследования: цели обходит `bh_sweep`.
+  const deterministic = scope === 'sweep';
   const timestamp = new Date();
   const id = `${timestamp.toISOString().replace(/[-:]/g, '')}-${randomBytes(6).toString('hex')}`;
   const run: Run = {
     id,
     scope,
-    routes,
+    targets,
     status: 'created',
     stages: deterministic
       ? { sweep: 'pending', findings: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' }
       : { explore: 'pending', reproduce: 'pending', triage: 'pending', export: 'pending' },
-    routeStages: Object.fromEntries(routes.map((route) => [route, 'pending'])),
-    ...(deterministic ? {} : { exploreQueue: buildExploreQueue(routes, deps.personas) }),
+    targetStages: Object.fromEntries(targets.map((entry) => [entry, 'pending'])),
+    ...(deterministic ? {} : { exploreQueue: buildExploreQueue(targets, deps.personas) }),
     createdAt: timestamp.toISOString(),
     updatedAt: timestamp.toISOString(),
   };
@@ -123,11 +122,11 @@ export async function createRun(
   return run;
 }
 
-function buildExploreQueue(routes: string[], personas: readonly string[]): ExploreQueueItem[] {
-  return routes.flatMap((route) =>
+function buildExploreQueue(targets: readonly string[], personas: readonly string[]): ExploreQueueItem[] {
+  return targets.flatMap((target) =>
     personas.map((persona) => ({
-      id: `${route}::${persona}`,
-      route,
+      id: `${target}::${persona}`,
+      target,
       persona,
       status: 'pending' as const,
     })),
@@ -136,19 +135,19 @@ function buildExploreQueue(routes: string[], personas: readonly string[]): Explo
 
 export type ExploreNextResult =
   | { status: 'done' }
-  | { status: 'busy'; activeRoute: string }
-  | { status: 'task'; leaseId: string; route: string; persona: string };
+  | { status: 'busy'; activeTarget: string }
+  | { status: 'task'; leaseId: string; target: string; persona: string };
 
 const defaultStaleLeaseMs = 30 * 60 * 1000;
 
 function queueFor(run: Run, personas: readonly string[]): ExploreQueueItem[] {
   // Прогоны, созданные до появления очереди, получают её лениво: уже завершённые маршруты не переисследуются.
-  return run.exploreQueue ?? buildExploreQueue(run.routes.filter((route) => run.routeStages[route] !== 'done'), personas);
+  return run.exploreQueue ?? buildExploreQueue(run.targets.filter((target) => run.targetStages[target] !== 'done'), personas);
 }
 
 export async function leaseNextExploration(
   runId: string,
-  options: { personas: readonly string[]; route?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
+  options: { personas: readonly string[]; target?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
   stateDir: string,
 ): Promise<ExploreNextResult> {
   const run = await readRun(runId, stateDir);
@@ -171,10 +170,10 @@ export async function leaseNextExploration(
   const active = queue.find((item) => item.status === 'leased');
   if (active) {
     if (changed) await updateRun(runId, { exploreQueue: queue }, stateDir);
-    return { status: 'busy', activeRoute: active.route };
+    return { status: 'busy', activeTarget: active.target };
   }
   const next = queue.find((item) =>
-    item.status === 'pending' && (options.route === undefined || item.route === options.route),
+    item.status === 'pending' && (options.target === undefined || item.target === options.target),
   );
   if (!next) {
     if (changed) await updateRun(runId, { exploreQueue: queue }, stateDir);
@@ -187,7 +186,7 @@ export async function leaseNextExploration(
     leasedAt: new Date(now).toISOString(),
   };
   await updateRun(runId, { exploreQueue: queue.map((item) => (item.id === next.id ? leased : item)) }, stateDir);
-  return { status: 'task', leaseId: leased.leaseId!, route: leased.route, persona: leased.persona };
+  return { status: 'task', leaseId: leased.leaseId!, target: leased.target, persona: leased.persona };
 }
 
 function findLease(run: Run, leaseId: string): ExploreQueueItem | undefined {
@@ -197,15 +196,15 @@ function findLease(run: Run, leaseId: string): ExploreQueueItem | undefined {
 export async function validateExplorationLease(
   runId: string,
   leaseId: string,
-  route: string,
+  target: string,
   persona: string,
   stateDir: string,
 ): Promise<void> {
   const run = await readRun(runId, stateDir);
   const item = findLease(run, leaseId);
   if (!item || item.status !== 'leased') throw new Error(`LEASE_UNKNOWN: ${leaseId}`);
-  if (item.route !== route || item.persona !== persona) {
-    throw new Error(`LEASE_MISMATCH: ${leaseId} ${item.route} ${item.persona}`);
+  if (item.target !== target || item.persona !== persona) {
+    throw new Error(`LEASE_MISMATCH: ${leaseId} ${item.target} ${item.persona}`);
   }
 }
 
@@ -250,16 +249,26 @@ export async function reclaimExplorationLeases(
   }, stateDir);
 }
 
+/** Имена полей до разреза core/preset: состояние с ними отвергается явно, а не молча теряет стадии. */
+const retiredRunFields = ['routeStages', 'routes'] as const;
+
 export async function readRun(runId: string, stateDir: string): Promise<Run> {
   const file = runPath(runId, stateDir);
+  let value: unknown;
   try {
-    return JSON.parse(await readFile(file, 'utf8')) as Run;
+    value = JSON.parse(await readFile(file, 'utf8'));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(`RUN_NOT_FOUND: ${runId}`);
     }
     throw error;
   }
+  if (value !== null && typeof value === 'object') {
+    for (const field of retiredRunFields) {
+      if (field in value) throw new Error(`RUN_SCHEMA_INVALID: ${field}`);
+    }
+  }
+  return value as Run;
 }
 
 export async function updateRun(runId: string, patch: Partial<Run>, stateDir: string): Promise<Run> {
@@ -287,42 +296,38 @@ export async function recordRunStage(
   }, stateDir);
 }
 
-function routeName(route: string, configuredRoutes: string[]): string {
-  if (configuredRoutes.includes(route)) return route;
-  try {
-    const target = new URL(route, 'https://bughunter.invalid');
-    const parsedRoutes = configuredRoutes.map((configuredRoute) => ({
-      configuredRoute,
-      url: new URL(configuredRoute, 'https://bughunter.invalid'),
-    }));
-    const exact = parsedRoutes.find(({ url }) => url.pathname === target.pathname && url.search === target.search);
-    const pathOnly = parsedRoutes.find(({ url }) => url.pathname === target.pathname && url.search === '');
-    return exact?.configuredRoute ?? pathOnly?.configuredRoute ?? `${target.pathname}${target.search}`;
-  } catch {
-    return route;
-  }
+/**
+ * Цель, которую назвал пресет, приводится к цели из списка прогона: конкретное значение
+ * (`/orders/12?x=1`) соответствует настроенной цели (`/orders`), иначе её стадия никогда
+ * не закроется и прогон нельзя будет завершить.
+ */
+function targetName(target: string, configuredTargets: string[]): string {
+  if (configuredTargets.includes(target)) return target;
+  const withoutQuery = target.split(/[?#]/)[0]!;
+  const configured = configuredTargets.find((entry) => entry.split(/[?#]/)[0] === withoutQuery);
+  return configured ?? target;
 }
 
-export async function recordRouteExploration(
+export async function recordTargetExploration(
   runId: string,
-  route: string,
-  status: RouteStage,
+  target: string,
+  status: TargetStage,
   stateDir: string,
 ): Promise<Run> {
   const run = await readRun(runId, stateDir);
-  const routeStages: Record<string, RouteStage> = {
-    ...Object.fromEntries(run.routes.map((configuredRoute) => [configuredRoute, 'pending'])),
-    ...run.routeStages,
-    [routeName(route, run.routes)]: status,
+  const targetStages: Record<string, TargetStage> = {
+    ...Object.fromEntries(run.targets.map((configuredTarget) => [configuredTarget, 'pending'])),
+    ...run.targetStages,
+    [targetName(target, run.targets)]: status,
   };
-  const selectedStages = run.routes.map((configuredRoute) => routeStages[configuredRoute] ?? 'pending');
+  const selectedStages = run.targets.map((configuredTarget) => targetStages[configuredTarget] ?? 'pending');
   const explore = selectedStages.some((value) => value === 'failed')
     ? 'failed'
     : selectedStages.every((value) => value === 'done') ? 'done' : 'running';
   return updateRun(runId, {
     status: run.status === 'finished' ? 'finished' : 'exploring',
     stages: { ...run.stages, explore },
-    routeStages,
+    targetStages,
   }, stateDir);
 }
 
@@ -330,7 +335,7 @@ export type SharedMemoryEntry = {
   id: string;
   signature: string;
   title?: string;
-  route?: string;
+  target?: string;
   reason: string;
   sourceCandidate: string;
   createdAt: string;
@@ -413,18 +418,29 @@ async function readCandidates(runId: string, stateDir: string): Promise<Candidat
   return candidates.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
 }
 
-function requiresWork(candidate: Candidate): boolean {
+/**
+ * Какой вид теста обязателен для подтверждённого бага, знает пресет (`ExportTarget.kind`):
+ * без этого знания core считал бы достаточным любой тест и пропустил прогон без регрессии.
+ */
+function requiresWork(candidate: Candidate, requiredTestKind?: string): boolean {
   if (candidate.status === 'rejected' || candidate.status === 'duplicate') return false;
   if (candidate.status === 'confirmed') {
-    return candidate.reproduction?.status !== 'reproduced' || candidate.tests?.e2e === undefined;
+    const missingTest = requiredTestKind === undefined
+      ? Object.keys(candidate.tests ?? {}).length === 0
+      : candidate.tests?.[requiredTestKind] === undefined;
+    return candidate.reproduction?.status !== 'reproduced' || missingTest;
   }
   return candidate.reproduction?.status !== 'unreproduced' || candidate.reproduction.attempts === 0;
 }
 
-export async function resumeRun(runId: string, stateDir: string): Promise<{ run: Run; pendingCandidates: Candidate[] }> {
+export async function resumeRun(
+  runId: string,
+  stateDir: string,
+  requiredTestKind?: string,
+): Promise<{ run: Run; pendingCandidates: Candidate[] }> {
   const run = await readRun(runId, stateDir);
   const candidates = await readCandidates(runId, stateDir);
-  return { run, pendingCandidates: candidates.filter(requiresWork) };
+  return { run, pendingCandidates: candidates.filter((candidate) => requiresWork(candidate, requiredTestKind)) };
 }
 
 function storedTestPath(file: string, runId: string, stateDir: string): string {
@@ -471,7 +487,7 @@ function memoryEntry(candidate: Candidate, reason: string, previous?: SharedMemo
     id: previous?.id ?? candidate.id,
     signature: candidate.signature,
     title: candidate.title,
-    route: candidate.route,
+    target: candidate.target,
     reason,
     sourceCandidate: candidate.id,
     createdAt: previous?.createdAt ?? now,
@@ -564,7 +580,7 @@ function candidateHeader(candidate: Candidate): string[] {
     `### ${escapeMarkdown(candidate.title)}`,
     '',
     `- Candidate: ${escapeMarkdown(candidate.id)}`,
-    `- Route: ${escapeMarkdown(candidate.route)}`,
+    `- Target: ${escapeMarkdown(candidate.target)}`,
   ];
 }
 
@@ -581,9 +597,12 @@ function confirmedReport(candidate: Candidate, runId: string, stateDir: string, 
   if (candidate.artifacts.length === 0) lines.push('  - None.');
   else lines.push(...candidate.artifacts.map((file) => `  - ${escapeMarkdown(artifactPath(file, runId, stateDir))}`));
   lines.push('- Created tests:');
-  if (!candidate.tests?.e2e && !candidate.tests?.unit) lines.push('  - None.');
-  if (candidate.tests?.e2e) lines.push(`  - E2E: ${escapeMarkdown(reportTestPath(candidate.tests.e2e, runId, stateDir))}`);
-  if (candidate.tests?.unit) lines.push(`  - Unit: ${escapeMarkdown(reportTestPath(candidate.tests.unit, runId, stateDir))}`);
+  // Виды тестов — словарь пресета, поэтому отчёт перебирает записи, а не печатает свои имена.
+  const createdTests = Object.entries(candidate.tests ?? {});
+  if (createdTests.length === 0) lines.push('  - None.');
+  for (const [kind, file] of createdTests) {
+    lines.push(`  - ${kind}: ${escapeMarkdown(reportTestPath(file, runId, stateDir))}`);
+  }
   return lines.join('\n');
 }
 
@@ -605,7 +624,7 @@ function reportSection(title: string, entries: string[]): string {
   return [`## ${title}`, '', entries.length > 0 ? entries.join('\n\n') : 'None.', ''].join('\n');
 }
 
-function renderReport(run: Run, candidates: Candidate[], findings: Finding[], stateDir: string, format: ReportFormat): string {
+function renderReport(run: Run, candidates: Candidate[], findings: Finding[], stateDir: string, format: ReportFormat, requiredTestKind?: string): string {
   const confirmed = candidates.filter((candidate) => candidate.status === 'confirmed');
   const rejected = candidates.filter((candidate) => candidate.status === 'rejected');
   const duplicates = candidates.filter((candidate) => candidate.status === 'duplicate');
@@ -613,7 +632,7 @@ function renderReport(run: Run, candidates: Candidate[], findings: Finding[], st
     candidate.status !== 'confirmed' && candidate.status !== 'rejected' && candidate.status !== 'duplicate'
     && candidate.reproduction?.status === 'unreproduced' && candidate.reproduction.attempts > 0,
   );
-  const pending = candidates.filter(requiresWork);
+  const pending = candidates.filter((candidate) => requiresWork(candidate, requiredTestKind));
   return [
     '# Bughunter report', '', `- Run: ${run.id}`, `- Scope: ${run.scope}`, '',
     reportSection('Confirmed', confirmed.map((candidate) => confirmedReport(candidate, run.id, stateDir, format))),
@@ -626,23 +645,23 @@ function renderReport(run: Run, candidates: Candidate[], findings: Finding[], st
   ].join('\n');
 }
 
-export async function finishRun(runId: string, stateDir: string, format: ReportFormat): Promise<{ report: string }> {
-  const { pendingCandidates } = await resumeRun(runId, stateDir);
+export async function finishRun(runId: string, stateDir: string, format: ReportFormat, requiredTestKind?: string): Promise<{ report: string }> {
+  const { pendingCandidates } = await resumeRun(runId, stateDir, requiredTestKind);
   if (pendingCandidates.length > 0) {
     throw new Error(`RUN_INCOMPLETE: ${pendingCandidates.map((candidate) => candidate.id).join(',')}`);
   }
   const run = await readRun(runId, stateDir);
   // Завершённость проверяется по фактической области: у детерминированного обхода нет маршрутных
-  // стадий на весь список routes, но незакрытый sweep означал бы отчёт по неполному инвентарю.
-  if ((run.scope === 'sweep' || run.scope === 'screen') && run.stages.sweep !== 'done') {
+  // стадий на весь список целей, но незакрытый sweep означал бы отчёт по неполному инвентарю.
+  if (run.scope === 'sweep' && run.stages.sweep !== 'done') {
     throw new Error('RUN_INCOMPLETE: sweep');
   }
-  const incompleteRoutes = run.routes.filter((route) => run.routeStages[route] !== 'done');
-  if (incompleteRoutes.length > 0) {
-    throw new Error(`RUN_INCOMPLETE: routes ${incompleteRoutes.join(',')}`);
+  const incompleteTargets = run.targets.filter((target) => run.targetStages[target] !== 'done');
+  if (incompleteTargets.length > 0) {
+    throw new Error(`RUN_INCOMPLETE: targets ${incompleteTargets.join(',')}`);
   }
   const [candidates, findings] = await Promise.all([readCandidates(runId, stateDir), readFindings(runId, stateDir)]);
-  const contents = renderReport(run, candidates, findings, stateDir, format);
+  const contents = renderReport(run, candidates, findings, stateDir, format, requiredTestKind);
   const report = join(dirname(runPath(runId, stateDir)), 'report.md');
   await writeAtomic(report, contents);
   if (run.status !== 'finished') await updateRun(runId, { status: 'finished' }, stateDir);

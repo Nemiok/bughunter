@@ -1,4 +1,5 @@
 export * from './types.ts';
+export * from './config.ts';
 export * from './preset.ts';
 export * from './detect.ts';
 export * from './verify-red.ts';

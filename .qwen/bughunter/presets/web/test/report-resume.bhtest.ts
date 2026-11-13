@@ -7,14 +7,16 @@ import {
   readCandidate,
   readRun,
   recordCandidateTest,
-  recordRouteExploration,
+  recordTargetExploration,
   recordRunStage,
   resumeRun,
   triageCandidate,
   updateRun,
   writeJsonAtomic,
 } from '@bughunter/core';
-import type { Candidate, Config, Step } from '@bughunter/core';
+import type { Candidate } from '@bughunter/core';
+import type { Step } from '../src/types.ts';
+import type { WebConfig as Config } from '../src/config.ts';
 import { createRun, finishRun } from '../src/runs.ts';
 
 const createdAt = '2026-11-10T00:00:00.000Z';
@@ -24,13 +26,13 @@ function config(): Config {
     baseUrl: 'https://example.test/',
     allowedOrigins: ['https://example.test'],
     routes: ['/', '/orders'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: [], readOnly: false },
     testDataPrefix: 'bh_',
     detectors: { ignoreConsole: [], ignoreRequests: [], anomalyTexts: [], errorBoundarySelector: '[data-error-boundary]' },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -39,7 +41,7 @@ function candidate(runId: string, id: string, patch: Partial<Candidate> = {}): C
     id,
     runId,
     sessionId: `session-${id}`,
-    route: '/orders',
+    target: '/orders',
     title: `Title ${id}`,
     expected: 'Expected result',
     actual: 'Actual result',
@@ -66,14 +68,14 @@ async function writeCandidate(stateDir: string, value: Candidate): Promise<void>
 }
 
 async function completeConfiguredRoutes(runId: string, stateDir: string): Promise<void> {
-  for (const route of config().routes) await recordRouteExploration(runId, route, 'done', stateDir);
+  for (const route of config().routes) await recordTargetExploration(runId, route, 'done', stateDir);
 }
 
 test('finish writes a deterministic escaped Markdown report with steps, artifacts, tests, and review reasons', async (t) => {
   const { stateDir, runId, runRoot } = await fixture(t);
   const steps: Step[] = [{
     id: 'step-one', kind: 'act', action: 'fill', value: 'bad]\n# forged', locator: 'page.getByTestId("name")',
-    timestamp: createdAt, routeTemplate: '/orders',
+    timestamp: createdAt, targetRef: '/orders',
   }];
   const confirmed = candidate(runId, 'candidate-confirmed', {
     title: 'Confirmed [save] *failure*',
@@ -116,8 +118,8 @@ test('finish writes a deterministic escaped Markdown report with steps, artifact
   assert.ok(report.includes('bad\\] \\# forged'));
   assert.match(report, /artifacts\/candidate-confirmed\/trace\.zip/);
   assert.ok(!report.includes(`runs/${runId}/artifacts`));
-  assert.match(report, /E2E: e2e\/confirmed\.spec\.ts/);
-  assert.match(report, /Unit: unit\/confirmed\.test\.ts/);
+  assert.match(report, /e2e: e2e\/confirmed\.spec\.ts/);
+  assert.match(report, /unit: unit\/confirmed\.test\.ts/);
   assert.match(report, /## Rejected\n/);
   assert.ok(report.includes('Expected \\[behavior\\] \\# forged heading'));
   assert.match(report, /## Duplicates\n/);
@@ -133,7 +135,7 @@ test('resume returns persisted route and stage state and only candidates with re
   await updateRun(runId, {
     status: 'reviewing',
     stages: { explore: 'done', reproduce: 'running', triage: 'running', export: 'pending' },
-    routeStages: { '/': 'done', '/orders': 'exploring' },
+    targetStages: { '/': 'done', '/orders': 'exploring' },
   }, stateDir);
   const values = [
     candidate(runId, 'done-rejected', { status: 'rejected', createdAt: '2026-11-10T00:00:01.000Z' }),
@@ -159,7 +161,7 @@ test('resume returns persisted route and stage state and only candidates with re
   assert.equal(resumed.run.id, runId);
   assert.equal(resumed.run.status, 'reviewing');
   assert.deepEqual(resumed.run.stages, { explore: 'done', reproduce: 'running', triage: 'running', export: 'pending' });
-  assert.deepEqual(resumed.run.routeStages, { '/': 'done', '/orders': 'exploring' });
+  assert.deepEqual(resumed.run.targetStages, { '/': 'done', '/orders': 'exploring' });
   assert.deepEqual(resumed.pendingCandidates.map((value) => value.id), [
     'pending-review', 'pending-tests', 'pending-reproduction',
   ]);
@@ -174,18 +176,18 @@ test('resume returns persisted route and stage state and only candidates with re
 
 test('route, run, review, and created-test transitions persist immediately', async (t) => {
   const { stateDir, runId, runRoot } = await fixture(t);
-  await recordRouteExploration(runId, '/', 'exploring', stateDir);
+  await recordTargetExploration(runId, '/', 'exploring', stateDir);
   let run = await readRun(runId, stateDir);
   assert.equal(run.status, 'exploring');
-  assert.deepEqual(run.routeStages, { '/': 'exploring', '/orders': 'pending' });
+  assert.deepEqual(run.targetStages, { '/': 'exploring', '/orders': 'pending' });
   assert.equal(run.stages.explore, 'running');
 
-  await recordRouteExploration(runId, '/', 'done', stateDir);
+  await recordTargetExploration(runId, '/', 'done', stateDir);
   assert.equal((await readRun(runId, stateDir)).stages.explore, 'running');
-  await recordRouteExploration(runId, '/orders', 'done', stateDir);
+  await recordTargetExploration(runId, '/orders', 'done', stateDir);
   run = await readRun(runId, stateDir);
   assert.equal(run.stages.explore, 'done');
-  assert.deepEqual(run.routeStages, { '/': 'done', '/orders': 'done' });
+  assert.deepEqual(run.targetStages, { '/': 'done', '/orders': 'done' });
 
   await recordRunStage(runId, 'reproduce', 'running', stateDir);
   assert.equal((await readRun(runId, stateDir)).status, 'reproducing');
@@ -228,13 +230,13 @@ test('finish rejects an exploring route even with zero candidates', async (t) =>
   await updateRun(runId, {
     status: 'exploring',
     stages: { explore: 'running', reproduce: 'pending', triage: 'pending', export: 'pending' },
-    routeStages: { '/': 'exploring', '/orders': 'pending' },
+    targetStages: { '/': 'exploring', '/orders': 'pending' },
   }, stateDir);
 
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
   const unfinished = await readRun(runId, stateDir);
   assert.equal(unfinished.status, 'exploring');
-  assert.deepEqual(unfinished.routeStages, { '/': 'exploring', '/orders': 'pending' });
+  assert.deepEqual(unfinished.targetStages, { '/': 'exploring', '/orders': 'pending' });
   await assert.rejects(readFile(join(runRoot, 'report.md'), 'utf8'), { code: 'ENOENT' });
 });
 
@@ -243,7 +245,7 @@ test('finish requires actual resumed route completion after terminal candidate w
   await updateRun(runId, {
     status: 'writing_tests',
     stages: { explore: 'running', reproduce: 'done', triage: 'done', export: 'running' },
-    routeStages: { '/': 'exploring', '/orders': 'exploring' },
+    targetStages: { '/': 'exploring', '/orders': 'exploring' },
   }, stateDir);
   const confirmed = candidate(runId, 'interrupted-confirmed', {
     status: 'confirmed', reproduction: { status: 'reproduced', attempts: 3 },
@@ -255,14 +257,14 @@ test('finish requires actual resumed route completion after terminal candidate w
   assert.equal((await readRun(runId, stateDir)).stages.explore, 'running');
   await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir);
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
-  await recordRouteExploration(runId, '/', 'done', stateDir);
-  await recordRouteExploration(runId, '/orders', 'done', stateDir);
+  await recordTargetExploration(runId, '/', 'done', stateDir);
+  await recordTargetExploration(runId, '/orders', 'done', stateDir);
   await finishRun(runId, stateDir);
 
   const finished = await readRun(runId, stateDir);
   assert.equal(finished.status, 'finished');
   assert.equal(finished.stages.explore, 'done');
-  assert.deepEqual(finished.routeStages, { '/': 'done', '/orders': 'done' });
+  assert.deepEqual(finished.targetStages, { '/': 'done', '/orders': 'done' });
   assert.deepEqual((await resumeRun(runId, stateDir)).pendingCandidates, []);
 });
 
@@ -295,19 +297,19 @@ test('query-string routes retain distinct stage keys and complete exploration', 
     config: { ...config(), routes }, projectRoot: stateDir, stateDir,
   });
 
-  await recordRouteExploration(run.id, '/search?q=x', 'exploring', stateDir);
+  await recordTargetExploration(run.id, '/search?q=x', 'exploring', stateDir);
   let resumed = await resumeRun(run.id, stateDir);
-  assert.deepEqual(resumed.run.routeStages, { '/search?q=x': 'exploring', '/search?q=y': 'pending' });
-  assert.equal(resumed.run.routeStages['/search'], undefined);
+  assert.deepEqual(resumed.run.targetStages, { '/search?q=x': 'exploring', '/search?q=y': 'pending' });
+  assert.equal(resumed.run.targetStages['/search'], undefined);
   assert.equal(resumed.run.stages.explore, 'running');
 
-  await recordRouteExploration(run.id, '/search?q=x', 'done', stateDir);
+  await recordTargetExploration(run.id, '/search?q=x', 'done', stateDir);
   resumed = await resumeRun(run.id, stateDir);
-  assert.deepEqual(resumed.run.routeStages, { '/search?q=x': 'done', '/search?q=y': 'pending' });
+  assert.deepEqual(resumed.run.targetStages, { '/search?q=x': 'done', '/search?q=y': 'pending' });
   assert.equal(resumed.run.stages.explore, 'running');
 
-  await recordRouteExploration(run.id, '/search?q=y', 'done', stateDir);
+  await recordTargetExploration(run.id, '/search?q=y', 'done', stateDir);
   resumed = await resumeRun(run.id, stateDir);
-  assert.deepEqual(resumed.run.routeStages, { '/search?q=x': 'done', '/search?q=y': 'done' });
+  assert.deepEqual(resumed.run.targetStages, { '/search?q=x': 'done', '/search?q=y': 'done' });
   assert.equal(resumed.run.stages.explore, 'done');
 });

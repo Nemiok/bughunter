@@ -3,7 +3,7 @@ import type { Page } from 'playwright-core';
 import { describeScreen } from '../browser/screen.ts';
 import type { LaunchOptions } from '../browser/session.ts';
 import type { Profile } from '../profile/types.ts';
-import type { ScreenEntry } from '@bughunter/core';
+import type { ScreenEntry } from '../types.ts';
 import { defaultIdSegmentPattern, templatisedPathname, upsertScreens } from './screens-store.ts';
 
 export type CrawlOptions = {

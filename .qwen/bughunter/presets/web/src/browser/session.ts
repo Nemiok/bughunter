@@ -9,15 +9,17 @@ import { resolveTestDataFile } from '../profile/load.ts';
 import type {
   Candidate,
   Check,
-  Config,
-  ElementSnapshot,
   Journal,
+  Signal,
+} from '@bughunter/core';
+import type {
+  ElementSnapshot,
   ScrollInput,
   SemanticLocator,
-  Signal,
   Step,
   StepAction,
-} from '@bughunter/core';
+} from '../types.ts';
+import type { WebConfig as Config } from '../config.ts';
 import { defaultElementsPerSnapshot } from '../config.ts';
 import { collectElements, paginateElements, rankElements, toPlaywrightLocator } from './elements.ts';
 import type { Viewport } from './elements.ts';
@@ -226,7 +228,7 @@ export class SessionManager {
       const journal: Journal = {
         sessionId,
         runId,
-        route,
+        target: route,
         persona,
         steps: [],
         createdAt: new Date().toISOString(),
@@ -326,7 +328,7 @@ export class SessionManager {
       id: randomUUID(),
       kind: 'act',
       timestamp: new Date().toISOString(),
-      routeTemplate: this.currentRoute(session.page),
+      targetRef: this.currentRoute(session.page),
       action: input.action,
       ...(input.elementId === undefined ? {} : { elementId: input.elementId }),
       ...(value === undefined ? {} : { value }),
@@ -402,7 +404,7 @@ export class SessionManager {
       id: randomUUID(),
       kind: 'navigate',
       timestamp: new Date().toISOString(),
-      routeTemplate: this.currentRoute(session.page),
+      targetRef: this.currentRoute(session.page),
       path,
       signalIds: result.signals.map((signal) => signal.id),
     });
@@ -429,7 +431,7 @@ export class SessionManager {
       id: randomUUID(),
       kind: 'probe',
       timestamp: new Date().toISOString(),
-      routeTemplate: this.currentRoute(session.page),
+      targetRef: this.currentRoute(session.page),
       probe: kind,
       signalIds: result.signals.map((signal) => signal.id),
     });

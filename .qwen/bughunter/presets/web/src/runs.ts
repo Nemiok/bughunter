@@ -4,8 +4,10 @@ import {
   leaseNextExploration as leaseNextCoreExploration,
   promoteFindingToCandidate as promoteCoreFinding,
 } from '@bughunter/core';
-import type { Candidate, Config, ExploreNextResult, Run, Scope } from '@bughunter/core';
+import type { Candidate, ExploreNextResult, Run, Scope } from '@bughunter/core';
+import type { WebConfig as Config } from './config.ts';
 
+import { webExportTarget } from './export-playwright.ts';
 import { webFindingKinds } from './finding-kinds.ts';
 import { EXPLORER_PERSONAS } from './personas.ts';
 import { webReportFormat } from './report-format.ts';
@@ -16,22 +18,22 @@ import { webReportFormat } from './report-format.ts';
  */
 export function createRun(
   scope: Scope,
-  route: string | undefined,
+  target: string | undefined,
   deps: { config: Config; projectRoot: string; stateDir: string },
 ): Promise<Run> {
-  return createCoreRun(scope, route, { ...deps, personas: EXPLORER_PERSONAS });
+  return createCoreRun(scope, target, { ...deps, personas: EXPLORER_PERSONAS, targets: deps.config.routes });
 }
 
 export function leaseNextExploration(
   runId: string,
-  options: { route?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
+  options: { target?: string; staleLeaseMs?: number; now?: () => number; keepLeaseIds?: ReadonlySet<string> },
   stateDir: string,
 ): Promise<ExploreNextResult> {
   return leaseNextCoreExploration(runId, { personas: EXPLORER_PERSONAS, ...options }, stateDir);
 }
 
 export function finishRun(runId: string, stateDir: string): Promise<{ report: string }> {
-  return finishCoreRun(runId, stateDir, webReportFormat);
+  return finishCoreRun(runId, stateDir, webReportFormat, webExportTarget.kind);
 }
 
 export function promoteFindingToCandidate(input: {

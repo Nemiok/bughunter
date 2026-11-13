@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Config, Run } from '@bughunter/core';
+import type { Run } from '@bughunter/core';
+import type { WebConfig as Config } from '../src/config.ts';
 
 const execFile = promisify(execFileCallback);
 const presetRoot = resolve(import.meta.dirname, '..');
@@ -162,7 +163,7 @@ function demoConfig(baseUrl: string): Config {
     baseUrl,
     allowedOrigins: [baseUrl],
     routes: ['/', '/profile', '/orders', '/orders/new', '/clean'],
-    routeMap: {},
+    targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
     safety: { forbiddenActionText: ['delete'], readOnly: false },
@@ -173,7 +174,7 @@ function demoConfig(baseUrl: string): Config {
       anomalyTexts: ['undefined', 'NaN', '[object Object]', 'Invalid Date'],
       errorBoundarySelector: '[data-error-boundary]',
     },
-    tests: { unit: { command: null }, e2e: { dir: 'e2e/bughunter' } },
+    tests: { unit: { command: null }, generated: { dir: 'e2e/bughunter' } },
   };
 }
 
@@ -267,10 +268,10 @@ export default defineConfig({
     assert.equal(storedRun.id, runId);
     assert.equal(storedRun.scope, 'full');
 
-    const profileTask = await callValue(client, 'bh_explore_next', { runId, route: '/profile' });
+    const profileTask = await callValue(client, 'bh_explore_next', { runId, target: '/profile' });
     assert.equal(profileTask.status, 'task', JSON.stringify(profileTask));
     const opened = await callValue(client, 'bh_open', {
-      runId, route: profileTask.route, persona: profileTask.persona, leaseId: profileTask.leaseId,
+      runId, target: profileTask.target, persona: profileTask.persona, leaseId: profileTask.leaseId,
     });
     const sessionId = opened.sessionId;
     assert.equal(typeof sessionId, 'string');
@@ -311,10 +312,10 @@ export default defineConfig({
     assert.deepEqual(resumed.candidates, []);
     assert.deepEqual(await callValue(client, 'bh_close', { sessionId }), { ok: true });
     for (const route of ['/', '/orders', '/orders/new', '/clean']) {
-      const routeTask = await callValue(client, 'bh_explore_next', { runId, route });
+      const routeTask = await callValue(client, 'bh_explore_next', { runId, target: route });
       assert.equal(routeTask.status, 'task', JSON.stringify(routeTask));
       const completed = await callValue(client, 'bh_open', {
-        runId, route: routeTask.route, persona: routeTask.persona, leaseId: routeTask.leaseId,
+        runId, target: routeTask.target, persona: routeTask.persona, leaseId: routeTask.leaseId,
       });
       await callValue(client, 'bh_close', { sessionId: completed.sessionId });
     }

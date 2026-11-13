@@ -174,17 +174,17 @@ async function main(): Promise<void> {
   const signalIds = z.array(z.string().min(1));
 
   server.registerTool('bh_start_run', {
-    description: 'Создать прогон проверки приложения: diff/full/route исследует модель, screen (один шаблон экрана) и sweep (весь инвентарь) обходятся детерминированно через bh_sweep',
+    description: 'Создать прогон проверки приложения: diff/full/target исследует модель, sweep (весь инвентарь или один шаблон экрана) обходится детерминированно через bh_sweep',
     inputSchema: z.strictObject({
-      scope: z.enum(['diff', 'full', 'route', 'screen', 'sweep']),
-      route: z.string().startsWith('/').optional(),
+      scope: z.enum(['diff', 'full', 'target', 'sweep']),
+      target: z.string().startsWith('/').optional(),
     }),
-  }, async ({ scope, route }) => invoke(async () => {
+  }, async ({ scope, target }) => invoke(async () => {
     const ensured = await ensureConfig(stateDir);
     if (ensured.createdPath) throw new ToolError(`CONFIG_CREATED: ${ensured.createdPath}`);
     const projectRoot = await findProjectRoot();
-    const run = await createRun(scope, route, { config: ensured.config!, projectRoot, stateDir });
-    return { runId: run.id, routes: run.routes };
+    const run = await createRun(scope, target, { config: ensured.config!, projectRoot, stateDir });
+    return { runId: run.id, targets: run.targets };
   }));
 
   server.registerTool('bh_resume_run', {
@@ -193,7 +193,7 @@ async function main(): Promise<void> {
   }, async ({ runId: id }) => invoke(async () => {
     // Прерванные исследователи не вызывают bh_close: их lease возвращается в очередь здесь.
     await lifecycle.reclaim(id);
-    const { run, pendingCandidates } = await resumeRun(id, stateDir);
+    const { run, pendingCandidates } = await resumeRun(id, stateDir, webPreset.exportTarget.kind);
     return {
       runId: run.id,
       stages: run.stages,
@@ -204,10 +204,10 @@ async function main(): Promise<void> {
   }));
 
   server.registerTool('bh_explore_next', {
-    description: 'Получить следующую задачу исследования: маршрут, персону и lease для bh_open',
-    inputSchema: z.strictObject({ runId, route: z.string().min(1).optional() }),
-  }, async ({ runId: id, route }) => invoke(() =>
-    lifecycle.leaseNext(id, route === undefined ? {} : { route })));
+    description: 'Получить следующую задачу исследования: цель, персону и lease для bh_open',
+    inputSchema: z.strictObject({ runId, target: z.string().min(1).optional() }),
+  }, async ({ runId: id, target }) => invoke(() =>
+    lifecycle.leaseNext(id, target === undefined ? {} : { target })));
 
   server.registerTool('bh_finish_run', {
     description: 'Записать отчёт и завершить существующий прогон',
@@ -217,12 +217,12 @@ async function main(): Promise<void> {
   server.registerTool('bh_open', {
     description: 'Открыть маршрут в новой браузерной сессии',
     inputSchema: z.strictObject({
-      runId, route: z.string().min(1), persona: z.string().min(1), leaseId: z.string().min(1).optional(),
+      runId, target: z.string().min(1), persona: z.string().min(1), leaseId: z.string().min(1).optional(),
     }),
-  }, async ({ runId: id, route, persona, leaseId }) => invoke(async () => {
+  }, async ({ runId: id, target, persona, leaseId }) => invoke(async () => {
     const opened = await lifecycle.open({
       runId: id,
-      target: route,
+      target,
       persona,
       ...(leaseId === undefined ? {} : { leaseId }),
     });
