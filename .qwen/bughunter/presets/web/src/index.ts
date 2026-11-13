@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   }
 
   const { ensureConfig, loadConfig } = await import('./config.ts');
-  const { findProjectRoot } = await import('./project.ts');
+  const { findProjectRoot } = core;
   const {
     completeExplorationLease, createRun, finishRun, leaseNextExploration, readRun, reclaimExplorationLeases,
     recordCandidateTest, recordRouteExploration, recordRunStage, releaseExplorationLease, resumeRun, triageCandidate,
@@ -69,8 +69,7 @@ async function main(): Promise<void> {
   } = await import('./run-store.ts');
   const { reproduceCandidate } = await import('./reproduce.ts');
   const { exportE2e } = await import('./export/playwright.ts');
-  const { detectTests } = await import('./tests/detect.ts');
-  const { verifyRed } = await import('./tests/verify-red.ts');
+  const { detectWebTests, verifyWebRed } = await import('./test-runner.ts');
   const { SessionManager, resolveLaunchOptions } = await import('./browser/session.ts');
   const { loadProfile } = await import('./profile/load.ts');
   const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
@@ -435,7 +434,7 @@ async function main(): Promise<void> {
     inputSchema: z.strictObject({ path: z.string().min(1) }),
   }, async ({ path }) => invoke(async () => {
     const config = await loadConfig(stateDir);
-    return detectTests(path, { unitCommand: config.tests.unit.command });
+    return detectWebTests(path, { unitCommand: config.tests.unit.command });
   }));
 
   server.registerTool('bh_verify_red', {
@@ -450,7 +449,7 @@ async function main(): Promise<void> {
     if ((id === undefined) !== (candidateId === undefined)) throw new Error('TEST_ASSOCIATION_INCOMPLETE');
     const absoluteTestFile = resolve(testFile);
     const config = await loadConfig(stateDir);
-    const verdict = await verifyRed(absoluteTestFile, {
+    const verdict = await verifyWebRed(absoluteTestFile, {
       unitCommand: config.tests.unit.command,
       ...(kind === undefined ? {} : { kind }),
     });

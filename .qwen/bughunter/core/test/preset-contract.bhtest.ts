@@ -23,7 +23,7 @@ function stubPreset(name = 'stub'): Preset {
     replay: { replay: unused },
     generateTest: { generate: unused },
     profile: { load: unused, testDataFile: unused },
-    testRunner: { detect: unused, command: unused, parseReport: unused, ownsProject: unused, kinds: [] },
+    testRunner: { resolveKind: unused, command: unused, parseReport: unused, ownsProject: unused, kinds: [] },
     personas: { roster: [], brief: unused },
     findingKinds: { kinds: [], syntheticStep: unused },
     sweepVisit: { visit: unused },

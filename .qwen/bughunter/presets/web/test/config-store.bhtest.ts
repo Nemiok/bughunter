@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { after, test } from 'node:test';
 import { defaultElementsPerSnapshot, ensureConfig, loadConfig } from '../src/config.ts';
-import { findProjectRoot } from '../src/project.ts';
+import { findProjectRoot } from '@bughunter/core';
 import { createRun, readRun, updateRun, writeJsonAtomic } from '../src/run-store.ts';
 import type { Config } from '@bughunter/core';
 

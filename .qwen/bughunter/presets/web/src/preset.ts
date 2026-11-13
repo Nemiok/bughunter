@@ -1,6 +1,7 @@
 import type { Preset } from '@bughunter/core';
 
 import { EXPLORER_PERSONAS } from './run-store.ts';
+import { webTestRunner } from './test-runner.ts';
 
 /**
  * Хук объявлен, но ещё не вынесен из кода пресета: вызов падает явно, а не молча.
@@ -28,13 +29,7 @@ export const webPreset: Preset = {
   replay: { replay: pending('replay.replay') },
   generateTest: { generate: pending('generateTest.generate') },
   profile: { load: pending('profile.load'), testDataFile: pending('profile.testDataFile') },
-  testRunner: {
-    detect: pending('testRunner.detect'),
-    command: pending('testRunner.command'),
-    parseReport: pending('testRunner.parseReport'),
-    ownsProject: pending('testRunner.ownsProject'),
-    kinds: ['e2e', 'unit'],
-  },
+  testRunner: webTestRunner,
   personas: { roster: EXPLORER_PERSONAS, brief: pending('personas.brief') },
   findingKinds: {
     kinds: ['response-captured', 'extract-failed', 'navigation-failed', 'response-missing', 'reset-unsupported'],

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
-import { verifyRed } from '../src/tests/verify-red.ts';
+import { verifyWebRed as verifyRed } from '../src/test-runner.ts';
 
 const fixtures = {
   jest: resolve(import.meta.dirname, '../../../fixtures/jest-project'),

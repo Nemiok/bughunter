@@ -59,13 +59,33 @@ export type ProfileSchema = {
   testDataFile(profile: unknown, relativePath: string): string;
 };
 
-/** Как запускать тесты и как понимать отчёт: вердикт red/green/broken классифицирует core. */
+/**
+ * Нейтральная сводка одного запуска теста. Core выносит вердикт `red | green | broken`
+ * только по ней, поэтому формат отчёта раннера остаётся знанием пресета.
+ */
+export type TestRunSummary = {
+  /** Раннер отчитался ровно по одному выбранному файлу. */
+  singleFile: boolean;
+  tests: number;
+  passed: number;
+  failed: number;
+  /** Ошибки вне ассертов: синтаксис, импорт, таймаут раннера, глобальные ошибки. */
+  runtimeErrors: boolean;
+  /** Все падения — обычные провалы ассертов, а не инфраструктура. */
+  assertionFailuresOnly: boolean;
+  /** Специфичные раннеру признаки чистого прогона: флаги успеха, отсутствие flaky и skipped. */
+  cleanPass: boolean;
+  names: string[];
+  diagnostic: string;
+};
+
+/** Как запускать тесты и как понимать отчёт; вердикт red/green/broken классифицирует core. */
 export type TestRunner = {
-  detect(projectRoot: string, target: string): Promise<string | null>;
-  command(kind: string, projectRoot: string, testFile: string, reportFile: string): string[];
-  parseReport(kind: string, raw: unknown): { passed: number; failed: number; assertionFailed: boolean };
-  ownsProject(packageJson: unknown): boolean;
   kinds: string[];
+  resolveKind(input: { projectRoot: string; testFile: string; requested?: string; unitCommand?: string | null }): Promise<string | null>;
+  command(kind: string, input: { projectRoot: string; testFile: string; reportFile: string; unitCommand?: string | null }): Promise<{ command: string; env?: NodeJS.ProcessEnv }>;
+  parseReport(kind: string, raw: unknown, input: { testFile: string; exitCode: number | null }): TestRunSummary;
+  ownsProject(packageJson: unknown): boolean;
 };
 
 export type Personas = {

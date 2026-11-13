@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, test } from 'node:test';
-import { detectTests } from '../src/tests/detect.ts';
+import { detectWebTests as detectTests } from '../src/test-runner.ts';
 
 const jestFixture = resolve(import.meta.dirname, '../../../fixtures/jest-project');
 const vitestFixture = resolve(import.meta.dirname, '../../../fixtures/vitest-project');
