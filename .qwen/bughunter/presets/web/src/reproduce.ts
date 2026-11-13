@@ -13,7 +13,7 @@ import type { Candidate, Check, Config, Journal, Signal, Step } from './types.ts
 
 const maximumEvaluations = 20;
 const maximumDurationMs = 300_000;
-const defaultStateDir = resolve(import.meta.dirname, '../state');
+import { defaultStateDir } from './paths.ts';
 
 export type ReproductionResult = {
   reproduced: `${number}/${number}`;

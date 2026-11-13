@@ -1,5 +1,5 @@
-server/node_modules/
-server/fixtures/*/node_modules/
-server/fixtures/*/.playwright-output/
-state/runs/
-state/auth/
+node_modules/
+fixtures/*/node_modules/
+fixtures/*/.playwright-output/
+presets/web/state/runs/
+presets/web/state/auth/

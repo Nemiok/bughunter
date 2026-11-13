@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
-import type { ViteDevServer } from '../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
-import { SCENARIO_KEY } from '../fixtures/bi-app/src/mocks/scenarios.ts';
+import type { ViteDevServer } from '../../../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
+import { SCENARIO_KEY } from '../../../fixtures/bi-app/src/mocks/scenarios.ts';
 import { SessionManager, type StateResult } from '../src/browser/session.ts';
 import { crawlScreens, type CrawlResult } from '../src/discovery/crawl.ts';
 import { readScreens, templatisedPathname, upsertScreens } from '../src/discovery/screens-store.ts';
@@ -15,7 +15,7 @@ import { runSweep } from '../src/sweep.ts';
 import type { Config, ScreenEntry } from '../src/types.ts';
 import type { Profile } from '../src/profile/types.ts';
 
-const fixtureRoot = resolve(import.meta.dirname, '../fixtures/bi-app');
+const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/bi-app');
 const profileSource = join(fixtureRoot, 'bughunter-profile');
 const acceptanceReportPath = join(fixtureRoot, 'ACCEPTANCE.md');
 
@@ -49,7 +49,7 @@ export type BiAcceptanceContext = {
  * репозитория не затрагивается, поэтому прогоны приёмки не оставляют следов в доказательствах.
  */
 export async function biAcceptanceContext(): Promise<BiAcceptanceContext> {
-  const { createServer } = await import('../fixtures/bi-app/node_modules/vite/dist/node/index.js');
+  const { createServer } = await import('../../../fixtures/bi-app/node_modules/vite/dist/node/index.js');
   const server: ViteDevServer = await createServer({
     root: fixtureRoot,
     configFile: resolve(fixtureRoot, 'vite.config.ts'),

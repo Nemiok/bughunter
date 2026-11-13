@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import { cliInstallHint } from './cli-host.ts';
+import { defaultStateDir } from './paths.ts';
 
 const missingDependenciesMessage = `Зависимости Bughunter не установлены. Выполните: ${cliInstallHint()}`;
 
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
   const { z } = zod;
   const stateDir = process.env.BUGHUNTER_STATE_DIR
     ? resolve(process.env.BUGHUNTER_STATE_DIR)
-    : resolve(import.meta.dirname, '../../state');
+    : defaultStateDir;
   let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
   let contextPromise: ReturnType<typeof loadContext> | undefined;
   const explorations = new Map<string, { runId: string; route: string; leaseId?: string }>();

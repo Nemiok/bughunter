@@ -5,8 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 import { detectTests } from '../src/tests/detect.ts';
 
-const jestFixture = resolve(import.meta.dirname, '../fixtures/jest-project');
-const vitestFixture = resolve(import.meta.dirname, '../fixtures/vitest-project');
+const jestFixture = resolve(import.meta.dirname, '../../../fixtures/jest-project');
+const vitestFixture = resolve(import.meta.dirname, '../../../fixtures/vitest-project');
 const temporaryDirectories: string[] = [];
 
 after(async () => {

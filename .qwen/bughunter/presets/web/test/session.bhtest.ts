@@ -21,7 +21,7 @@ before(async () => {
   try {
     await fetch(demoOrigin, { signal: AbortSignal.timeout(1000) });
   } catch {
-    const demoRoot = resolve(import.meta.dirname, '../fixtures/buggy-app');
+    const demoRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
     demoProcess = spawn(process.execPath, [join(demoRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '4173', '--strictPort'], {
       cwd: demoRoot,
       stdio: 'ignore',

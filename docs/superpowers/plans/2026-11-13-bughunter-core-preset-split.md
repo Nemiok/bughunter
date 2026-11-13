@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Поведение веб-пресета не меняется. Исключение — осознанный однократный разрыв схемы `state/*.json` и `config.json` (спецификация 6.10), миграция не пишется.
-- Базовая линия до начала: `env -u PLAYWRIGHT_BROWSERS_PATH npm test` → **253 pass, 0 fail, 1 skipped (254)**, `npm run typecheck` → 0 ошибок. Каждый шаг, меняющий код, заканчивается зелёной базовой линией.
+- Базовая линия до начала: `env -u PLAYWRIGHT_BROWSERS_PATH npm test` → **253 pass, 0 fail, 1 skipped (254)**, `npm run typecheck` → 0 ошибок. Каждый шаг, меняющий код, заканчивается зелёной линией: **`fail 0` и `skipped 1`**, а не буквальное число 253 — оно растёт на число тестов, добавленных предыдущими задачами.
 - Зависимости: core — только `@modelcontextprotocol/sdk` и `zod`; `playwright-core` живёт исключительно в `presets/web/package.json`. Новых рантайм-зависимостей не появляется.
 - Запуск без сборки: все файлы остаются `.ts` с стираемым синтаксисом (`import type`, никаких enum/namespace/параметров-свойств).
 - **Core не вычисляет `stateDir` сам.** Все функции core принимают `stateDir: string` обязательным параметром; единственный резолвер по умолчанию — `presets/web/src/paths.ts`. Это устраняет сегодняшнее расхождение (`run-store.ts:9` и `config.ts:7` — `../../state`, `reproduce.ts:16` и `sweep.ts:22` — `../state`).
@@ -37,9 +37,9 @@
 ### Task 1: Монорепо-скелет и перенос дерева в `presets/web`
 
 **Files:**
-- Create: `package.json` (корень, workspaces), `core/package.json`, `core/tsconfig.json`, `presets/web/package.json`, `presets/web/tsconfig.json`, `presets/web/src/paths.ts`
+- Create: `.qwen/bughunter/package.json` (корень workspaces — не корень репозитория), `.qwen/bughunter/core/package.json`, `presets/web/src/paths.ts`
 - Modify: `.mcp.json`, `.gitignore`, `.qwen/bughunter/.gitignore`, `presets/web/test/portable.bhtest.ts`
-- Move: `.qwen/bughunter/server/src/**` → `.qwen/bughunter/presets/web/src/**`; `.qwen/bughunter/server/test/**` → `.qwen/bughunter/presets/web/test/**`; `.qwen/bughunter/server/fixtures/**` → `.qwen/bughunter/fixtures/**`; `.qwen/bughunter/server/state` → `.qwen/bughunter/presets/web/state`; `.qwen/bughunter/server/{package.json,tsconfig.json,package-lock.json}` → `presets/web/`
+- Move: `.qwen/bughunter/server/src/**` → `.qwen/bughunter/presets/web/src/**`; `.qwen/bughunter/server/test/**` → `.qwen/bughunter/presets/web/test/**`; `.qwen/bughunter/server/fixtures/**` → `.qwen/bughunter/fixtures/**`; `.qwen/bughunter/server/state` → `.qwen/bughunter/presets/web/state`; `.qwen/bughunter/server/{package.json,tsconfig.json}` → `presets/web/`; `package-lock.json` пресета удаляется — lock regenerates в корне workspaces
 
 **Interfaces:**
 - Consumes: —
@@ -101,7 +101,8 @@ git commit -m "refactor: move the web tool into presets/web and scaffold the cor
 ### Task 2: Контракт пресета
 
 **Files:**
-- Create: `core/src/preset.ts`, `core/src/index.ts`, `core/test/preset-contract.bhtest.ts`
+- Create: `core/src/preset.ts`, `core/src/index.ts`, `core/tsconfig.json`, `core/test/preset-contract.bhtest.ts`
+- Move: `presets/web/src/types.ts` → `core/src/types.ts` (без изменений содержимого: доменная лексика в литералах вычищается в задаче 9, но типы нужны всем последующим задачам уже здесь)
 - Modify: `presets/web/src/index.ts` (регистрация пресета), `presets/web/test/portable.bhtest.ts` (если меняется число инструментов — не меняется)
 
 **Interfaces:**
@@ -177,6 +178,7 @@ git add core presets/web && git commit -m "feat(core): define the preset contrac
 
 **Files:**
 - Create: `presets/web/src/test-runner.ts`, `core/src/verify-red.ts`, `core/src/detect.ts`
+- Move: `presets/web/src/project.ts` → `core/src/project.ts`, `presets/web/src/cli-host.ts` → `core/src/cli-host.ts` (первые core-модули, которым они нужны)
 - Modify: `presets/web/src/tests/verify-red.ts` (удаляется), `presets/web/src/tests/detect.ts` (удаляется), `presets/web/src/index.ts`
 - Test: `core/test/verify-red.bhtest.ts` (перенос из `presets/web/test/verify-red.bhtest.ts`), `core/test/detect.bhtest.ts`
 
@@ -214,6 +216,7 @@ git add core presets/web && git commit -m "refactor(core): extract the test runn
 
 **Files:**
 - Create: `core/src/run-store.ts`, `presets/web/src/personas.ts`, `presets/web/src/report-format.ts`
+- Move: `presets/web/src/config.ts` → `core/src/config.ts` (загрузчик, валидация, шаблон, `CONFIG_CREATED`; разделение полей на общие и preset-специфичные — в задаче 9)
 - Modify: `presets/web/src/run-store.ts` (удаляется), `presets/web/src/index.ts`
 - Test: `core/test/run-store.bhtest.ts` (новые тесты), перенос `presets/web/test/{explore-queue,report-resume,config-store}.bhtest.ts` в `core/test/` там, где они проверяют core-логику
 
@@ -250,9 +253,9 @@ git add core presets/web && git commit -m "refactor(core): move personas and rep
 ### Task 5: Сборка кандидата переезжает в core
 
 **Files:**
-- Create: `core/src/candidate.ts`
-- Modify: `presets/web/src/browser/session.ts` (из `reportCandidate` :447-504, дедупликация :855-871, лимит шагов :815-833, журнал :843-845, артефакты :546-551), `presets/web/src/index.ts`
-- Test: `core/test/candidate.bhtest.ts`
+- Create: `core/src/candidate.ts`, `core/src/signature.ts`
+- Modify: `presets/web/src/browser/session.ts` (из `reportCandidate` :447-504, дедупликация :855-871, лимит шагов :815-833, журнал :843-845, артефакты :546-551), `presets/web/src/detectors/signals.ts` (из него уезжают `normalizeMessage` и `signalSignature`), `presets/web/src/index.ts`
+- Test: `core/test/candidate.bhtest.ts`, `core/test/signature.bhtest.ts` (перенос соответствующих проверок из `presets/web/test/signals.bhtest.ts`)
 
 **Interfaces:**
 - Consumes: `Checks`, `Detectors` из задачи 2; `readSharedMemory`, `writeJsonAtomic` из задачи 4

@@ -2,8 +2,8 @@
 **/node_modules/
 
 # Bughunter runtime state (secrets, gate copies, large artifacts)
-.qwen/bughunter/state/runs/
-.qwen/bughunter/state/auth/
+.qwen/bughunter/presets/web/state/runs/
+.qwen/bughunter/presets/web/state/auth/
 .kimi-code/bughunter/state/runs/
 .kimi-code/bughunter/state/auth/
 

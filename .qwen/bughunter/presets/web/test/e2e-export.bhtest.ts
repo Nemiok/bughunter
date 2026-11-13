@@ -6,7 +6,7 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { test } from 'node:test';
-import type { ViteDevServer } from '../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
+import type { ViteDevServer } from '../../../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
 import { exportE2e, generatePlaywrightTest } from '../src/export/playwright.ts';
@@ -14,7 +14,7 @@ import { reproduceCandidate } from '../src/reproduce.ts';
 import { createRun, triageCandidate, writeJsonAtomic } from '../src/run-store.ts';
 import type { Candidate, Config, Step } from '../src/types.ts';
 
-const fixtureRoot = resolve(import.meta.dirname, '../fixtures/buggy-app');
+const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 const repositoryRoot = resolve(import.meta.dirname, '../../../..');
 const originalFiles = [
   'index.html',
@@ -125,7 +125,7 @@ async function availablePort(): Promise<number> {
 async function startVite(root: string, cacheDir: string, port: number, delayOrders = false, configurationFile?: string): Promise<{ server: ViteDevServer; baseUrl: string }> {
   const canonicalRoot = await realpath(root);
   const configFile = configurationFile ? await realpath(configurationFile) : join(canonicalRoot, 'vite.config.ts');
-  const { createServer } = await import('../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
+  const { createServer } = await import('../../../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
   const server = await createServer({
     root: canonicalRoot,
     configFile,

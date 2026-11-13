@@ -11,7 +11,7 @@ import { SessionManager } from '../src/browser/session.ts';
 import { createRun } from '../src/run-store.ts';
 import type { Config, Signal } from '../src/types.ts';
 
-const fixtureRoot = resolve(import.meta.dirname, '../fixtures/buggy-app');
+const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 const serverRoot = resolve(import.meta.dirname, '..');
 const coreToolNames = [
   'bh_start_run',
@@ -83,7 +83,7 @@ function signalsOfType(signals: Signal[], kind: string): Signal[] {
 }
 
 test('scripted real-Chrome discovery finds seeded bugs 1, 2, 4 and 5 and stays clean', { timeout: 60_000 }, async () => {
-  const { createServer } = await import('../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
+  const { createServer } = await import('../../../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
   const vite = await createServer({
     root: fixtureRoot,
     configFile: join(fixtureRoot, 'vite.config.ts'),
@@ -223,7 +223,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     }
 
     const detected = await callValue(client, 'bh_detect_tests', {
-      path: resolve(import.meta.dirname, '../fixtures/jest-project/sum.test.js'),
+      path: resolve(import.meta.dirname, '../../../fixtures/jest-project/sum.test.js'),
     });
     assert.deepEqual(detected, {
       framework: 'jest',
@@ -231,7 +231,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
       examples: ['broken.test.js', 'green.test.js', 'import.test.js'],
     });
     const verified = await callValue(client, 'bh_verify_red', {
-      testFile: resolve(import.meta.dirname, '../fixtures/jest-project/green.test.js'),
+      testFile: resolve(import.meta.dirname, '../../../fixtures/jest-project/green.test.js'),
     });
     assert.equal(verified.status, 'green', JSON.stringify(verified));
 
@@ -305,7 +305,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     assert.deepEqual(Object.keys(exported).sort(), ['file', 'placedInProject']);
     assert.equal(exported.placedInProject, false);
     assert.equal(typeof exported.file, 'string');
-    const unitTestFile = resolve(import.meta.dirname, '../fixtures/jest-project/green.test.js');
+    const unitTestFile = resolve(import.meta.dirname, '../../../fixtures/jest-project/green.test.js');
     const associated = await callValue(client, 'bh_verify_red', {
       testFile: relative(await realpath(projectRoot), unitTestFile), runId, candidateId, kind: 'unit',
     });
@@ -385,7 +385,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     }), 'utf8');
     const incomplete = await client.callTool({
       name: 'bh_verify_red',
-      arguments: { runId, testFile: resolve(import.meta.dirname, '../fixtures/jest-project/green.test.js') },
+      arguments: { runId, testFile: resolve(import.meta.dirname, '../../../fixtures/jest-project/green.test.js') },
     });
     assert.equal(incomplete.isError, true);
     assert.ok(Array.isArray(incomplete.content));
@@ -454,6 +454,7 @@ test('startup reports missing dependencies on stderr without polluting stdout', 
   const entry = join(directory, 'index.ts');
   await copyFile(join(serverRoot, 'src/index.ts'), entry);
   await copyFile(join(serverRoot, 'src/cli-host.ts'), join(directory, 'cli-host.ts'));
+  await copyFile(join(serverRoot, 'src/paths.ts'), join(directory, 'paths.ts'));
   try {
     const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -468,7 +469,7 @@ test('startup reports missing dependencies on stderr without polluting stdout', 
     });
     assert.notEqual(exitCode, 0);
     assert.equal(stdout, '');
-    assert.ok(stderr.includes('Зависимости Bughunter не установлены. Выполните: cd .qwen/bughunter/server && npm ci'));
+    assert.ok(stderr.includes('Зависимости Bughunter не установлены. Выполните: cd .qwen/bughunter && npm ci'));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -6,9 +6,9 @@ import { after, test } from 'node:test';
 import { verifyRed } from '../src/tests/verify-red.ts';
 
 const fixtures = {
-  jest: resolve(import.meta.dirname, '../fixtures/jest-project'),
-  vitest: resolve(import.meta.dirname, '../fixtures/vitest-project'),
-  demo: resolve(import.meta.dirname, '../fixtures/buggy-app'),
+  jest: resolve(import.meta.dirname, '../../../fixtures/jest-project'),
+  vitest: resolve(import.meta.dirname, '../../../fixtures/vitest-project'),
+  demo: resolve(import.meta.dirname, '../../../fixtures/buggy-app'),
 };
 const temporaryDirectories: string[] = [];
 const cases = [

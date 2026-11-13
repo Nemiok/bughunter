@@ -19,7 +19,7 @@ import type { Candidate, Check, Finding, Journal, SweepProgress } from './types.
 export const defaultScreensPerSweep = 25;
 export const defaultResponseSettleMs = 2_500;
 
-const defaultStateDir = resolve(import.meta.dirname, '../state');
+import { defaultStateDir } from './paths.ts';
 
 export type SweepResult = {
   /** Шаблоны экранов, пройденные этим вызовом. */

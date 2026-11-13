@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
-import type { ViteDevServer } from '../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
-import { SEED_VERSION, dataset } from '../fixtures/bi-app/src/mocks/seed.ts';
-import { RESET_ENDPOINT, SCENARIO_KEY } from '../fixtures/bi-app/src/mocks/scenarios.ts';
-import { formatNumber, formatShare } from '../fixtures/bi-app/src/format.ts';
-import { roundHalfUp } from '../fixtures/bi-app/src/mocks/bugs.ts';
+import type { ViteDevServer } from '../../../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
+import { SEED_VERSION, dataset } from '../../../fixtures/bi-app/src/mocks/seed.ts';
+import { RESET_ENDPOINT, SCENARIO_KEY } from '../../../fixtures/bi-app/src/mocks/scenarios.ts';
+import { formatNumber, formatShare } from '../../../fixtures/bi-app/src/format.ts';
+import { roundHalfUp } from '../../../fixtures/bi-app/src/mocks/bugs.ts';
 
-const fixtureRoot = resolve(import.meta.dirname, '../fixtures/bi-app');
+const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/bi-app');
 let vite: ViteDevServer | undefined;
 let browser: Browser;
 let baseUrl: string;
@@ -36,7 +36,7 @@ async function fetchJson(page: Page, url: string): Promise<unknown> {
  * тот же приём, которым test/reproduce.bhtest.ts поднимает buggy-app.
  */
 export async function startBiApp(): Promise<{ baseUrl: string; server: ViteDevServer }> {
-  const { createServer } = await import('../fixtures/bi-app/node_modules/vite/dist/node/index.js');
+  const { createServer } = await import('../../../fixtures/bi-app/node_modules/vite/dist/node/index.js');
   const server: ViteDevServer = await createServer({
     root: fixtureRoot,
     configFile: resolve(fixtureRoot, 'vite.config.ts'),

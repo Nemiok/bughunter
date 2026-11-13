@@ -13,9 +13,10 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { Config, Run } from '../src/types.ts';
 
 const execFile = promisify(execFileCallback);
-const serverRoot = resolve(import.meta.dirname, '..');
-const workspaceRoot = resolve(serverRoot, '../../..');
-const fixtureRoot = join(serverRoot, 'fixtures');
+const presetRoot = resolve(import.meta.dirname, '..');
+const productRoot = resolve(presetRoot, '../..');
+const workspaceRoot = resolve(productRoot, '../..');
+const fixtureRoot = join(productRoot, 'fixtures');
 const sourceDemo = join(fixtureRoot, 'buggy-app');
 const coreToolNames = [
   'bh_start_run',
@@ -72,8 +73,8 @@ async function copyPortableProject(destination: string): Promise<void> {
       filter(source) {
         const path = relative(workspaceRoot, source).split(sep);
         return !path.includes('node_modules')
-          && relative(workspaceRoot, source) !== '.qwen/bughunter/state/runs'
-          && relative(workspaceRoot, source) !== '.qwen/bughunter/state/auth';
+          && relative(workspaceRoot, source) !== '.qwen/bughunter/presets/web/state/runs'
+          && relative(workspaceRoot, source) !== '.qwen/bughunter/presets/web/state/auth';
       },
     });
     await cp(join(staging, '.qwen'), join(destination, '.qwen'), { recursive: true });
@@ -205,11 +206,11 @@ test('clean copied project is self-contained and isolates project tools', { time
   try {
     await copyPortableProject(projectRoot);
     assert.equal(await pathExists(join(projectRoot, 'node_modules')), false);
-    assert.equal(await pathExists(join(projectRoot, '.qwen/bughunter/server/node_modules')), false);
-    assert.equal(await pathExists(join(projectRoot, '.qwen/bughunter/state/runs')), false);
-    assert.equal(await pathExists(join(projectRoot, '.qwen/bughunter/state/auth')), false);
+    assert.equal(await pathExists(join(projectRoot, '.qwen/bughunter/node_modules')), false);
+    assert.equal(await pathExists(join(projectRoot, '.qwen/bughunter/presets/web/state/runs')), false);
+    assert.equal(await pathExists(join(projectRoot, '.qwen/bughunter/presets/web/state/auth')), false);
     await run('git', ['init', '--initial-branch=main'], projectRoot);
-    await run('npm', ['ci', '--no-audit', '--no-fund'], join(projectRoot, '.qwen/bughunter/server'));
+    await run('npm', ['ci', '--no-audit', '--no-fund'], join(projectRoot, '.qwen/bughunter'));
     await run('npm', ['ci', '--no-audit', '--no-fund'], projectRoot);
 
     const packageJson = JSON.parse(await readFile(join(projectRoot, 'package.json'), 'utf8')) as {
@@ -237,12 +238,12 @@ export default defineConfig({
     assert.equal(unitTests.includes('.bhtest.ts'), false, unitTests);
 
     demo = await startDemo(projectRoot);
-    const stateDir = join(projectRoot, '.qwen/bughunter/state');
+    const stateDir = join(projectRoot, '.qwen/bughunter/presets/web/state');
     await mkdir(stateDir, { recursive: true });
     await writeFile(join(stateDir, 'config.json'), `${JSON.stringify(demoConfig(demo.baseUrl), null, 2)}\n`, 'utf8');
     transport = new StdioClientTransport({
       command: process.execPath,
-      args: [join(projectRoot, '.qwen/bughunter/server/src/index.ts')],
+      args: [join(projectRoot, '.qwen/bughunter/presets/web/src/index.ts')],
       cwd: projectRoot,
       env: cleanEnvironment(),
       stderr: 'pipe',

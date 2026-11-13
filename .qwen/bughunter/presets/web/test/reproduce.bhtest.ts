@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
-import type { ViteDevServer } from '../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
+import type { ViteDevServer } from '../../../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
 import { signalSignature } from '../src/detectors/signals.ts';
@@ -12,12 +12,12 @@ import { checkViolated, replayAndMinimize, reproduceCandidate } from '../src/rep
 import { createRun, writeJsonAtomic } from '../src/run-store.ts';
 import type { Candidate, Config, Step } from '../src/types.ts';
 
-const fixtureRoot = resolve(import.meta.dirname, '../fixtures/buggy-app');
+const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 let vite: ViteDevServer;
 let baseUrl: string;
 
 before(async () => {
-  const { createServer } = await import('../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
+  const { createServer } = await import('../../../fixtures/buggy-app/node_modules/vite/dist/node/index.js');
   vite = await createServer({
     root: fixtureRoot,
     configFile: join(fixtureRoot, 'vite.config.ts'),

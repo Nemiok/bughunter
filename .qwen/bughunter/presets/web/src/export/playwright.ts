@@ -9,7 +9,7 @@ import { readCandidate, readRun, readSharedMemory, recordCandidateTest } from '.
 import type { SharedMemoryEntry } from '../run-store.ts';
 import type { Candidate, Config, Journal, Step } from '../types.ts';
 
-const defaultStateDir = resolve(import.meta.dirname, '../../state');
+import { defaultStateDir } from '../paths.ts';
 const jsonString = '"(?:\\\\.|[^"\\\\])*"';
 
 function allowedUrl(path: string, config: Config): string {

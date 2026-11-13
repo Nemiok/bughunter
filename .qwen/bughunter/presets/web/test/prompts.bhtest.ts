@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { EXPLORER_PERSONAS } from '../src/run-store.ts';
 
-const projectRoot = join(import.meta.dirname, '../../../..');
+const projectRoot = join(import.meta.dirname, '../../../../..');
 const finalResultInstruction = 'последнее сообщение — полный самостоятельный результат для вызывающего агента';
 
 type Frontmatter = Record<string, string | string[]>;
@@ -145,7 +145,7 @@ test('agents invoke their reusable skills and reviewer/writer keep their boundar
   const reviewer = (await readPrompt('.qwen/agents/bh-reviewer.md')).body;
   const writer = (await readPrompt('.qwen/agents/bh-test-writer.md')).body;
   assert.ok(explorer.includes('bughunter-oracles'));
-  assert.ok(reviewer.includes('.qwen/bughunter/state/runs/'));
+  assert.ok(reviewer.includes('.qwen/bughunter/presets/web/state/runs/'));
   assert.ok(writer.includes('bughunter-red-test'));
   assert.match(writer, /не более (?:чем )?(?:за )?(?:3|тр[её]х)/i);
   assert.match(writer, /код приложения не (?:меняй|изменяй)/i);

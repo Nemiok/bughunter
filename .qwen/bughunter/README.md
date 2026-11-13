@@ -88,7 +88,7 @@
   "mcpServers": {
     "bughunter": {
       "command": "node",
-      "args": [".qwen/bughunter/server/src/index.ts"],
+      "args": [".qwen/bughunter/presets/web/src/index.ts"],
       "startupTimeoutMs": 30000,
       "toolTimeoutMs": 600000
     }
@@ -96,12 +96,12 @@
 }
 ```
 
-По умолчанию stdio MCP стартует с `cwd` = корень проекта. `toolTimeoutMs` оставляет время на воспроизведение и запуск тестов. Проектный сервер из `.mcp.json` подтверждается один раз: `/mcp` в интерактивной сессии или `qwen mcp enable bughunter` (сброс прежних решений — `qwen mcp reset-project-choices`). Команды `qwen mcp approve` не существует. Проверка: `qwen mcp list` показывает `✓ bughunter: node .qwen/bughunter/server/src/index.ts (stdio) - Connected`.
+По умолчанию stdio MCP стартует с `cwd` = корень проекта. `toolTimeoutMs` оставляет время на воспроизведение и запуск тестов. Проектный сервер из `.mcp.json` подтверждается один раз: `/mcp` в интерактивной сессии или `qwen mcp enable bughunter` (сброс прежних решений — `qwen mcp reset-project-choices`). Команды `qwen mcp approve` не существует. Проверка: `qwen mcp list` показывает `✓ bughunter: node .qwen/bughunter/presets/web/src/index.ts (stdio) - Connected`.
 
-4. Установите только зависимости сервера из lockfile:
+4. Установите зависимости core и пресета из lockfile (корень workspaces):
 
 ```sh
-cd .qwen/bughunter/server
+cd .qwen/bughunter
 npm ci
 ```
 
@@ -117,7 +117,7 @@ npm ci
 
 Ограничения origin, forbidden actions и read-only форм по-прежнему enforced сервером.
 
-6. Отредактируйте `.qwen/bughunter/state/config.json` под целевой стенд. Поставляемый конфиг указывает на локальное демо `http://127.0.0.1:4173`. Если файла нет, первый `bh_start_run` создаст шаблон и вернёт `CONFIG_CREATED`; после заполнения конфига запустите команду заново.
+6. Отредактируйте `.qwen/bughunter/presets/web/state/config.json` под целевой стенд. Поставляемый конфиг указывает на локальное демо `http://127.0.0.1:4173`. Если файла нет, первый `bh_start_run` создаст шаблон и вернёт `CONFIG_CREATED`; после заполнения конфига запустите команду заново.
 7. Перезапустите `qwen` из корня проекта и проверьте `mcp__bughunter__*` (slash `/mcp` или tool list).
 
 ## 4. Chrome и авторизация
@@ -127,11 +127,11 @@ Bughunter использует **только Google Chrome** через Playwri
 Если стенд требует входа:
 
 ```sh
-cd .qwen/bughunter/server
+cd .qwen/bughunter/presets/web
 npm run auth
 ```
 
-Откроется обычный (headed) Chrome на `baseUrl`. Войдите вручную, вернитесь в терминал и нажмите Enter. Сессия сохраняется в `.qwen/bughunter/state/auth/storage-state.json` и автоматически используется новыми браузерными контекстами. Этот файл содержит секреты сессии, игнорируется Git и не должен передаваться или коммититься. Автоматические тесты не выполняли реальный интерактивный login.
+Откроется обычный (headed) Chrome на `baseUrl`. Войдите вручную, вернитесь в терминал и нажмите Enter. Сессия сохраняется в `.qwen/bughunter/presets/web/state/auth/storage-state.json` и автоматически используется новыми браузерными контекстами. Этот файл содержит секреты сессии, игнорируется Git и не должен передаваться или коммититься. Автоматические тесты не выполняли реальный интерактивный login.
 
 ## 5. Конфигурация `state/config.json`
 
@@ -194,7 +194,7 @@ Bughunter не должен коммитить или менять код при
 
 ## 7. Артефакты и состояние
 
-Все рабочие данные находятся в `.qwen/bughunter/state/`:
+Все рабочие данные находятся в `.qwen/bughunter/presets/web/state/`:
 
 - `config.json`, `known-bugs.json`, `suppressions.json` — конфигурация и общая signature-память; предназначены для совместного version control.
 - `runs/<runId>/run.json` — scope, выбранные маршруты, статусы run/stage/route для resume.
@@ -216,7 +216,7 @@ Bughunter не должен коммитить или менять код при
 
 При переносе на другую машину/репозиторий копируйте `bughunter/`, три skill-каталога и три agent-файла, затем заново объедините `mcp.json` и выполните `npm ci`. Скопируйте существующий `state/` отдельно, если нужны общая память и resume; `auth/` лучше создать заново через `npm run auth`, а не переносить секреты.
 
-**Для обновления сервера заменяйте только `.qwen/bughunter/server/`.** Не удаляйте и не перезаписывайте соседний `.qwen/bughunter/state/`. После замены выполните `cd .qwen/bughunter/server && npm ci`. Не копируйте новый `bughunter/` поверх установки целиком: это может затереть config, known/suppressions, runs и auth.
+**Для обновления заменяйте только `.qwen/bughunter/core/` и `.qwen/bughunter/presets/`.** Не удаляйте и не перезаписывайте `.qwen/bughunter/presets/web/state/`. После замены выполните `cd .qwen/bughunter && npm ci`. Не копируйте новый `bughunter/` поверх установки целиком: это может затереть config, known/suppressions, runs и auth.
 
 ## 9. Изоляция от инструментов целевого проекта
 
@@ -265,14 +265,14 @@ export default defineConfig({
 Зависимости каждой фикстуры не входят в dependencies сервера и ставятся отдельно только для разработки:
 
 ```sh
-cd .qwen/bughunter/server
+cd .qwen/bughunter
 npm ci
 for fixture in buggy-app jest-project vitest-project cli-probe bi-app; do
   (cd "fixtures/$fixture" && npm ci)
 done
 ```
 
-Основные команды из `.qwen/bughunter/server`:
+Основные команды из `.qwen/bughunter/presets/web`:
 
 ```sh
 npm test
@@ -300,15 +300,15 @@ BH_BI_FULL_SWEEP=1 env -u PLAYWRIGHT_BROWSERS_PATH node --test test/bi-app-accep
 ```sh
 ROOT=$(pwd); GR="$ROOT/bughunter-gate/full-2"; G="$GR/project"
 mkdir -p "$G"
-rsync -a --exclude node_modules --exclude .playwright-output .qwen/bughunter/server/fixtures/buggy-app/ "$G/"
+rsync -a --exclude node_modules --exclude .playwright-output .qwen/bughunter/fixtures/buggy-app/ "$G/"
 rsync -a --exclude node_modules --exclude 'state/runs' --exclude 'state/auth' \
       --exclude 'settings.local.json' .qwen/ "$G/.qwen/"
 cp .mcp.json "$G/.mcp.json"
 cd "$G" && git init -b main && npm ci --no-audit --no-fund \
-  && (cd .qwen/bughunter/server && npm ci --no-audit --no-fund)
+  && (cd .qwen/bughunter && npm ci --no-audit --no-fund)
 # vitest.config.ts копии: test.exclude = [...configDefaults.exclude, '**/.qwen/**', '**/e2e/**']
 # .qwen/settings.json копии: permissions.allow = mcp__bughunter__*, Agent, Skill, Read, Grep, Glob, Edit, Write
-# .qwen/bughunter/state/config.json копии: baseUrl/allowedOrigins = свободный порт, routes из области проверки
+# .qwen/bughunter/presets/web/state/config.json копии: baseUrl/allowedOrigins = свободный порт, routes из области проверки
 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$PORT" --strictPort > "$GR/demo.log" 2>&1 &
 ```
 

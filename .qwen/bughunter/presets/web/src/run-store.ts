@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope, Step } from './types.ts';
 
 const execFile = promisify(execFileCallback);
-const defaultStateDir = resolve(import.meta.dirname, '../../state');
+import { defaultStateDir } from './paths.ts';
 
 function validateRunId(runId: string): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId) || runId === '.' || runId === '..') {

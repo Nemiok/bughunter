@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { writeJsonAtomic } from './run-store.ts';
 import type { Config } from './types.ts';
 
-const defaultStateDir = resolve(import.meta.dirname, '../../state');
+import { defaultStateDir } from './paths.ts';
 
 /** Сколько элементов снимка видит модель за вызов, если конфиг не задаёт своё значение. */
 export const defaultElementsPerSnapshot = 120;
