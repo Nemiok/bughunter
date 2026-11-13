@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { EXPLORER_PERSONAS } from '../src/personas.ts';
@@ -61,7 +61,7 @@ const agents = {
     'Edit',
     'Write',
     'mcp__bughunter__bh_detect_tests',
-    'mcp__bughunter__bh_export_e2e',
+    'mcp__bughunter__bh_export_test',
     'mcp__bughunter__bh_verify_red',
     'Skill',
   ],
@@ -105,7 +105,7 @@ test('entry skill is manual, argument-driven, and orchestrates the complete run'
   }
   for (const tool of [
     'bh_open', 'bh_state', 'bh_act', 'bh_navigate', 'bh_probe', 'bh_report_candidate', 'bh_close',
-    'bh_triage', 'bh_export_e2e', 'bh_detect_tests', 'bh_verify_red',
+    'bh_triage', 'bh_export_test', 'bh_detect_tests', 'bh_verify_red',
   ]) assert.ok(forbiddenLine.includes(tool), `main forbidden list missing ${tool}`);
   assert.match(body, /ровно один tool\/agent вызов/i);
   assert.match(body, /без batch/i);
@@ -185,5 +185,18 @@ test('explorer defines the behaviour of every server-side persona', async () => 
   }
   for (const behaviour of ['dblclick', 'reload', 'back', 'query-параметры', 'отрицательные', 'bh_probe']) {
     assert.ok(explorer.includes(behaviour.toLowerCase()), `missing persona behaviour: ${behaviour}`);
+  }
+});
+
+test('prompts do not mention the retired tool name', async () => {
+  const files: string[] = [];
+  for (const directory of ['.qwen/skills', '.qwen/agents']) {
+    for (const entry of await readdir(join(projectRoot, directory), { withFileTypes: true, recursive: true })) {
+      if (entry.isFile() && entry.name.endsWith('.md')) files.push(join(entry.parentPath, entry.name));
+    }
+  }
+  assert.ok(files.length >= 4, `промпты не найдены: ${files.length} файл(ов)`);
+  for (const file of files) {
+    assert.ok(!(await readFile(file, 'utf8')).includes('bh_export_e2e'), `устаревшее имя инструмента в ${file}`);
   }
 });

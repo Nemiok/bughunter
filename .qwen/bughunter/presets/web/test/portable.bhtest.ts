@@ -33,7 +33,7 @@ const coreToolNames = [
   'bh_report_candidate',
   'bh_reproduce',
   'bh_triage',
-  'bh_export_e2e',
+  'bh_export_test',
   'bh_detect_tests',
   'bh_verify_red',
   'bh_finish_run',
@@ -299,7 +299,7 @@ export default defineConfig({
     await callValue(client, 'bh_triage', {
       runId, candidateId, verdict: 'confirmed', reason: 'Portable copy reproduced the page error',
     });
-    const exported = await callValue(client, 'bh_export_e2e', { runId, bugId: candidateId });
+    const exported = await callValue(client, 'bh_export_test', { runId, bugId: candidateId });
     assert.equal(exported.placedInProject, true);
     assert.equal(typeof exported.file, 'string');
     assert.equal(inside(projectRoot, exported.file as string), true, String(exported.file));

@@ -219,9 +219,7 @@ export type Candidate = {
     status: 'confirmed' | 'rejected' | 'duplicate';
     reason: string;
   };
-  tests?: {
-    e2e?: string;
-    unit?: string;
-  };
+  /** Виды тестов — открытый словарь пресета (`TestRunner.kinds`, `ExportTarget.kind`). */
+  tests?: Record<string, string>;
   minimalSteps?: Step[];
 };

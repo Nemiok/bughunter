@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { signalSignature } from '@bughunter/core';
-import { exportE2e, generatePlaywrightTest } from '../src/export/playwright.ts';
+import { exportTest, generatePlaywrightTest } from '../src/export-playwright.ts';
 import { triageCandidate, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
 import type { Candidate, Config, Step } from '@bughunter/core';
@@ -389,12 +389,12 @@ test('export accepts stable known-bug or source candidate IDs and uses the stabl
     process.chdir(previousCwd);
     await rm(fixture.stateDir, { recursive: true, force: true });
   });
-  const byStableId = await exportE2e({ runId: fixture.runId, bugId: 'stable-bug-id', stateDir: fixture.stateDir });
+  const byStableId = await exportTest({ runId: fixture.runId, bugId: 'stable-bug-id', stateDir: fixture.stateDir });
   assert.deepEqual(byStableId, {
     file: join(process.cwd(), 'e2e/bughunter/stable-bug-id.spec.ts'), placedInProject: true,
   });
   assert.equal(await readFile(byStableId.file, 'utf8'), expectedSignalSource(fixture.candidateId === '' ? '' : 'signature-one'));
-  const byCandidateId = await exportE2e({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });
+  const byCandidateId = await exportTest({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });
   assert.deepEqual(byCandidateId, byStableId);
   const stored = await readJson(join(fixture.stateDir, 'runs', fixture.runId, 'candidates', `${fixture.candidateId}.json`)) as Candidate;
   assert.equal(stored.tests?.e2e, byStableId.file);
@@ -403,19 +403,19 @@ test('export accepts stable known-bug or source candidate IDs and uses the stabl
 test('export without project Playwright uses run e2e and never overwrites an unrelated file', async (t) => {
   const fixture = await exportFixture({ playwright: false });
   t.after(() => rm(fixture.stateDir, { recursive: true, force: true }));
-  const exported = await exportE2e({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });
+  const exported = await exportTest({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });
   assert.deepEqual(exported, {
     file: join(fixture.stateDir, 'runs', fixture.runId, 'e2e/stable-bug-id.spec.ts'), placedInProject: false,
   });
   await writeFile(exported.file, 'unrelated test\n', 'utf8');
-  await assert.rejects(exportE2e({ runId: fixture.runId, bugId: 'stable-bug-id', stateDir: fixture.stateDir }), /EXPORT_FILE_EXISTS/);
+  await assert.rejects(exportTest({ runId: fixture.runId, bugId: 'stable-bug-id', stateDir: fixture.stateDir }), /EXPORT_FILE_EXISTS/);
   assert.equal(await readFile(exported.file, 'utf8'), 'unrelated test\n');
 });
 
 test('export rejects unreproduced candidates before creating a test', async (t) => {
   const fixture = await exportFixture({ playwright: false, reproduced: false });
   t.after(() => rm(fixture.stateDir, { recursive: true, force: true }));
-  await assert.rejects(exportE2e({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir }), /CANDIDATE_UNREPRODUCED/);
+  await assert.rejects(exportTest({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir }), /CANDIDATE_UNREPRODUCED/);
   await assert.rejects(readdir(join(fixture.stateDir, 'runs', fixture.runId, 'e2e')), { code: 'ENOENT' });
 });
 
@@ -443,7 +443,7 @@ test('export starts at the persisted journal route before an SPA step that reach
     sessionId: saved.sessionId, runId: fixture.runId, route: '/', persona: 'export-test', steps: [spaStep], createdAt,
   });
 
-  const exported = await exportE2e({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });
+  const exported = await exportTest({ runId: fixture.runId, bugId: fixture.candidateId, stateDir: fixture.stateDir });
   const source = await readFile(exported.file, 'utf8');
   const initialNavigation = 'await page.goto(new URL("/", "https://example.test/app/").href';
   const spaAction = 'await page.getByRole("link", { name: "Profile", exact: true }).click();';
@@ -466,7 +466,7 @@ test('export rejects malicious stable bug IDs without writing outside the select
       known[0]!.id = maliciousId;
       await writeJsonAtomic(knownPath, known);
       await assert.rejects(
-        exportE2e({ runId: fixture.runId, bugId: maliciousId, stateDir: fixture.stateDir }),
+        exportTest({ runId: fixture.runId, bugId: maliciousId, stateDir: fixture.stateDir }),
         /BUG_ID_INVALID|EXPORT_PATH_UNSAFE/,
       );
       const escapedFile = maliciousId === '../escape'

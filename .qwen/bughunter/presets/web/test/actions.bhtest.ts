@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { SessionManager } from '../src/browser/session.ts';
 import type { ActInput } from '../src/browser/session.ts';
-import { generatePlaywrightTest } from '../src/export/playwright.ts';
+import { generatePlaywrightTest } from '../src/export-playwright.ts';
 import type { Profile } from '../src/profile/types.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { writeJsonAtomic } from '@bughunter/core';

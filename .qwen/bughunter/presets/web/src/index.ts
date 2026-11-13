@@ -1,7 +1,9 @@
 import { resolve } from 'node:path';
 
 import { cliInstallHint } from './cli-host.ts';
+import { webDomainCodes, webErrors } from './errors.ts';
 import { defaultStateDir } from './paths.ts';
+import { webSnapshot } from './snapshot.ts';
 
 const missingDependenciesMessage = `Зависимости Bughunter не установлены. Выполните: ${cliInstallHint()}`;
 
@@ -25,9 +27,14 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
-  // EXPLORER_BUSY бросает core (фасад жизненного цикла сессии), поэтому сопоставляется по префиксу.
-  if (/^(EXPLORER_BUSY|POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND|CHECK_INVALID)\b/.test(message)) {
-    return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
+  const token = message.split(':')[0] ?? '';
+  // Словарь пресета объявлен в его реестре: нейтральные коды core переводятся, свои проходят как есть.
+  const translated = webErrors.codes[token];
+  if (translated !== undefined) return { code: translated, message };
+  if ((webDomainCodes as readonly string[]).includes(token)) return { code: token, message };
+  // Эти коды бросает core (фасад сессии, обход, находки), поэтому сопоставляются по префиксу.
+  if (/^(EXPLORER_BUSY|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED)\b/.test(message)) {
+    return { code: token || 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
   if (message === 'NAVIGATION_NOT_ALLOWED' || message.startsWith('NAVIGATION_NOT_ALLOWED:') || message === 'FORBIDDEN_ORIGIN') {
@@ -70,7 +77,7 @@ async function main(): Promise<void> {
     createRun, finishRun, leaseNextExploration, promoteFindingToCandidate,
   } = await import('./runs.ts');
   const { reproduceCandidate } = await import('./reproduce.ts');
-  const { exportE2e } = await import('./export/playwright.ts');
+  const { exportTest } = await import('./export-playwright.ts');
   const { detectWebTests, verifyWebRed } = await import('./test-runner.ts');
   const { SessionManager, resolveLaunchOptions } = await import('./browser/session.ts');
   const { loadProfile } = await import('./profile/load.ts');
@@ -142,12 +149,8 @@ async function main(): Promise<void> {
     }
   }
 
-  function compactState(value: Awaited<ReturnType<InstanceType<typeof SessionManager>['state']>>) {
-    return {
-      ...value,
-      elements: value.elements.map(({ locator: _locator, ...element }) => element),
-    };
-  }
+  // Что отдавать модели из снимка — знание пресета: сервер только вызывает хук.
+  const compactState = webSnapshot.compact;
 
   async function runOperation<T>(
     id: string,
@@ -332,7 +335,7 @@ async function main(): Promise<void> {
   })));
 
   server.registerTool('bh_promote_finding', {
-    description: 'Превратить находку обхода в кандидата: создаёт журнал из перехода на экран, после чего работают обычные bh_reproduce, bh_triage и bh_export_e2e. Обязателен check — иначе кандидата нечем воспроизвести',
+    description: 'Превратить находку обхода в кандидата: создаёт журнал из перехода на экран, после чего работают обычные bh_reproduce, bh_triage и bh_export_test. Обязателен check — иначе кандидата нечем воспроизвести',
     inputSchema: z.strictObject({
       runId,
       findingId: z.string().min(1),
@@ -387,11 +390,11 @@ async function main(): Promise<void> {
     triageCandidate({ runId: id, candidateId, verdict, reason, ...(suppress === undefined ? {} : { suppress }), stateDir }),
   )));
 
-  server.registerTool('bh_export_e2e', {
+  server.registerTool('bh_export_test', {
     description: 'Экспортировать воспроизведённый подтверждённый баг в Playwright-тест',
     inputSchema: z.strictObject({ runId, bugId: z.string().min(1) }),
   }, async ({ runId: id, bugId }) => invoke(() => runOperation(id, 'export', () =>
-    exportE2e({ runId: id, bugId, stateDir }),
+    exportTest({ runId: id, bugId, stateDir }),
   )));
 
   server.registerTool('bh_detect_tests', {

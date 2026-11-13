@@ -28,7 +28,7 @@ const coreToolNames = [
   'bh_report_candidate',
   'bh_reproduce',
   'bh_triage',
-  'bh_export_e2e',
+  'bh_export_test',
   'bh_detect_tests',
   'bh_verify_red',
   'bh_finish_run',
@@ -210,7 +210,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
       bh_report_candidate: ['actual', 'expected', 'sessionId', 'signalIds', 'title'],
       bh_reproduce: ['candidateId', 'runId'],
       bh_triage: ['candidateId', 'reason', 'runId', 'verdict'],
-      bh_export_e2e: ['bugId', 'runId'],
+      bh_export_test: ['bugId', 'runId'],
       bh_detect_tests: ['path'],
       bh_verify_red: ['testFile'],
       bh_finish_run: ['runId'],
@@ -301,7 +301,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     assert.equal(triaged.id, candidateId);
     assert.equal(triaged.status, 'confirmed');
 
-    const exported = await callValue(client, 'bh_export_e2e', { runId, bugId: candidateId });
+    const exported = await callValue(client, 'bh_export_test', { runId, bugId: candidateId });
     assert.deepEqual(Object.keys(exported).sort(), ['file', 'placedInProject']);
     assert.equal(exported.placedInProject, false);
     assert.equal(typeof exported.file, 'string');
@@ -455,6 +455,10 @@ test('startup reports missing dependencies on stderr without polluting stdout', 
   await copyFile(join(serverRoot, 'src/index.ts'), entry);
   await copyFile(join(serverRoot, 'src/cli-host.ts'), join(directory, 'cli-host.ts'));
   await copyFile(join(serverRoot, 'src/paths.ts'), join(directory, 'paths.ts'));
+  // Модульные импорты точки входа копируются вместе с ней: они не тянут сторонних зависимостей
+  // (только типы core), поэтому дружелюбная подсказка об отсутствии node_modules сохраняется.
+  await copyFile(join(serverRoot, 'src/errors.ts'), join(directory, 'errors.ts'));
+  await copyFile(join(serverRoot, 'src/snapshot.ts'), join(directory, 'snapshot.ts'));
   try {
     const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';

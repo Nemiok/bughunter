@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import type { ViteDevServer } from '../../../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
-import { exportE2e, generatePlaywrightTest } from '../src/export/playwright.ts';
+import { exportTest, generatePlaywrightTest } from '../src/export-playwright.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { triageCandidate, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
@@ -402,10 +402,10 @@ async function proveBug(id: number, suiteRoot: string): Promise<BugEvidence> {
     const minimalSteps = candidate.minimalSteps.length;
     await triageCandidate({ runId: run.id, candidateId, verdict: 'confirmed', reason: 'Reproduced 3/3 in real Chrome', stateDir });
     const previousCwd = process.cwd();
-    let exported: Awaited<ReturnType<typeof exportE2e>>;
+    let exported: Awaited<ReturnType<typeof exportTest>>;
     try {
       process.chdir(projectRoot);
-      exported = await exportE2e({ runId: run.id, bugId: candidateId, stateDir });
+      exported = await exportTest({ runId: run.id, bugId: candidateId, stateDir });
     } finally {
       process.chdir(previousCwd);
     }
@@ -526,10 +526,10 @@ test('exported anomaly spec observes a transient symptom without an artificial A
       assert.equal(reproduction.reproduced, '3/3', JSON.stringify(reproduction));
       await triageCandidate({ runId: run.id, candidateId, verdict: 'confirmed', reason: 'Reproduced 3/3 in real Chrome', stateDir });
       const previousCwd = process.cwd();
-      let exported: Awaited<ReturnType<typeof exportE2e>>;
+      let exported: Awaited<ReturnType<typeof exportTest>>;
       try {
         process.chdir(projectRoot);
-        exported = await exportE2e({ runId: run.id, bugId: candidateId, stateDir });
+        exported = await exportTest({ runId: run.id, bugId: candidateId, stateDir });
       } finally {
         process.chdir(previousCwd);
       }

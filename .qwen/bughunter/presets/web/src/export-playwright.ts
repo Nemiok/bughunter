@@ -1,15 +1,15 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { isValidScroll, scrollDeltas } from '../browser/point.ts';
-import { loadConfig } from '../config.ts';
-import { loadActiveProfile, resolveTestDataFile } from '../profile/load.ts';
-import type { Profile } from '../profile/types.ts';
-import { findProjectRoot } from '@bughunter/core';
-import { readCandidate, readRun, readSharedMemory, recordCandidateTest } from '@bughunter/core';
-import type { SharedMemoryEntry } from '@bughunter/core';
-import type { Candidate, Config, Journal, Step } from '@bughunter/core';
+import { resolve } from 'node:path';
 
-import { defaultStateDir } from '../paths.ts';
+import { exportTest as exportCoreTest } from '@bughunter/core';
+import type { Candidate, Config, ExportTarget, Step, TestGenerator } from '@bughunter/core';
+
+import { isValidScroll, scrollDeltas } from './browser/point.ts';
+import { loadConfig } from './config.ts';
+import { defaultStateDir } from './paths.ts';
+import { loadActiveProfile, resolveTestDataFile } from './profile/load.ts';
+import type { Profile } from './profile/types.ts';
+import { webTestRunner } from './test-runner.ts';
+
 const jsonString = '"(?:\\\\.|[^"\\\\])*"';
 
 function allowedUrl(path: string, config: Config): string {
@@ -291,118 +291,39 @@ ${replay}  ${checkAssertion(candidate)}
 `;
 }
 
-async function candidatesForRun(runId: string, stateDir: string): Promise<Candidate[]> {
-  const directory = join(stateDir, 'runs', runId, 'candidates');
-  let files: string[];
-  try {
-    files = await readdir(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
-  return Promise.all(files.filter((file) => file.endsWith('.json')).map(async (file) =>
-    JSON.parse(await readFile(join(directory, file), 'utf8')) as Candidate,
-  ));
-}
+/** Каталог назначения: сгенерированный тест живёт там, где его запустит раннер пресета. */
+export const webExportTarget: ExportTarget = {
+  dir: (config) => config.tests.e2e.dir,
+  kind: 'e2e',
+  fileName: (bugId) => `${bugId}.spec.ts`,
+};
 
-async function resolveExportCandidate(runId: string, bugId: string, stateDir: string): Promise<{ candidate: Candidate; known: SharedMemoryEntry }> {
-  const knownBugs = await readSharedMemory('known-bugs.json', stateDir);
-  let known = knownBugs.find((entry) => entry.id === bugId) ?? knownBugs.find((entry) => entry.sourceCandidate === bugId);
-  if (known) {
-    const candidates = await candidatesForRun(runId, stateDir);
-    const matches = candidates.filter((candidate) => candidate.signature === known!.signature && candidate.runId === runId);
-    const candidate = matches.find((value) => value.id === known!.sourceCandidate)
-      ?? matches.sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
-    if (!candidate) throw new Error(`BUG_NOT_FOUND: ${bugId}`);
-    return { candidate, known };
-  }
-  const candidate = await readCandidate(runId, bugId, stateDir);
-  known = knownBugs.find((entry) => entry.signature === candidate.signature);
-  if (!known) throw new Error(`BUG_NOT_CONFIRMED: ${bugId}`);
-  return { candidate, known };
-}
+export const webTestGenerator: TestGenerator = {
+  async generate({ candidate, initialTarget, stateDir }) {
+    const [config, profile] = await Promise.all([loadConfig(stateDir), loadActiveProfile(stateDir)]);
+    return generatePlaywrightTest(candidate, config, initialTarget, profile);
+  },
+};
 
-async function nearestPlaywrightProject(): Promise<string | undefined> {
-  let root: string;
-  try {
-    root = await findProjectRoot();
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('PROJECT_ROOT_NOT_FOUND:')) return undefined;
-    throw error;
-  }
-  let directory = process.cwd();
-  const filesystemRoot = parse(directory).root;
-  while (true) {
-    let packageJson: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> } | undefined;
-    try {
-      packageJson = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as typeof packageJson;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-    if (packageJson?.dependencies?.['@playwright/test'] !== undefined || packageJson?.devDependencies?.['@playwright/test'] !== undefined) {
-      return directory;
-    }
-    if (directory === root || directory === filesystemRoot) return undefined;
-    directory = dirname(directory);
-  }
-}
-
-async function writeExport(file: string, source: string): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
-  try {
-    const existing = await readFile(file, 'utf8');
-    if (existing !== source) throw new Error(`EXPORT_FILE_EXISTS: ${file}`);
-    return;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  try {
-    await writeFile(file, source, { encoding: 'utf8', flag: 'wx' });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`EXPORT_FILE_EXISTS: ${file}`);
-    throw error;
-  }
-}
-
-async function journalRoute(candidate: Candidate, stateDir: string): Promise<string> {
-  let journal: Journal;
-  try {
-    journal = JSON.parse(await readFile(join(stateDir, 'runs', candidate.runId, 'journals', `${candidate.sessionId}.json`), 'utf8')) as Journal;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`JOURNAL_NOT_FOUND: ${candidate.sessionId}`);
-    throw error;
-  }
-  if (journal.runId !== candidate.runId || journal.sessionId !== candidate.sessionId) {
-    throw new Error(`JOURNAL_MISMATCH: ${candidate.sessionId}`);
-  }
-  return journal.route;
-}
-
-export async function exportE2e(input: { runId: string; bugId: string; stateDir?: string }): Promise<{ file: string; placedInProject: boolean }> {
+/**
+ * Экспорт с веб-значениями по умолчанию: генератор Playwright-спека, каталог из конфига
+ * приложения и раннер, узнающий свой проект по `@playwright/test`. Порядок действий,
+ * запись ровно один раз и защита пути принадлежат core.
+ */
+export async function exportTest(input: {
+  runId: string;
+  bugId: string;
+  stateDir?: string;
+}): Promise<{ file: string; placedInProject: boolean }> {
   const stateDir = input.stateDir ? resolve(input.stateDir) : defaultStateDir;
-  await readRun(input.runId, stateDir);
-  const { candidate, known } = await resolveExportCandidate(input.runId, input.bugId, stateDir);
-  if (typeof known.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(known.id) || known.id === '.' || known.id === '..') {
-    throw new Error(`BUG_ID_INVALID: ${known.id}`);
-  }
-  if (candidate.status !== 'confirmed') throw new Error(`BUG_NOT_CONFIRMED: ${input.bugId}`);
-  if (candidate.reproduction?.status !== 'reproduced') throw new Error(`CANDIDATE_UNREPRODUCED: ${candidate.id}`);
-  const [config, initialRoute, profile] = await Promise.all([
-    loadConfig(stateDir),
-    journalRoute(candidate, stateDir),
-    loadActiveProfile(stateDir),
-  ]);
-  const source = generatePlaywrightTest(candidate, config, initialRoute, profile);
-  const project = await nearestPlaywrightProject();
-  const destination = project
-    ? resolve(project, config.tests.e2e.dir)
-    : resolve(stateDir, 'runs', input.runId, 'e2e');
-  const file = resolve(destination, `${known.id}.spec.ts`);
-  const relativeFile = relative(destination, file);
-  if (relativeFile === '..' || relativeFile.startsWith(`..${sep}`) || isAbsolute(relativeFile)) {
-    throw new Error(`EXPORT_PATH_UNSAFE: ${file}`);
-  }
-  await writeExport(file, source);
-  await recordCandidateTest(input.runId, candidate.id, 'e2e', file, stateDir);
-  return { file, placedInProject: project !== undefined };
+  const config = await loadConfig(stateDir);
+  return exportCoreTest({
+    runId: input.runId,
+    bugId: input.bugId,
+    stateDir,
+    config,
+    generate: webTestGenerator,
+    target: webExportTarget,
+    runner: webTestRunner,
+  });
 }
