@@ -133,12 +133,26 @@ function pageFor(manager: SessionManager, sessionId: string): Page {
   return page;
 }
 
-async function checkViolated(page: Page, check: Check): Promise<boolean> {
+/**
+ * Текст считается присутствующим только если видимо хотя бы одно совпадение. `first()` для этого
+ * не годится: одно и то же значение часто встречается и в скрытом узле (option фильтра, шаблон,
+ * aria-live), и в видимой ячейке — по первому совпадению нарушение пропадало или возникало зря.
+ */
+async function hasVisibleText(page: Page, target: string): Promise<boolean> {
+  const matches = page.getByText(target, { exact: true });
+  const total = await matches.count();
+  for (let index = 0; index < total; index += 1) {
+    if (await matches.nth(index).isVisible()) return true;
+  }
+  return false;
+}
+
+export async function checkViolated(page: Page, check: Check): Promise<boolean> {
   switch (check.kind) {
     case 'visibleText':
-      return !await page.getByText(check.target, { exact: true }).first().isVisible();
+      return !await hasVisibleText(page, check.target);
     case 'notVisibleText':
-      return await page.getByText(check.target, { exact: true }).first().isVisible();
+      return await hasVisibleText(page, check.target);
     case 'elementCount':
       return await page.locator(check.target).count() !== Number(check.expected ?? 0);
   }

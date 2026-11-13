@@ -3,11 +3,12 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
+import { chromium } from 'playwright-core';
 import type { ViteDevServer } from '../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
 import { signalSignature } from '../src/detectors/signals.ts';
-import { replayAndMinimize, reproduceCandidate } from '../src/reproduce.ts';
+import { checkViolated, replayAndMinimize, reproduceCandidate } from '../src/reproduce.ts';
 import { createRun, writeJsonAtomic } from '../src/run-store.ts';
 import type { Candidate, Config, Step } from '../src/types.ts';
 
@@ -303,4 +304,32 @@ test('deadline aborts pending replay and prevents further evaluations', async ()
   assert.equal(result.evaluations, 1);
   assert.equal(result.successes, 0);
   assert.equal(result.minimalSteps.length, 3);
+});
+
+test('text checks judge by a visible match, not by the first DOM match', async () => {
+  const browser = await chromium.launch({ channel: 'chrome', args: ['--no-first-run', '--no-default-browser-check'] });
+  const page = await (await browser.newContext()).newPage();
+  try {
+    // Реальный случай с bi-app: регион одновременно в скрытом <option> фильтра и в видимой
+    // ячейке таблицы. `getByText(...).first()` попадает в option, и нарушение пропадает.
+    await page.setContent('<select><option value="all">Все</option><option value="northwest">northwest</option></select>'
+      + '<table><tbody><tr><td>3</td><td>northwest</td></tr></tbody></table>');
+    assert.equal(
+      await checkViolated(page, { kind: 'notVisibleText', target: 'northwest' }),
+      true,
+      'видимый текст обязан нарушать notVisibleText, даже если первым в DOM идёт скрытый узел',
+    );
+    assert.equal(
+      await checkViolated(page, { kind: 'visibleText', target: 'northwest' }),
+      false,
+      'видимый текст не должен давать ложного нарушения visibleText',
+    );
+
+    // Текст есть только в скрытом узле — нарушений нет ни у того, ни у другого вида.
+    await page.setContent('<select><option value="ural">ural</option></select>');
+    assert.equal(await checkViolated(page, { kind: 'visibleText', target: 'ural' }), true);
+    assert.equal(await checkViolated(page, { kind: 'notVisibleText', target: 'ural' }), false);
+  } finally {
+    await browser.close();
+  }
 });
