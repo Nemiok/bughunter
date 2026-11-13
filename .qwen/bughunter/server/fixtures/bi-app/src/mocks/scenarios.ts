@@ -15,9 +15,15 @@ export function isScenario(value: string | null): value is ScenarioName {
 /**
  * Значение флага, не совпадающее с именем сценария, означает «сброшено»: Bughunter пишет
  * в этот ключ метку времени, и приложение обязано вернуться к seed-данным, а не упасть.
+ *
+ * Параметр URL имеет приоритет над хранилищем: детерминированный обход создаёт собственный
+ * контекст браузера и не может заранее положить флаг в localStorage, а проверить экран
+ * в сценарии `error500` или `big` нужно. Явный запрос сценария в URL переопределяет сброс.
  */
 export function currentScenario(): ScenarioName {
   try {
+    const fromQuery = new URLSearchParams(window.location.search).get(SCENARIO_KEY);
+    if (isScenario(fromQuery)) return fromQuery;
     const value = window.localStorage.getItem(SCENARIO_KEY);
     return isScenario(value) ? value : 'normal';
   } catch {

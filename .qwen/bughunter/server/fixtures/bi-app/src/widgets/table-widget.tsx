@@ -14,16 +14,20 @@ export function TableWidget({ data }: { data: TableData }) {
   const [scrollTop, setScrollTop] = useState(0);
   const container = useRef<HTMLDivElement>(null);
 
+  const first = Math.floor(scrollTop / ROW_HEIGHT);
+
+  // Регистрация зависит и от позиции скролла: проекция виртуализированной таблицы обязана
+  // показывать текущее видимое окно, иначе скролл контейнера ненаблюдаем снаружи.
   useEffect(() => registerWidget({
     descriptor: { widget: 'table', kind: 'table', node: '[data-testid="widget-table"]' },
     extract: () => ({
       rowCount: data.rows.length,
       total: data.total,
+      firstVisibleId: data.rows[first]?.id ?? null,
       rows: data.rows.slice(0, MAX_EXTRACTED_ROWS).map(({ id, region, value }) => ({ id, region, value })),
     }),
-  }), [data]);
+  }), [data, first]);
 
-  const first = Math.floor(scrollTop / ROW_HEIGHT);
   const slice = data.rows.slice(first, first + VISIBLE_ROWS);
 
   return (
@@ -37,6 +41,7 @@ export function TableWidget({ data }: { data: TableData }) {
       <div
         ref={container}
         data-testid="table-scroll"
+        tabIndex={0}
         style={{ height: ROW_HEIGHT * VISIBLE_ROWS, overflow: 'auto', position: 'relative' }}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       >

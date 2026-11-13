@@ -27,6 +27,9 @@ export default {
     { name: 'bi-line', widget: 'line', kind: 'chart', script: extractor('line') },
     { name: 'bi-bars', widget: 'bars', kind: 'chart', script: extractor('bars') },
     { name: 'bi-scene', widget: 'scene', kind: 'scene', script: extractor('scene') },
+    // Полка мастера — не таблица и не график, но её состояние тоже нужно уметь прочитать:
+    // результат перетаскивания иначе не виден ни в снимке элементов, ни в сигналах.
+    { name: 'bi-shelf', widget: 'shelf', kind: 'dom', script: extractor('shelf') },
   ],
   // urlPattern в ядре сопоставляется как подстрока (`CapturedResponse.url.includes(pattern)`),
   // поэтому здесь реальные фрагменты URL, а не шаблоны с `:id`.

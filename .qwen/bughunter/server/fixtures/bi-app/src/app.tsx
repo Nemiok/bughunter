@@ -72,6 +72,8 @@ export function App() {
             {link.label}
           </a>
         ))}
+        {/* Внешняя ссылка обязательна: обход инвентаря должен записать её как blocked, а не выполнить. */}
+        <a href="https://docs.example.invalid/bi" data-testid="nav-docs" rel="noreferrer">Документация</a>
       </nav>
       <main>
         <h1>Bughunter BI</h1>
