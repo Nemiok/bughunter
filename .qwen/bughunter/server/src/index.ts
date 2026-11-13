@@ -342,6 +342,8 @@ async function main(): Promise<void> {
       maxDepth: maxDepth ?? defaultMaxDepth,
       startPaths: startPaths ?? config.routes,
       launch: resolveLaunchOptions(config, profile),
+      // Тот же лимит, которым sweep ждёт ответы приложения: один регулятор на оба обхода.
+      ...(config.limits.responseSettleMs === undefined ? {} : { settleMs: config.limits.responseSettleMs }),
     });
   }));
 

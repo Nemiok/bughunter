@@ -50,6 +50,22 @@ function routes(url: string): string {
   if (url.startsWith('/profile')) {
     return page('profile', `<button data-testid="save">Save</button>${link('/', 'Back')}`);
   }
+  if (url === '/spa') {
+    // Имитация одностраничного приложения: ссылки появляются в DOM позже domcontentloaded,
+    // после загрузки рантайма и данных. Так работает любой SPA, включая целевое BI-приложение.
+    return `<!doctype html>
+<html><head><meta charset="utf-8"><title>spa</title></head>
+<body><div id="root"></div>
+<script>
+  setTimeout(function () {
+    document.getElementById('root').innerHTML = '<a href="/spa/child">Child</a>';
+  }, 300);
+</script>
+</body></html>`;
+  }
+  if (url === '/spa/child') {
+    return page('spa-child', '<p>child</p>');
+  }
   return page('missing', '<p>Not found</p>');
 }
 
@@ -142,6 +158,21 @@ test('crawl templates dynamic segments and is incremental', async () => {
   assert.ok(second.updated > 0, JSON.stringify(second));
   assert.equal(second.total, 3);
   assert.equal(afterSecond.length, 3);
+});
+
+test('crawl waits for a late-rendering SPA before collecting links', async () => {
+  const stateDir = await stateDirectory();
+
+  const result = await crawlScreens(crawlOptions(stateDir, { startPaths: ['/spa'] }));
+
+  const stored = await readScreens(stateDir);
+  assert.deepEqual(
+    stored.map((screen) => screen.template).sort(),
+    ['/spa', '/spa/child'],
+    'обход обязан дождаться рендера приложения и найти отложенные ссылки',
+  );
+  assert.equal(result.visited, 2);
+  assert.equal(result.stoppedEarly, false);
 });
 
 test('crawl stays inside allowed origins and records blocked hops', async () => {

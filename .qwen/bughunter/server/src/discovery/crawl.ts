@@ -16,6 +16,11 @@ export type CrawlOptions = {
   startPaths: string[];
   launch?: LaunchOptions;
   timeoutMs?: number;
+  /**
+   * Сколько ждать успокоения сети после загрузки документа. Одностраничное приложение отдаёт
+   * документ до рендера, поэтому без ожидания обход видит пустой DOM и теряет весь инвентарь.
+   */
+  settleMs?: number;
 };
 
 export type CrawlResult = {
@@ -31,6 +36,10 @@ export type CrawlResult = {
 
 export const defaultMaxScreens = 200;
 export const defaultMaxDepth = 3;
+export const defaultCrawlSettleMs = 2_500;
+
+/** Playwright считает сеть спокойной только после 500 мс тишины, поэтому меньший порог бесполезен. */
+const minSettleMs = 500;
 
 type QueueItem = { url: string; depth: number; via: string };
 
@@ -56,6 +65,7 @@ export async function crawlScreens(options: CrawlOptions): Promise<CrawlResult> 
   const pattern = options.profile?.navigation?.idSegmentPattern ?? defaultIdSegmentPattern;
   const allowedOrigins = new Set(options.allowedOrigins.map((origin) => new URL(origin).origin));
   const timeout = options.timeoutMs ?? 30_000;
+  const settle = Math.max(options.settleMs ?? defaultCrawlSettleMs, minSettleMs);
   const launch = options.launch ?? { args: [], ignoreHTTPSErrors: false };
 
   const browser = await chromium.launch({
@@ -111,6 +121,9 @@ export async function crawlScreens(options: CrawlOptions): Promise<CrawlResult> 
         blocked.push(next.url);
         continue;
       }
+      // Таймаут ожидания здесь не ошибка перехода: экран описывается в том состоянии, до которого
+      // дошёл. Зато без ожидания обход собирает ссылки из ещё не отрисованного документа.
+      await page.waitForLoadState('networkidle', { timeout: settle }).catch(() => undefined);
       const template = templatisedPathname(url.pathname, pattern);
       const screen = await describeScreen(page, options.profile);
       entries.push({
