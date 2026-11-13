@@ -17,7 +17,7 @@ import type {
   Signal,
   Step,
   StepAction,
-} from '../types.ts';
+} from '@bughunter/core';
 import { defaultElementsPerSnapshot } from '../config.ts';
 import { collectElements, paginateElements, rankElements, toPlaywrightLocator } from './elements.ts';
 import type { Viewport } from './elements.ts';

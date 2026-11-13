@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Locator, Page } from 'playwright-core';
-import type { ElementBox, ElementSnapshot, SemanticLocator } from '../types.ts';
+import type { ElementBox, ElementSnapshot, SemanticLocator } from '@bughunter/core';
 
-export type { ElementBox, ElementSnapshot, SemanticLocator } from '../types.ts';
+export type { ElementBox, ElementSnapshot, SemanticLocator } from '@bughunter/core';
 
 const interactiveSelector = [
   'button',

@@ -8,7 +8,7 @@ import { SessionManager, resolveLaunchOptions } from '../src/browser/session.ts'
 import type { Profile } from '../src/profile/types.ts';
 import { loadConfig } from '../src/config.ts';
 import { createRun, writeJsonAtomic } from '../src/run-store.ts';
-import type { Config } from '../src/types.ts';
+import type { Config } from '@bughunter/core';
 
 const temporaryDirectories: string[] = [];
 

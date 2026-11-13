@@ -43,11 +43,13 @@ async function main(): Promise<void> {
   let sdk: typeof import('@modelcontextprotocol/sdk/server/mcp.js');
   let stdio: typeof import('@modelcontextprotocol/sdk/server/stdio.js');
   let zod: typeof import('zod');
+  let core: typeof import('@bughunter/core');
   try {
-    [sdk, stdio, zod] = await Promise.all([
+    [sdk, stdio, zod, core] = await Promise.all([
       import('@modelcontextprotocol/sdk/server/mcp.js'),
       import('@modelcontextprotocol/sdk/server/stdio.js'),
       import('zod'),
+      import('@bughunter/core'),
     ]);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND') {
@@ -73,10 +75,13 @@ async function main(): Promise<void> {
   const { loadProfile } = await import('./profile/load.ts');
   const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
   const { runSweep, promoteFindingToCandidate } = await import('./sweep.ts');
+  const { webPreset } = await import('./preset.ts');
   const { z } = zod;
   const stateDir = process.env.BUGHUNTER_STATE_DIR
     ? resolve(process.env.BUGHUNTER_STATE_DIR)
     : defaultStateDir;
+  core.assertPreset(webPreset);
+  await core.assertSinglePreset(stateDir, webPreset.name);
   let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
   let contextPromise: ReturnType<typeof loadContext> | undefined;
   const explorations = new Map<string, { runId: string; route: string; leaseId?: string }>();

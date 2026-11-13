@@ -8,7 +8,7 @@ import { after, before, test } from 'node:test';
 import { SessionManager } from '../src/browser/session.ts';
 import type { ActInput, CandidateInput, ProbeKind } from '../src/browser/session.ts';
 import { writeJsonAtomic } from '../src/run-store.ts';
-import type { Config, Journal, Step } from '../src/types.ts';
+import type { Config, Journal, Step } from '@bughunter/core';
 
 const demoOrigin = 'http://127.0.0.1:4173';
 const temporaryDirectories: string[] = [];

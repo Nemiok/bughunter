@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope, Step } from './types.ts';
+import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, RouteStage, Run, Scope, Step } from '@bughunter/core';
 
 const execFile = promisify(execFileCallback);
 import { defaultStateDir } from './paths.ts';

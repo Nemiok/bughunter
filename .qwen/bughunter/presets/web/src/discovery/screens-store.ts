@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { writeJsonAtomic } from '../run-store.ts';
-import type { ScreenEntry } from '../types.ts';
+import type { ScreenEntry } from '@bughunter/core';
 
 /** Сегмент, похожий на идентификатор записи: hex-uuid, числа, длинные цифры. */
 export const defaultIdSegmentPattern = '^[0-9a-fA-F]{8,}$|^\\d+$';

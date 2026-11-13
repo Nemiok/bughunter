@@ -9,7 +9,7 @@ import { after, test } from 'node:test';
 import { defaultElementsPerSnapshot, ensureConfig, loadConfig } from '../src/config.ts';
 import { findProjectRoot } from '../src/project.ts';
 import { createRun, readRun, updateRun, writeJsonAtomic } from '../src/run-store.ts';
-import type { Config } from '../src/types.ts';
+import type { Config } from '@bughunter/core';
 
 const execFile = promisify(execFileCallback);
 const temporaryDirectories: string[] = [];

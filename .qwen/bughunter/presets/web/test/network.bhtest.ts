@@ -9,7 +9,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { attachNetworkCapture, maxResponseBodyBytes } from '../src/browser/network.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import { createRun, writeJsonAtomic } from '../src/run-store.ts';
-import type { Config } from '../src/types.ts';
+import type { Config } from '@bughunter/core';
 
 let browser: Browser;
 let server: Server;

@@ -12,7 +12,7 @@ import type { CandidateInput } from '../src/browser/session.ts';
 import { exportE2e, generatePlaywrightTest } from '../src/export/playwright.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { createRun, triageCandidate, writeJsonAtomic } from '../src/run-store.ts';
-import type { Candidate, Config, Step } from '../src/types.ts';
+import type { Candidate, Config, Step } from '@bughunter/core';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 const repositoryRoot = resolve(import.meta.dirname, '../../../..');

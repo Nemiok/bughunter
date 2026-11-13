@@ -10,7 +10,7 @@ import { crawlScreens } from '../src/discovery/crawl.ts';
 import { readScreens, templatisedPathname, upsertScreens } from '../src/discovery/screens-store.ts';
 import type { Profile } from '../src/profile/types.ts';
 import { writeJsonAtomic } from '../src/run-store.ts';
-import type { Config, ScreenEntry } from '../src/types.ts';
+import type { Config, ScreenEntry } from '@bughunter/core';
 
 const directories: string[] = [];
 let server: Server;

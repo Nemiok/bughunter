@@ -11,7 +11,7 @@ import {
 } from '../src/run-store.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
 import { applyReset, promoteFindingToCandidate, runSweep } from '../src/sweep.ts';
-import type { Config } from '../src/types.ts';
+import type { Config } from '@bughunter/core';
 
 const directories: string[] = [];
 const resets: string[] = [];

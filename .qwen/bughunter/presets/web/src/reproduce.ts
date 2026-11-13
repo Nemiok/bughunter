@@ -9,7 +9,7 @@ import { loadConfig } from './config.ts';
 import { loadProfile } from './profile/load.ts';
 import { findAnomalyTexts, signalSignature } from './detectors/signals.ts';
 import { readRun, writeJsonAtomic } from './run-store.ts';
-import type { Candidate, Check, Config, Journal, Signal, Step } from './types.ts';
+import type { Candidate, Check, Config, Journal, Signal, Step } from '@bughunter/core';
 
 const maximumEvaluations = 20;
 const maximumDurationMs = 300_000;

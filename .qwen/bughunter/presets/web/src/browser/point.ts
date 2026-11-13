@@ -1,6 +1,6 @@
 import type { Page } from 'playwright-core';
 import type { Profile } from '../profile/types.ts';
-import type { ElementSnapshot, ScrollInput, StepAction } from '../types.ts';
+import type { ElementSnapshot, ScrollInput, StepAction } from '@bughunter/core';
 import { elementAtPoint, toPlaywrightLocator } from './elements.ts';
 
 export type Point = { x: number; y: number };

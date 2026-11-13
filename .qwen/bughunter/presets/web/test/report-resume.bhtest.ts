@@ -16,7 +16,7 @@ import {
   updateRun,
   writeJsonAtomic,
 } from '../src/run-store.ts';
-import type { Candidate, Config, Step } from '../src/types.ts';
+import type { Candidate, Config, Step } from '@bughunter/core';
 
 const createdAt = '2026-11-10T00:00:00.000Z';
 

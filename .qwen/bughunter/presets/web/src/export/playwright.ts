@@ -7,7 +7,7 @@ import type { Profile } from '../profile/types.ts';
 import { findProjectRoot } from '../project.ts';
 import { readCandidate, readRun, readSharedMemory, recordCandidateTest } from '../run-store.ts';
 import type { SharedMemoryEntry } from '../run-store.ts';
-import type { Candidate, Config, Journal, Step } from '../types.ts';
+import type { Candidate, Config, Journal, Step } from '@bughunter/core';
 
 import { defaultStateDir } from '../paths.ts';
 const jsonString = '"(?:\\\\.|[^"\\\\])*"';

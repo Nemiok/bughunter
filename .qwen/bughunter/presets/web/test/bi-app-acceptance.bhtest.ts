@@ -12,7 +12,7 @@ import { readScreens, templatisedPathname, upsertScreens } from '../src/discover
 import { loadActiveProfile, loadProfile } from '../src/profile/load.ts';
 import { createRun, finishRun, readFindings, readRun, writeJsonAtomic } from '../src/run-store.ts';
 import { runSweep } from '../src/sweep.ts';
-import type { Config, ScreenEntry } from '../src/types.ts';
+import type { Config, ScreenEntry } from '@bughunter/core';
 import type { Profile } from '../src/profile/types.ts';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/bi-app');

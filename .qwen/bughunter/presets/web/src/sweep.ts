@@ -14,7 +14,7 @@ import type { Profile } from './profile/types.ts';
 import {
   findingPath, readFindings, readRun, recordRouteExploration, recordRunStage, writeFinding, writeJsonAtomic,
 } from './run-store.ts';
-import type { Candidate, Check, Finding, Journal, SweepProgress } from './types.ts';
+import type { Candidate, Check, Finding, Journal, SweepProgress } from '@bughunter/core';
 
 export const defaultScreensPerSweep = 25;
 export const defaultResponseSettleMs = 2_500;

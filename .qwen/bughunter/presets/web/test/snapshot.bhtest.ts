@@ -10,7 +10,7 @@ import { defaultElementsPerSnapshot } from '../src/config.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { Profile } from '../src/profile/types.ts';
 import { writeJsonAtomic } from '../src/run-store.ts';
-import type { Config, ElementSnapshot } from '../src/types.ts';
+import type { Config, ElementSnapshot } from '@bughunter/core';
 
 const directories: string[] = [];
 const managers: SessionManager[] = [];

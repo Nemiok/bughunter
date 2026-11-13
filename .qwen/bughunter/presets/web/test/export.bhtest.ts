@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { signalSignature } from '../src/detectors/signals.ts';
 import { exportE2e, generatePlaywrightTest } from '../src/export/playwright.ts';
 import { createRun, triageCandidate, writeJsonAtomic } from '../src/run-store.ts';
-import type { Candidate, Config, Step } from '../src/types.ts';
+import type { Candidate, Config, Step } from '@bughunter/core';
 
 const createdAt = '2026-11-10T00:00:00.000Z';
 

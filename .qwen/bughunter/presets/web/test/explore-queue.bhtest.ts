@@ -16,7 +16,7 @@ import {
   updateRun,
   validateExplorationLease,
 } from '../src/run-store.ts';
-import type { Config, Run } from '../src/types.ts';
+import type { Config, Run } from '@bughunter/core';
 
 const serverRoot = resolve(import.meta.dirname, '..');
 const temporaryDirectories: string[] = [];

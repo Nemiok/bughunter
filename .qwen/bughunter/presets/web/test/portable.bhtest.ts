@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Config, Run } from '../src/types.ts';
+import type { Config, Run } from '@bughunter/core';
 
 const execFile = promisify(execFileCallback);
 const presetRoot = resolve(import.meta.dirname, '..');

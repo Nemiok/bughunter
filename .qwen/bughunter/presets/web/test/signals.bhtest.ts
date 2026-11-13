@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { findAnomalyTexts, normalizeMessage, scanSignals, signalSignature } from '../src/detectors/index.ts';
-import type { Config } from '../src/types.ts';
+import type { Config } from '@bughunter/core';
 
 let browser: Browser;
 let server: Server;

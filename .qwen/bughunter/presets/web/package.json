@@ -12,6 +12,7 @@
     "auth": "node src/auth.ts"
   },
   "dependencies": {
+    "@bughunter/core": "*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "playwright-core": "^1.56.1",
     "zod": "^4.1.12"

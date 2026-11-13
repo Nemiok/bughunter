@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SessionManager } from '../src/browser/session.ts';
 import { createRun } from '../src/run-store.ts';
-import type { Config, Signal } from '../src/types.ts';
+import type { Config, Signal } from '@bughunter/core';
 
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
 const serverRoot = resolve(import.meta.dirname, '..');

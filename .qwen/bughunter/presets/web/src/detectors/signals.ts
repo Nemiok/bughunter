@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Page } from 'playwright-core';
-import type { Config, Signal } from '../types.ts';
+import type { Config, Signal } from '@bughunter/core';
 
 export type SignatureInput = {
   kind: string;

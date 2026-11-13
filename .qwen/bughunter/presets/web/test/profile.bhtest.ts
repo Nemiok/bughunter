@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 import { loadConfig } from '../src/config.ts';
 import { loadActiveProfile, loadProfile } from '../src/profile/load.ts';
-import type { Config } from '../src/types.ts';
+import type { Config } from '@bughunter/core';
 
 const temporaryDirectories: string[] = [];
 
