@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { signalSignature } from '../src/detectors/signals.ts';
+import { signalSignature } from '@bughunter/core';
 import { exportE2e, generatePlaywrightTest } from '../src/export/playwright.ts';
 import { triageCandidate, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';

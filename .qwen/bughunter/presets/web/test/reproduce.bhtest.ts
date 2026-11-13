@@ -7,7 +7,7 @@ import { chromium } from 'playwright-core';
 import type { ViteDevServer } from '../../../fixtures/buggy-app/node_modules/vite/dist/node/index.d.ts';
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
-import { signalSignature } from '../src/detectors/signals.ts';
+import { signalSignature } from '@bughunter/core';
 import { checkViolated, replayAndMinimize, reproduceCandidate } from '../src/reproduce.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';

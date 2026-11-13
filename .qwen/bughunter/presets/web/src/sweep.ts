@@ -7,7 +7,7 @@ import { attachNetworkCapture } from './browser/network.ts';
 import { describeScreen } from './browser/screen.ts';
 import { resolveLaunchOptions } from './browser/session.ts';
 import { loadConfig } from './config.ts';
-import { signalSignature } from './detectors/signals.ts';
+import { signalSignature } from '@bughunter/core';
 import { readScreens } from './discovery/screens-store.ts';
 import { loadProfile } from './profile/load.ts';
 import type { Profile } from './profile/types.ts';

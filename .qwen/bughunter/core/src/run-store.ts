@@ -346,7 +346,7 @@ export type TriageInput = {
   stateDir: string;
 };
 
-function candidatePath(runId: string, candidateId: string, stateDir: string): string {
+export function candidatePath(runId: string, candidateId: string, stateDir: string): string {
   validateRunId(runId);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(candidateId) || candidateId === '.' || candidateId === '..') {
     throw new Error(`CANDIDATE_ID_INVALID: ${candidateId}`);

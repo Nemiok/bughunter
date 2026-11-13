@@ -1,2 +1,1 @@
-export { findAnomalyTexts, normalizeMessage, scanSignals, signalSignature } from './signals.ts';
-export type { SignatureInput } from './signals.ts';
+export { findAnomalyTexts, scanSignals } from './signals.ts';

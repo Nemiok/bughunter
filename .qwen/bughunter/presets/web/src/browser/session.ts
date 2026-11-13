@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { access, mkdir, readFile, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { access, mkdir, rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
 import { scanSignals } from '../detectors/index.ts';
 import type { Profile } from '../profile/types.ts';
-import { writeJsonAtomic } from '@bughunter/core';
+import { attachCandidateArtifacts, reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
 import { resolveTestDataFile } from '../profile/load.ts';
 import type {
   Candidate,
@@ -104,13 +104,6 @@ type Session = {
   candidateIds: string[];
   mediaDir: string;
   network: NetworkCapture;
-};
-
-type SharedMemoryEntry = {
-  id?: string;
-  candidateId?: string;
-  sourceCandidate?: string;
-  signature?: string;
 };
 
 function errorMessage(error: unknown): string {
@@ -463,42 +456,19 @@ export class SessionManager {
         throw new Error(`CHECK_INVALID: elementCount.target должен быть селектором, для текста используйте text=…: ${reason}`);
       }
     }
-    let signature: string;
-    if (referencedSignals.length > 0) {
-      signature = referencedSignals[0]!.signature;
-    } else if (input.check) {
-      const canonical = JSON.stringify([
-        input.check.kind,
-        input.check.target,
-        input.check.expected ?? null,
-        route,
-      ]);
-      signature = createHash('sha256').update(canonical).digest('hex');
-    } else {
-      throw new Error('CANDIDATE_ORACLE_REQUIRED');
-    }
-
-    const candidateId = randomUUID();
-    const duplicateOf = await this.findDuplicate(signature);
-    const candidate: Candidate = {
-      id: candidateId,
+    const { candidateId, duplicateOf } = await reportCoreCandidate({
       runId: session.runId,
       sessionId,
-      route,
+      target: route,
       title: input.title,
       expected: input.expected,
       actual: input.actual,
-      signalIds: [...input.signalIds],
-      signature,
       steps: session.journal.steps.map((step) => ({ ...step, ...(step.signalIds ? { signalIds: [...step.signalIds] } : {}) })),
-      artifacts: [],
-      status: 'unprocessed',
-      createdAt: new Date().toISOString(),
+      signalIds: [...input.signalIds],
+      ...(referencedSignals.length > 0 ? { signalSignature: referencedSignals[0]!.signature } : {}),
       ...(input.check === undefined ? {} : { check: input.check }),
-      ...(duplicateOf === undefined ? {} : { duplicateOf }),
-      reproduction: { status: 'unreproduced', attempts: 0 },
-    };
-    await writeJsonAtomic(this.candidatePath(session.runId, candidateId), candidate);
+      stateDir: this.stateDir,
+    });
     session.candidateIds.push(candidateId);
     return { candidateId, ...(duplicateOf === undefined ? {} : { duplicateOf }) };
   }
@@ -543,11 +513,12 @@ export class SessionManager {
       if (video) await video.saveAs(videoPath);
       const artifacts = [tracePath, screenshotPath, videoPath]
         .map((path) => relative(this.stateDir, path).split(sep).join('/'));
-      for (const candidateId of session.candidateIds) {
-        const path = this.candidatePath(session.runId, candidateId);
-        const candidate = JSON.parse(await readFile(path, 'utf8')) as Candidate;
-        await writeJsonAtomic(path, { ...candidate, artifacts });
-      }
+      await attachCandidateArtifacts({
+        runId: session.runId,
+        candidateIds: session.candidateIds,
+        artifacts,
+        stateDir: this.stateDir,
+      });
     } catch (error) {
       errors.push(error);
     } finally {
@@ -852,20 +823,4 @@ export class SessionManager {
     }
   }
 
-  private async findDuplicate(signature: string): Promise<string | undefined> {
-    for (const file of ['known-bugs.json', 'suppressions.json']) {
-      let entries: SharedMemoryEntry[];
-      try {
-        entries = JSON.parse(await readFile(join(this.stateDir, file), 'utf8')) as SharedMemoryEntry[];
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        throw error;
-      }
-      if (!Array.isArray(entries)) throw new Error(`SHARED_MEMORY_INVALID: ${file}`);
-      const match = entries.find((entry) => entry.signature === signature);
-      const id = match?.id ?? match?.candidateId ?? match?.sourceCandidate;
-      if (id) return id;
-    }
-    return undefined;
-  }
 }

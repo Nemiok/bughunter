@@ -4,3 +4,5 @@ export * from './detect.ts';
 export * from './verify-red.ts';
 export * from './project.ts';
 export * from './run-store.ts';
+export * from './candidate.ts';
+export * from './signature.ts';
