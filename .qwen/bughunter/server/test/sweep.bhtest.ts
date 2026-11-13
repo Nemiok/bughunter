@@ -200,6 +200,30 @@ test('interrupted sweep resumes from its cursor and finishRun accepts sweep scop
   assert.equal((await readRun(run.id, stateDir)).status, 'finished');
 });
 
+test('sweep reports an unreachable screen as visited and keeps going', async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'bh-sweep-'));
+  directories.push(stateDir);
+  const config = configTemplate();
+  await writeJsonAtomic(join(stateDir, 'config.json'), config);
+  await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
+  await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
+  await upsertScreens(stateDir, [
+    // Порт 1 заведомо недоступен: переход упадёт сразу, без ожидания таймаута.
+    { template: '/dead', sampleUrl: 'http://127.0.0.1:1/dead', discoveredVia: ['test'], widgets: [] },
+    { template: '/', sampleUrl: `${origin}/`, discoveredVia: ['test'], widgets: [] },
+  ]);
+  const run = await createRun('sweep', undefined, { config, projectRoot: stateDir, stateDir });
+
+  const result = await runSweep({ runId: run.id, stateDir });
+
+  // Курсор сдвинут, значит экран обработан: вызывающая сторона не должна думать, что его не прошли.
+  assert.deepEqual(result.visited, ['/dead', '/']);
+  assert.equal(result.done, true);
+  const findings = await readFindings(run.id, stateDir);
+  assert.equal(findings.filter((finding) => finding.kind === 'navigation-failed').length, 1);
+  assert.ok(findings.some((finding) => finding.screenTemplate === '/' && finding.kind === 'response-captured'));
+});
+
 test('findings are not candidates until promoted', async () => {
   const { stateDir, run } = await setup();
   await runSweep({ runId: run.id, stateDir });

@@ -166,6 +166,9 @@ export async function runSweep(options: {
           progress.visited.push(screen.template);
           progress.updatedAt = new Date().toISOString();
           await writeJsonAtomic(progressPath(options.runId, stateDir), progress);
+          // Экран обработан (курсор сдвинут, находка записана), поэтому он обязан попасть
+          // и в ответ вызывающей стороне: иначе модель решит, что экран ещё не пройден.
+          visited.push(screen.template);
           continue;
         }
         await page.waitForLoadState('networkidle', { timeout: settleMs }).catch(() => undefined);
