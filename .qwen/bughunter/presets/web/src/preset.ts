@@ -1,7 +1,10 @@
 import type { Preset } from '@bughunter/core';
 
+import { webFindingKinds } from './finding-kinds.ts';
 import { EXPLORER_PERSONAS } from './personas.ts';
 import { webReportFormat } from './report-format.ts';
+import { webReset } from './reset.ts';
+import { webInventory, webSweepVisit } from './sweep-visit.ts';
 import { webTestRunner } from './test-runner.ts';
 
 /**
@@ -15,7 +18,7 @@ const pending = (hook: string) => (): never => {
 export const webPreset: Preset = {
   name: 'web',
   configSchema: {},
-  inventory: { list: pending('inventory.list'), templateOf: pending('inventory.templateOf') },
+  inventory: webInventory,
   session: { open: pending('session.open') },
   snapshot: { compact: pending('snapshot.compact') },
   detectors: {
@@ -32,12 +35,9 @@ export const webPreset: Preset = {
   profile: { load: pending('profile.load'), testDataFile: pending('profile.testDataFile') },
   testRunner: webTestRunner,
   personas: { roster: EXPLORER_PERSONAS, brief: pending('personas.brief') },
-  findingKinds: {
-    kinds: ['response-captured', 'extract-failed', 'navigation-failed', 'response-missing', 'reset-unsupported'],
-    syntheticStep: pending('findingKinds.syntheticStep'),
-  },
-  sweepVisit: { visit: pending('sweepVisit.visit') },
-  reset: { supported: true, apply: pending('reset.apply') },
+  findingKinds: webFindingKinds,
+  sweepVisit: webSweepVisit,
+  reset: webReset,
   exportTarget: { dir: pending('exportTarget.dir'), kind: 'e2e', fileName: pending('exportTarget.fileName') },
   errors: { codes: {} },
   report: webReportFormat,

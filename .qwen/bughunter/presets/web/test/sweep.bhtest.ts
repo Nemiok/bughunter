@@ -11,7 +11,9 @@ import {
 } from '@bughunter/core';
 import { createRun, finishRun } from '../src/runs.ts';
 import { reproduceCandidate } from '../src/reproduce.ts';
-import { applyReset, promoteFindingToCandidate, runSweep } from '../src/sweep.ts';
+import { applyReset } from '../src/reset.ts';
+import { promoteFindingToCandidate } from '../src/runs.ts';
+import { runSweep, webInventory } from '../src/sweep-visit.ts';
 import type { Config } from '@bughunter/core';
 
 const directories: string[] = [];
@@ -114,7 +116,7 @@ test('sweep visits every inventoried screen without a model and records response
 
   const result = await runSweep({ runId: run.id, stateDir });
 
-  assert.equal(result.screens, 3);
+  assert.equal(result.targets, 3);
   assert.deepEqual([...result.visited].sort(), ['/', '/orders/:id', '/profile']);
   assert.equal(result.done, true);
   assert.equal(result.nextCursor, undefined);
@@ -298,7 +300,7 @@ test('screen scope restricts the run to one template', async () => {
 
   const result = await runSweep({ runId: run.id, stateDir });
   assert.deepEqual(result.visited, ['/orders/:id']);
-  assert.equal(result.screens, 1);
+  assert.equal(result.targets, 1);
   assert.equal(result.done, true);
 
   const after = await readRun(run.id, stateDir);
@@ -341,4 +343,25 @@ test('sweep refuses a run of a model-driven scope', async () => {
   const run = await createRun('route', '/', { config, projectRoot: stateDir, stateDir });
 
   await assert.rejects(() => runSweep({ runId: run.id, stateDir }), /SWEEP_SCOPE_REQUIRED: route/);
+});
+
+test('the inventory lists screen templates and folds identifier segments', async () => {
+  const { stateDir } = await setup();
+
+  assert.deepEqual(await webInventory.list(stateDir), ['/', '/profile', '/orders/:id']);
+  assert.equal(webInventory.templateOf(`${origin}/orders/7f3ab4c9d2`), '/orders/:id');
+  assert.equal(webInventory.templateOf('/orders/new?x=1'), '/orders/new');
+});
+
+test('an empty inventory tells the model to crawl first', async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'bh-sweep-'));
+  directories.push(stateDir);
+  const config = configTemplate();
+  await writeJsonAtomic(join(stateDir, 'config.json'), config);
+  const run = await createRun('sweep', undefined, { config, projectRoot: stateDir, stateDir });
+
+  await assert.rejects(
+    () => runSweep({ runId: run.id, stateDir }),
+    /SCREEN_NOT_FOUND: пустой инвентарь — сначала bh_crawl/,
+  );
 });

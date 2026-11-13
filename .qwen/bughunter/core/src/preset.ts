@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Candidate, Check, Config, Finding, Signal, Step } from './types.ts';
+import type { Candidate, Check, Config, Finding, FindingDraft, Signal, Step } from './types.ts';
 
 /** Единица исследования: шаблон маршрута в web-пресете, эндпоинт в node-пресете. */
 export type TargetRef = string;
@@ -93,15 +93,18 @@ export type Personas = {
   brief(persona: string): string;
 };
 
-/** Словарь находок детерминированного обхода и шаг журнала для промоции находки в кандидата. */
+/**
+ * Словарь находок детерминированного обхода и шаг журнала для промоции находки в кандидата.
+ * Шаг строит пресет и асинхронно: конкретный адрес цели — знание инвентаря пресета, не core.
+ */
 export type FindingKinds = {
   kinds: string[];
-  syntheticStep(finding: Finding): Step;
+  syntheticStep(finding: Finding, stateDir: string): Promise<Step>;
 };
 
 /** Визит одной цели обхода: дойти, снять, сравнить. Курсор и чекпоинты — в core. */
 export type SweepVisit = {
-  visit(input: { target: TargetRef; handle: SessionHandle; stateDir: string }): Promise<Finding[]>;
+  visit(input: { target: TargetRef; handle: SessionHandle; stateDir: string }): Promise<FindingDraft[]>;
 };
 
 export type Reset = {

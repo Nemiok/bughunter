@@ -12,7 +12,7 @@ import { readScreens, templatisedPathname, upsertScreens } from '../src/discover
 import { loadActiveProfile, loadProfile } from '../src/profile/load.ts';
 import { readFindings, readRun, writeJsonAtomic } from '@bughunter/core';
 import { createRun, finishRun } from '../src/runs.ts';
-import { runSweep } from '../src/sweep.ts';
+import { runSweep } from '../src/sweep-visit.ts';
 import type { Config, ScreenEntry } from '@bughunter/core';
 import type { Profile } from '../src/profile/types.ts';
 

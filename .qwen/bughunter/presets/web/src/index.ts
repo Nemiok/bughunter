@@ -26,7 +26,7 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
   // EXPLORER_BUSY бросает core (фасад жизненного цикла сессии), поэтому сопоставляется по префиксу.
-  if (/^(EXPLORER_BUSY|POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND|CHECK_INVALID)\b/.test(message)) {
+  if (/^(EXPLORER_BUSY|POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND|CHECK_INVALID)\b/.test(message)) {
     return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
@@ -66,14 +66,16 @@ async function main(): Promise<void> {
   const {
     readRun, recordCandidateTest, recordRunStage, resumeRun, triageCandidate,
   } = await import('@bughunter/core');
-  const { createRun, finishRun, leaseNextExploration } = await import('./runs.ts');
+  const {
+    createRun, finishRun, leaseNextExploration, promoteFindingToCandidate,
+  } = await import('./runs.ts');
   const { reproduceCandidate } = await import('./reproduce.ts');
   const { exportE2e } = await import('./export/playwright.ts');
   const { detectWebTests, verifyWebRed } = await import('./test-runner.ts');
   const { SessionManager, resolveLaunchOptions } = await import('./browser/session.ts');
   const { loadProfile } = await import('./profile/load.ts');
   const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
-  const { runSweep, promoteFindingToCandidate } = await import('./sweep.ts');
+  const { runSweep } = await import('./sweep-visit.ts');
   const { webPreset } = await import('./preset.ts');
   const { createLifecycle } = core;
   const { z } = zod;

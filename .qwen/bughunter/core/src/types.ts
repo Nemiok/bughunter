@@ -67,24 +67,26 @@ export type RunStages = {
   findings?: OperationStage;
 };
 
-export type FindingKind = 'extract-failed' | 'response-missing' | 'response-captured' | 'navigation-failed' | 'reset-unsupported';
-
 /**
  * Находка детерминированного обхода. Это не кандидат: у находки нет журнала сессии,
  * поэтому в кандидаты она превращается только через `promoteFindingToCandidate`.
+ * Словарь видов принадлежит пресету (`FindingKinds.kinds`), core его только проверяет.
  */
 export type Finding = {
   id: string;
   runId: string;
   screenTemplate: string;
   widget?: string;
-  kind: FindingKind;
+  kind: string;
   detail: string;
   responseHashes: string[];
   status: 'new' | 'promoted' | 'dismissed';
   candidateId?: string;
   createdAt: string;
 };
+
+/** Что пресет сообщает о цели обхода; конверт находки заполняет core. */
+export type FindingDraft = Omit<Finding, 'id' | 'runId' | 'status' | 'createdAt'>;
 
 export type SweepProgress = {
   visited: string[];

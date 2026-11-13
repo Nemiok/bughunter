@@ -7,3 +7,4 @@ export * from './run-store.ts';
 export * from './candidate.ts';
 export * from './signature.ts';
 export * from './session-lifecycle.ts';
+export * from './sweep.ts';
