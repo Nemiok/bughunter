@@ -245,7 +245,7 @@ Expected: FAIL — `Cannot find module '../src/browser/network.ts'`.
 
 Слушатели `context.on('response')` и `context.on('requestfailed')` вместо `page.on(...)`; фильтр по `allowedOrigins` (переиспользовать `isAllowed`-логику сессии, вынеся её в общую функцию); чтение тела с `maxResponseBodyBytes`; хэш `sha256` от полного тела; полный текст — в `runs/<runId>/responses/<hash>.json`; привязка к шагу через очередь «ответы с момента предыдущего шага». Для `responseSource: 'msw-hook'` — `page.exposeFunction('__bhReportResponse', …)` и `addInitScript`, читающий `window.__bhResponses` (ветка выбирается по результату Task 1).
 
-- [ ] **Step 4: Подключить к сессии иjournal**
+- [ ] **Step 4: Подключить к сессии и journal**
 
 `session.ts`: создание захвата в `open()` после `newContext`, `dispose()` в `close()` в `finally`; в `appendStep` добавлять `responseHashes: string[]`; `settle()` дополнить ожиданием привязанного ответа через `NetworkCapture.waitFor` с таймаутом из `limits.responseSettleMs` (новое поле конфига, дефолт 5000) — это устраняет класс гонок, уже встречавшийся в экспортёре.
 
