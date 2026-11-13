@@ -25,7 +25,8 @@ function errorCode(error: unknown): { code: string; message: string } {
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };
   if (message.startsWith('RUN_INCOMPLETE:')) return { code: 'RUN_INCOMPLETE', message };
   if (/^LEASE_(REQUIRED|UNKNOWN|MISMATCH):/.test(message)) return { code: message.split(':')[0] ?? 'LEASE_UNKNOWN', message };
-  if (/^(POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND|CHECK_INVALID)\b/.test(message)) {
+  // EXPLORER_BUSY бросает core (фасад жизненного цикла сессии), поэтому сопоставляется по префиксу.
+  if (/^(EXPLORER_BUSY|POINT_TARGET_UNRESOLVED|DRAG_TARGET_REQUIRED|SCROLL_INVALID|UPLOAD_FILE_NOT_FOUND|SCREENS_STORE_CORRUPT|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|SCREEN_NOT_FOUND|CHECK_INVALID)\b/.test(message)) {
     return { code: message.split(':')[0] ?? 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };
@@ -63,9 +64,7 @@ async function main(): Promise<void> {
   const { ensureConfig, loadConfig } = await import('./config.ts');
   const { findProjectRoot } = core;
   const {
-    completeExplorationLease, readRun, reclaimExplorationLeases,
-    recordCandidateTest, recordRouteExploration, recordRunStage, releaseExplorationLease, resumeRun, triageCandidate,
-    validateExplorationLease,
+    readRun, recordCandidateTest, recordRunStage, resumeRun, triageCandidate,
   } = await import('@bughunter/core');
   const { createRun, finishRun, leaseNextExploration } = await import('./runs.ts');
   const { reproduceCandidate } = await import('./reproduce.ts');
@@ -76,6 +75,7 @@ async function main(): Promise<void> {
   const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
   const { runSweep, promoteFindingToCandidate } = await import('./sweep.ts');
   const { webPreset } = await import('./preset.ts');
+  const { createLifecycle } = core;
   const { z } = zod;
   const stateDir = process.env.BUGHUNTER_STATE_DIR
     ? resolve(process.env.BUGHUNTER_STATE_DIR)
@@ -84,34 +84,18 @@ async function main(): Promise<void> {
   await core.assertSinglePreset(stateDir, webPreset.name);
   let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
   let contextPromise: ReturnType<typeof loadContext> | undefined;
-  const explorations = new Map<string, { runId: string; route: string; leaseId?: string }>();
-  const activeExplorerRuns = new Set<string>();
-  const explorationQueueLocks = new Map<string, Promise<unknown>>();
-
-  // Серилизация read-modify-write очереди исследования внутри одного серверного процесса.
-  async function withExplorationQueueLock<T>(id: string, callback: () => Promise<T>): Promise<T> {
-    const previous = explorationQueueLocks.get(id) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => current);
-    explorationQueueLocks.set(id, tail);
-    await previous;
-    try {
-      return await callback();
-    } finally {
-      release();
-      if (explorationQueueLocks.get(id) === tail) explorationQueueLocks.delete(id);
-    }
-  }
-
-  // Lease, за которыми стоят живые сессии этого процесса: reclaim их не трогает.
-  function liveLeaseIds(id: string): Set<string> {
-    const leases = new Set<string>();
-    for (const exploration of explorations.values()) {
-      if (exploration.runId === id && exploration.leaseId !== undefined) leases.add(exploration.leaseId);
-    }
-    return leases;
-  }
+  // Порядок lease-вызовов принадлежит core: он один на все пресеты и им доказан resume-гейт.
+  const lifecycle = createLifecycle({
+    stateDir,
+    personas: webPreset.personas.roster,
+    open: async ({ runId, target, persona }) => {
+      const opened = await (await manager()).open(runId, target, persona);
+      return { sessionId: opened.sessionId, payload: opened };
+    },
+    close: async (sessionId) => {
+      await (await manager()).close(sessionId);
+    },
+  });
 
   async function loadContext() {
     const config = await loadConfig(stateDir);
@@ -203,7 +187,7 @@ async function main(): Promise<void> {
     inputSchema: z.strictObject({ runId }),
   }, async ({ runId: id }) => invoke(async () => {
     // Прерванные исследователи не вызывают bh_close: их lease возвращается в очередь здесь.
-    await withExplorationQueueLock(id, () => reclaimExplorationLeases(id, stateDir, liveLeaseIds(id)));
+    await lifecycle.reclaim(id);
     const { run, pendingCandidates } = await resumeRun(id, stateDir);
     return {
       runId: run.id,
@@ -217,9 +201,8 @@ async function main(): Promise<void> {
   server.registerTool('bh_explore_next', {
     description: 'Получить следующую задачу исследования: маршрут, персону и lease для bh_open',
     inputSchema: z.strictObject({ runId, route: z.string().min(1).optional() }),
-  }, async ({ runId: id, route }) => invoke(() => withExplorationQueueLock(id, () =>
-    leaseNextExploration(id, { ...(route === undefined ? {} : { route }), keepLeaseIds: liveLeaseIds(id) }, stateDir),
-  )));
+  }, async ({ runId: id, route }) => invoke(() =>
+    lifecycle.leaseNext(id, route === undefined ? {} : { route })));
 
   server.registerTool('bh_finish_run', {
     description: 'Записать отчёт и завершить существующий прогон',
@@ -232,34 +215,13 @@ async function main(): Promise<void> {
       runId, route: z.string().min(1), persona: z.string().min(1), leaseId: z.string().min(1).optional(),
     }),
   }, async ({ runId: id, route, persona, leaseId }) => invoke(async () => {
-    if (activeExplorerRuns.has(id)) throw new ToolError(`EXPLORER_BUSY: ${id}`);
-    activeExplorerRuns.add(id);
-    let validatedLease: string | undefined;
-    try {
-      const run = await readRun(id, stateDir);
-      if (run.exploreQueue) {
-        if (leaseId === undefined) throw new ToolError(`LEASE_REQUIRED: ${id}`);
-        await validateExplorationLease(id, leaseId, route, persona, stateDir);
-        validatedLease = leaseId;
-      }
-      const opened = await (await manager()).open(id, route, persona);
-      try {
-        await recordRouteExploration(id, route, 'exploring', stateDir);
-        explorations.set(opened.sessionId, { runId: id, route, ...(validatedLease === undefined ? {} : { leaseId: validatedLease }) });
-        return opened;
-      } catch (error) {
-        await (await manager()).close(opened.sessionId).catch(() => undefined);
-        throw error;
-      }
-    } catch (error) {
-      // Открытие не состоялось — задача возвращается в очередь для повторной выдачи.
-      if (validatedLease !== undefined) {
-        const leaseToRelease = validatedLease;
-        await withExplorationQueueLock(id, () => releaseExplorationLease(id, leaseToRelease, stateDir)).catch(() => undefined);
-      }
-      activeExplorerRuns.delete(id);
-      throw error;
-    }
+    const opened = await lifecycle.open({
+      runId: id,
+      target: route,
+      persona,
+      ...(leaseId === undefined ? {} : { leaseId }),
+    });
+    return opened.payload;
   }));
 
   server.registerTool('bh_state', {
@@ -465,32 +427,8 @@ async function main(): Promise<void> {
     description: 'Закрыть сессию и сохранить артефакты',
     inputSchema: z.strictObject({ sessionId }),
   }, async ({ sessionId: id }) => invoke(async () => {
-    const exploration = explorations.get(id);
-    let leaseSettled = false;
-    try {
-      await (await manager()).close(id);
-      if (exploration) {
-        await recordRouteExploration(exploration.runId, exploration.route, 'done', stateDir);
-        if (exploration.leaseId !== undefined) {
-          await withExplorationQueueLock(exploration.runId, () =>
-            completeExplorationLease(exploration.runId, exploration.leaseId!, stateDir),
-          );
-          leaseSettled = true;
-        }
-      }
-      return { ok: true };
-    } finally {
-      if (exploration) {
-        // Закрытие не удалось — задача не считается выполненной и возвращается в очередь.
-        if (exploration.leaseId !== undefined && !leaseSettled) {
-          await withExplorationQueueLock(exploration.runId, () =>
-            releaseExplorationLease(exploration.runId, exploration.leaseId!, stateDir),
-          ).catch(() => undefined);
-        }
-        activeExplorerRuns.delete(exploration.runId);
-        explorations.delete(id);
-      }
-    }
+    await lifecycle.close(id);
+    return { ok: true };
   }));
 
   const transport = new stdio.StdioServerTransport();
