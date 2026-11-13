@@ -87,7 +87,7 @@ async function withPage(run: (page: Page) => Promise<void>): Promise<void> {
   }
 }
 
-/** Экран дашборда готов, когда все четыре запроса виджетов завершились (успехом или ошибкой). */
+/** Экран дашборда готов, когда все пять запросов виджетов завершились (успехом или ошибкой). */
 async function openDashboard(page: Page, path = '/dashboard/1'): Promise<void> {
   await openFixture(page, path);
   await page.getByTestId('dashboard-ready').waitFor({ state: 'visible', timeout: 20_000 });
