@@ -7,6 +7,7 @@ import type { Errors } from '@bughunter/core';
 export const webDomainCodes = [
   'CHECK_INVALID',
   'DRAG_TARGET_REQUIRED',
+  'PERSONA_UNKNOWN',
   'POINT_TARGET_UNRESOLVED',
   'SCREENS_STORE_CORRUPT',
   'SCREEN_NOT_FOUND',

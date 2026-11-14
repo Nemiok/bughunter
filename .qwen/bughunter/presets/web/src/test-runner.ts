@@ -34,6 +34,9 @@ type PlaywrightReport = {
 
 /** Вид теста, который заявляет вызывающий: e2e всегда означает Playwright. */
 export const e2eKind = 'e2e';
+
+/** Словарь видов тестов пресета: из него собираются `testRunner.kinds` и схема `bh_verify_red`. */
+export const webTestKinds = [e2eKind, 'unit'] as const;
 const playwrightKind = 'playwright';
 const jestKind = 'jest';
 const vitestKind = 'vitest';
@@ -204,7 +207,7 @@ export function playwrightProject(packageJson: unknown): boolean {
 
 export const webTestRunner: TestRunner = {
   /** Значения, которые принимает вызывающий; `resolveKind` переводит их в конкретный раннер. */
-  kinds: [e2eKind, 'unit'],
+  kinds: [...webTestKinds],
   async resolveKind({ testFile, requested, unitCommand }) {
     if (requested === e2eKind) return playwrightKind;
     const detected = await detectWebTests(testFile, { unitCommand });

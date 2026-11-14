@@ -1,6 +1,7 @@
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
+import type { ProfileSchema } from '@bughunter/core';
 import { loadConfig } from '../config.ts';
 import type { Profile } from './types.ts';
 
@@ -85,3 +86,8 @@ export function resolveTestDataFile(profile: Profile | null, file: string): stri
   if (resolved !== root && !resolved.startsWith(root + sep)) throw new Error(`UPLOAD_FILE_NOT_FOUND: ${file}`);
   return resolved;
 }
+
+export const webProfile: ProfileSchema = {
+  load: loadProfile,
+  testDataFile: (profile, relativePath) => resolveTestDataFile(profile as Profile | null, relativePath),
+};

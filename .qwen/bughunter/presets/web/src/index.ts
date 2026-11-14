@@ -5,6 +5,7 @@ import { webCheckKinds } from './checks.ts';
 import { errorCode, ToolError } from './errors.ts';
 import { defaultStateDir } from './paths.ts';
 import { webSnapshot } from './snapshot.ts';
+import type { SessionManager } from './browser/session.ts';
 
 const missingDependenciesMessage = `Зависимости Bughunter не установлены. Выполните: ${cliInstallHint()}`;
 
@@ -48,8 +49,9 @@ async function main(): Promise<void> {
   } = await import('./runs.ts');
   const { reproduceCandidate } = await import('./reproduce.ts');
   const { exportTest } = await import('./export-playwright.ts');
-  const { detectWebTests, verifyWebRed } = await import('./test-runner.ts');
-  const { SessionManager, resolveLaunchOptions } = await import('./browser/session.ts');
+  const { detectWebTests, verifyWebRed, webTestKinds } = await import('./test-runner.ts');
+  const { resolveLaunchOptions } = await import('./browser/session.ts');
+  const { activeSessionManager, sessionManager } = await import('./session-handle.ts');
   const { loadProfile } = await import('./profile/load.ts');
   const { crawlScreens, defaultMaxDepth, defaultMaxScreens } = await import('./discovery/crawl.ts');
   const { runSweep } = await import('./sweep-visit.ts');
@@ -61,15 +63,16 @@ async function main(): Promise<void> {
     : defaultStateDir;
   core.assertPreset(webPreset);
   await core.assertSinglePreset(stateDir, webPreset.name);
-  let managerPromise: Promise<InstanceType<typeof SessionManager>> | undefined;
   let contextPromise: ReturnType<typeof loadContext> | undefined;
   // Порядок lease-вызовов принадлежит core: он один на все пресеты и им доказан resume-гейт.
   const lifecycle = createLifecycle({
     stateDir,
     personas: webPreset.personas.roster,
+    // Сессию открывает адаптер контракта, а не точка входа напрямую: менеджер и браузер остаются
+    // общими с остальными инструментами пресета.
     open: async ({ runId, target, persona }) => {
-      const opened = await (await manager()).open(runId, target, persona);
-      return { sessionId: opened.sessionId, payload: opened };
+      const handle = await webPreset.session.open({ runId, target, persona, stateDir });
+      return { sessionId: handle.id, payload: { sessionId: handle.id } };
     },
     close: async (sessionId) => {
       await (await manager()).close(sessionId);
@@ -92,14 +95,8 @@ async function main(): Promise<void> {
     }
   }
 
-  async function manager(): Promise<InstanceType<typeof SessionManager>> {
-    managerPromise ??= appContext().then(({ config, profile }) => new SessionManager(config, stateDir, profile));
-    try {
-      return await managerPromise;
-    } catch (error) {
-      managerPromise = undefined;
-      throw error;
-    }
+  async function manager(): Promise<SessionManager> {
+    return sessionManager(stateDir);
   }
 
   function result(value: unknown) {
@@ -381,7 +378,7 @@ async function main(): Promise<void> {
       testFile: z.string().min(1),
       runId: runId.optional(),
       candidateId: z.string().min(1).optional(),
-      kind: z.enum(['e2e', 'unit']).optional(),
+      kind: z.enum(webTestKinds).optional(),
     }),
   }, async ({ testFile, runId: id, candidateId, kind }) => invoke(async () => {
     if ((id === undefined) !== (candidateId === undefined)) throw new Error('TEST_ASSOCIATION_INCOMPLETE');
@@ -408,7 +405,8 @@ async function main(): Promise<void> {
 
   const transport = new stdio.StdioServerTransport();
   const shutdown = async () => {
-    const active = managerPromise ? await managerPromise.catch(() => undefined) : undefined;
+    const created = activeSessionManager(stateDir);
+    const active = created === undefined ? undefined : await created.catch(() => undefined);
     await active?.closeAll().catch(() => undefined);
     await server.close().catch(() => undefined);
   };

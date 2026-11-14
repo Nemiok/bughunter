@@ -8,7 +8,8 @@ import type { ViteDevServer } from '../../../fixtures/buggy-app/node_modules/vit
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
 import { signalSignature } from '@bughunter/core';
-import { checkViolated, reproduceCandidate } from '../src/reproduce.ts';
+import { checkViolated } from '../src/checks.ts';
+import { reproduceCandidate } from '../src/reproduce.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
 import type { Candidate } from '@bughunter/core';

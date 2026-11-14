@@ -11,44 +11,11 @@ import { findAnomalyTexts } from './detectors/signals.ts';
 import { defaultStateDir } from './paths.ts';
 import { reproduceCandidate as reproduceCoreCandidate, signalSignature } from '@bughunter/core';
 import type {
-  Candidate, Check, Journal, Replay, ReplayContext, ReplayOutcome, ReproductionResult, Signal, StepBase,
+  Candidate, Journal, Replay, ReplayContext, ReplayOutcome, ReproductionResult, Signal, StepBase,
 } from '@bughunter/core';
 import type { WebConfig as Config } from './config.ts';
-import type { WebCheck } from './checks.ts';
+import { checkViolated } from './checks.ts';
 import type { Step } from './types.ts';
-
-function pageFor(manager: SessionManager, sessionId: string): Page {
-  const page = (manager as unknown as {
-    sessions: Map<string, { page: Page }>;
-  }).sessions.get(sessionId)?.page;
-  if (!page) throw new Error(`SESSION_NOT_FOUND: ${sessionId}`);
-  return page;
-}
-
-/**
- * Текст считается присутствующим только если видимо хотя бы одно совпадение. `first()` для этого
- * не годится: одно и то же значение часто встречается и в скрытом узле (option фильтра, шаблон,
- * aria-live), и в видимой ячейке — по первому совпадению нарушение пропадало или возникало зря.
- */
-async function hasVisibleText(page: Page, target: string): Promise<boolean> {
-  const matches = page.getByText(target, { exact: true });
-  const total = await matches.count();
-  for (let index = 0; index < total; index += 1) {
-    if (await matches.nth(index).isVisible()) return true;
-  }
-  return false;
-}
-
-export async function checkViolated(page: Page, check: Check): Promise<boolean> {
-  switch ((check as WebCheck).kind) {
-    case 'visibleText':
-      return !await hasVisibleText(page, check.target);
-    case 'notVisibleText':
-      return await hasVisibleText(page, check.target);
-    case 'elementCount':
-      return await page.locator(check.target).count() !== Number(check.expected ?? 0);
-  }
-}
 
 async function observeReplayAnomaly(page: Page, config: Config, signature: string): Promise<{ matched: boolean }> {
   const observed = { matched: false };
@@ -118,7 +85,7 @@ async function executeReplay(
   try {
     const opened = await manager.open(candidate.runId, journal.target, journal.persona);
     sessionId = opened.sessionId;
-    const observedAnomaly = await observeReplayAnomaly(pageFor(manager, sessionId), config, candidate.signature);
+    const observedAnomaly = await observeReplayAnomaly(manager.pageOf(sessionId), config, candidate.signature);
     const signals: Signal[] = [];
     const collect = (emitted: Signal[]) => signals.push(...emitted);
     for (const step of steps) {
@@ -143,7 +110,7 @@ async function executeReplay(
       matched = observedAnomaly.matched
         || signals.some((signal) => signal.signature === candidate.signature);
     } else if (candidate.check) {
-      matched = await checkViolated(pageFor(manager, sessionId), candidate.check);
+      matched = await checkViolated(manager.pageOf(sessionId), candidate.check);
     }
   } catch {
     matched = false;

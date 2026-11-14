@@ -10,6 +10,8 @@ import type { ActInput, CandidateInput, ProbeKind } from '../src/browser/session
 import { writeJsonAtomic } from '@bughunter/core';
 import type { Journal } from '@bughunter/core';
 import type { WebConfig as Config } from '../src/config.ts';
+import { webDetectors } from '../src/detectors/index.ts';
+import { activeSessionManager, openWebSession } from '../src/session-handle.ts';
 import type { Step } from '../src/types.ts';
 
 const demoOrigin = 'http://127.0.0.1:4173';
@@ -455,5 +457,48 @@ test('elementCount target that is not a selector is rejected at report time', as
     assert.ok(otherKinds.candidateId);
   } finally {
     await manager.closeAll();
+  }
+});
+
+test('contract session handle drives the session it opened', async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'bh-session-handle-'));
+  temporaryDirectories.push(stateDir);
+  await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
+  await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
+  await writeJsonAtomic(join(stateDir, 'config.json'), configTemplate(controlsOrigin));
+  try {
+    const handle = await openWebSession({ runId: 'run-handle', target: '/controls', persona: 'новичок', stateDir });
+    assert.ok(handle.page.url().startsWith(controlsOrigin), 'дескриптор держит страницу своей сессии');
+
+    const snapshot = await handle.snapshot() as {
+      title: string;
+      elements: Array<{ id: string; name?: string; locator?: unknown }>;
+    };
+    assert.equal(snapshot.title, 'Controls');
+    assert.ok(snapshot.elements.length > 0);
+    assert.ok(snapshot.elements.every((element) => element.locator === undefined), 'снимок отдан без локаторов');
+
+    const button = snapshot.elements.find((element) => element.name === 'Emit signal');
+    assert.ok(button, 'кнопка Emit signal не найдена в снимке');
+    const acted = await handle.act({ elementId: button.id, action: 'click' }) as { ok: boolean; error?: string };
+    assert.equal(acted.ok, true, acted.error);
+
+    const symptoms = await webDetectors.scan(handle);
+    assert.ok(
+      symptoms.some((signal) => signal.kind === 'console' && signal.message === 'drain-test'),
+      'детекторы отдают симптом, который сессия накопила действием',
+    );
+    assert.deepEqual(await webDetectors.scan(handle), [], 'каждый симптом отдаётся один раз');
+
+    const steps = handle.steps();
+    assert.equal(steps.length, 1);
+    assert.equal(steps[0]!.kind, 'act');
+    assert.deepEqual(handle.artifacts(), [], 'до закрытия сессии артефактов нет');
+
+    await handle.close();
+    assert.equal((await journal(stateDir, 'run-handle', handle.id)).steps.length, 1);
+  } finally {
+    const created = activeSessionManager(stateDir);
+    await (created === undefined ? undefined : await created)?.closeAll();
   }
 });

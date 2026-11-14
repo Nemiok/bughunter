@@ -3,6 +3,7 @@ import { access, mkdir, rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
 import { scanSignals } from '../detectors/index.ts';
+import { validateWebCheck } from '../checks.ts';
 import type { Profile } from '../profile/types.ts';
 import { attachCandidateArtifacts, reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
 import { resolveTestDataFile } from '../profile/load.ts';
@@ -11,6 +12,7 @@ import type {
   Check,
   Journal,
   Signal,
+  StepBase,
 } from '@bughunter/core';
 import type {
   ElementSnapshot,
@@ -187,6 +189,16 @@ export class SessionManager {
   /** Лимит элементов снимка; публичен, потому что страницы снимка нарезает слой MCP. */
   get snapshotLimit(): number {
     return this.config.limits.elementsPerSnapshot ?? defaultElementsPerSnapshot;
+  }
+
+  /** Страница сессии: нужна оракулам и детекторам, которые работают мимо слоя MCP. */
+  pageOf(sessionId: string): Page {
+    return this.session(sessionId).page;
+  }
+
+  /** Шаги журнала сессии на текущий момент; копия, чтобы журнал нельзя было изменить извне. */
+  stepsOf(sessionId: string): StepBase[] {
+    return [...this.session(sessionId).journal.steps];
   }
 
   private launchOptions(): LaunchOptions {
@@ -447,15 +459,18 @@ export class SessionManager {
       return signal;
     });
     const route = this.currentRoute(session.page);
-    if (input.check?.kind === 'elementCount') {
-      // У elementCount `target` — селектор Playwright, а не текст. Ошибка парсинга иначе всплывёт
-      // только внутри bh_reproduce, где её проглотит catch, и кандидат молча станет «не воспроизведён»
-      // после трёх попыток. Проверяем здесь, пока автор check ещё в цикле и может его поправить.
-      try {
-        await session.page.locator(input.check.target).count();
-      } catch (error) {
-        const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
-        throw new Error(`CHECK_INVALID: elementCount.target должен быть селектором, для текста используйте text=…: ${reason}`);
+    if (input.check) {
+      validateWebCheck(input.check);
+      if (input.check.kind === 'elementCount') {
+        // У elementCount `target` — селектор Playwright, а не текст. Ошибка парсинга иначе всплывёт
+        // только внутри bh_reproduce, где её проглотит catch, и кандидат молча станет «не воспроизведён»
+        // после трёх попыток. Проверяем здесь, пока автор check ещё в цикле и может его поправить.
+        try {
+          await session.page.locator(input.check.target).count();
+        } catch (error) {
+          const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+          throw new Error(`CHECK_INVALID: elementCount.target должен быть селектором, для текста используйте text=…: ${reason}`);
+        }
       }
     }
     const { candidateId, duplicateOf } = await reportCoreCandidate({
