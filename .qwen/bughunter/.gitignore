@@ -4,6 +4,9 @@ fixtures/*/.playwright-output/
 presets/web/state/preset.json
 presets/web/state/runs/
 presets/web/state/auth/
+presets/node/state/preset.json
+presets/node/state/runs/
+presets/node/state/auth/
 # Рантайм установки до разреза core/пресеты (каталог переехал в presets/web/state)
 state/runs/
 state/auth/
