@@ -107,19 +107,21 @@ git add .qwen/bughunter/core .qwen/bughunter/presets/web && git commit -m "refac
 
 - [ ] **Step 1: Тесты (RED)**
 
-`core/test/contract-usage.bhtest.ts`, два теста. `every Preset field is consumed by core`: разобрать поля `export type Preset` из `core/src/preset.ts` (тот же парсинг, что в `core/test/prompts-core.bhtest.ts`), для каждого имени интерфейса найти потребление в `core/src/**` — `preset.<поле>` или деструктуризацию; утверждение печатает список незадействованных полей. `shipped presets wire every hook of the contract`: обход `presets/*/src/preset.ts`, запрет подстрок `pending(` и `PRESET_HOOK_NOT_WIRED`; утверждение печатает файл и строку.
+`core/test/contract-usage.bhtest.ts`, два теста. `every contract hook has a consumer`: разобрать 16 имён интерфейсов из `export type Preset` в `core/src/preset.ts` (тот же парсинг, что в `core/test/prompts-core.bhtest.ts`) и для каждого требовать упоминания имени **вне** `preset.ts` — в `core/src/**` или в `presets/web/src/**`; утверждение печатает список сирот. Основание такой формулировки: core управляет не всеми хуками — `Snapshot`, `Detectors`, `ProfileSchema`, `Personas`, `Errors` и `Checks` потребляет точка входа пресета (спецификация 6.3), поэтому требование «все 16 в core» заставило бы писать фиктивные потребления. `shipped presets wire every hook of the contract`: обход `presets/*/src/preset.ts`, запрет подстрок `pending(` и `PRESET_HOOK_NOT_WIRED`; утверждение печатает файл и строку.
 `presets/web/test/preset-contract.bhtest.ts` дополнить тестом `the web preset answers all five questions without stubs`: для каждого из 16 полей `webPreset` вызвать его там, где это безопасно без браузера (`inventory.list`, `checks.kinds`, `checks.validate`, `personas.roster`, `personas.brief`, `profile.testDataFile`, `exportTarget.dir/fileName/kind`, `errors.codes`, `findingKinds.kinds`, `reset.supported`, `report.finding/candidate`, `snapshot.compact`, `detectors.kinds`, `testRunner.kinds`) и утвердить, что ни один вызов не бросил `PRESET_HOOK_NOT_WIRED`.
 
 - [ ] **Step 2: Убедиться, что падают**
 
 Run: `cd core && node --test test/contract-usage.bhtest.ts`
-Expected: FAIL — список незадействованных полей (`replay`, `checks`, `session`, …) и строки с `pending(` в `presets/web/src/preset.ts`
+Expected: FAIL — список сирот (интерфейсы, упомянутые только в `preset.ts`) и строки с `pending(` в `presets/web/src/preset.ts`
 
 - [ ] **Step 3: Заполнить семь слотов**
 
 `session` → `openWebSession`: адаптер над `SessionManager` (открыть, `snapshot()` = `manager.state(id, { screen: true, limit })` через `webSnapshot.compact`, `act(payload)` = `manager.act`, `steps()`/`artifacts()` из состояния сессии, `close()` = `manager.close`), с веб-полем `page` для оракулов. `detectors.scan` → существующий сбор сигналов сессии. `checks.validate` → `validateWebCheck` (перенести inline-проверку `CHECK_INVALID` из `browser/session.ts`, оставив там вызов). `checks.violated` → `webCheckViolated` (делегирование в `checkViolated` через `page` из `WebSessionHandle`). `replay` → `webReplay` из задачи 1. `profile.load`/`profile.testDataFile` → `loadProfile`/`resolveTestDataFile` из `profile/load.ts`. `personas.brief` → `personaBrief`: тексты персон вынести из `.qwen/agents/bh-explorer.md` в `presets/web/src/personas.ts` так, чтобы агент читал их через сервер, а не дублировал (механизм — как у `bh_open`: бриф возвращается в ответе инструмента).
 
 Удалить `pending` из `presets/web/src/preset.ts`.
+
+Каждый адаптер объявить в своём модуле с явным типом контракта — `export const webSession: Session`, `export const webDetectors: Detectors`, `export const webChecks: Checks`, `export const webProfile: ProfileSchema`, `export const webPersonas: Personas`, — а не собирать объект внутри `preset.ts`. Это не стиль: тест `every contract hook has a consumer` ищет имя интерфейса вне `preset.ts`, и удовлетворить его можно только реальным потребителем, а не упоминанием при сборке.
 
 - [ ] **Step 4: Словари вместо литералов в точке входа**
 
