@@ -104,14 +104,15 @@ test('entry skill is manual, argument-driven, and orchestrates the complete run'
     assert.ok(allowedLine.includes(tool), `main allowlist missing ${tool}`);
   }
   for (const tool of [
-    'bh_open', 'bh_state', 'bh_act', 'bh_navigate', 'bh_probe', 'bh_report_candidate', 'bh_close',
-    'bh_triage', 'bh_export_test', 'bh_detect_tests', 'bh_verify_red',
+    'bh_report_candidate', 'bh_triage', 'bh_export_test', 'bh_detect_tests', 'bh_verify_red',
   ]) assert.ok(forbiddenLine.includes(tool), `main forbidden list missing ${tool}`);
+  // Словарь пресета entry-скилл не называет: он отправляет главного агента в карту пресета.
+  assert.ok(body.includes('bughunter-preset-card'), 'entry skill must send the main agent to the preset card');
   assert.match(body, /ровно один tool\/agent вызов/i);
   assert.match(body, /без batch/i);
   assert.match(body, /последовательно/i);
   assert.match(body, /run_in_background:\s*false/i);
-  assert.match(body, /не открывай браузер/i);
+  assert.match(body, /не открывай сессию/i);
   assert.match(body, /невоспроизвед/i);
   assert.match(body, /ничего не коммить/i);
 });
@@ -162,19 +163,52 @@ test('explorer requires a lease and never reports a failed exploration as clean'
 test('entry skill offers deterministic scopes and the explorer knows the extended action set', async () => {
   const entry = (await readPrompt('.qwen/skills/bughunter/SKILL.md')).body;
   const entryLower = entry.toLowerCase();
-  for (const required of ['sweep <template>', 'sweep', 'bh_crawl', 'bh_sweep', 'bh_promote_finding', 'не расходуй модель', 'FINDING_NOT_CANDIDATE']) {
+  for (const required of ['sweep <template>', 'sweep', 'bh_promote_finding', 'не расходуй модель', 'FINDING_NOT_CANDIDATE', 'инвентар']) {
     assert.ok(entryLower.includes(required.toLowerCase()), `missing entry scope contract: ${required}`);
   }
   const allowedLine = entry.split('\n').find((line) => line.includes('Главному агенту разрешены только'));
   assert.ok(allowedLine, 'binding main-agent allowlist is required');
-  for (const tool of ['bh_crawl', 'bh_sweep', 'bh_promote_finding']) {
-    assert.ok(allowedLine!.includes(tool), `main allowlist missing ${tool}`);
-  }
+  assert.ok(allowedLine!.includes('bh_promote_finding'), 'main allowlist missing bh_promote_finding');
 
   const explorer = (await readPrompt('.qwen/agents/bh-explorer.md')).body.toLowerCase();
   for (const required of ['структура экрана', 'drag', 'scroll', 'clickat', 'hoverat', 'upload', 'cursor', 'totalvisible', 'точк']) {
     assert.ok(explorer.includes(required), `missing explorer capability: ${required}`);
   }
+});
+
+/** Восемь инструментов взаимодействия веб-пресета (спецификация 6.4). */
+const webInteractionTools = ['bh_open', 'bh_state', 'bh_act', 'bh_navigate', 'bh_probe', 'bh_crawl', 'bh_sweep', 'bh_close'];
+
+test('the preset card lists exactly the eight web interaction tools', async () => {
+  const { data, body } = await readPrompt('.qwen/skills/bughunter-preset-card/SKILL.md');
+  assert.equal(data.name, 'bughunter-preset-card');
+  assert.ok((data.description as string).trim().length > 0);
+  assert.equal(data.model, undefined);
+  assert.equal(data.override, undefined);
+
+  const tools = body.split(/^## /m).find((section) => section.startsWith('Инструменты пресета'));
+  assert.ok(tools, 'preset card needs an «Инструменты пресета» section');
+  const listed = [...new Set([...tools.matchAll(/\b(bh_[a-z_]+)\b/g)].map((match) => match[1]))].sort();
+  assert.deepEqual(listed, [...webInteractionTools].sort());
+
+  // Обход — главный агент, взаимодействие — субагент: карта единственная называет имена.
+  const sweepLine = body.split('\n').find((line) => line.includes('bh_crawl') && line.includes('bh_sweep'));
+  assert.ok(sweepLine && /главн/i.test(sweepLine), 'the card must give the deterministic sweep tools to the main agent');
+  const explorerLine = body.split('\n').find((line) => line.includes('bh-explorer'));
+  assert.ok(explorerLine, 'the card must bind the interaction tools to bh-explorer');
+  for (const tool of ['bh_open', 'bh_state', 'bh_act', 'bh_navigate', 'bh_probe', 'bh_close']) {
+    assert.ok(explorerLine!.includes(tool), `explorer-only line missing ${tool}`);
+  }
+
+  // Области прогона и словарь check — тоже пресетные.
+  for (const required of ['diff', 'full', 'target', 'sweep', 'resume', 'state/screens.json', ':id']) {
+    assert.ok(body.includes(required), `preset card missing scope or inventory detail: ${required}`);
+  }
+  for (const kind of ['visibleText', 'notVisibleText', 'elementCount']) {
+    assert.ok(body.includes(kind), `preset card missing check kind: ${kind}`);
+  }
+  assert.match(body, /elementCount\.target/);
+  assert.match(body, /text=/);
 });
 
 test('explorer defines the behaviour of every server-side persona', async () => {

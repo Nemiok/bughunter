@@ -321,7 +321,7 @@ async function main(): Promise<void> {
   }));
 
   server.registerTool('bh_sweep', {
-    description: 'Детерминированно обойти экраны инвентаря в прогоне области screen или sweep: сброс данных профиля, переход, ожидание ответов, структура экрана. Находки пишутся в runs/<runId>/findings, курсор — в sweep.json, поэтому прерванный обход продолжается. Модель при этом не расходуется',
+    description: 'Детерминированно обойти экраны инвентаря в прогоне области sweep: сброс данных профиля, переход, ожидание ответов, структура экрана. Находки пишутся в runs/<runId>/findings, курсор — в sweep.json, поэтому прерванный обход продолжается. Модель при этом не расходуется',
     inputSchema: z.strictObject({
       runId,
       limit: z.number().int().positive().max(2000).optional(),
