@@ -4,6 +4,10 @@
 # Bughunter runtime state (secrets, gate copies, large artifacts)
 .qwen/bughunter/presets/web/state/runs/
 .qwen/bughunter/presets/web/state/auth/
+# Тот же рантайм установки до разреза core/пресеты: каталог переехал, а данные автора остались
+# на старом месте (доказательства гейтов и storage-state.json с секретами сессии).
+.qwen/bughunter/state/runs/
+.qwen/bughunter/state/auth/
 .kimi-code/bughunter/state/runs/
 .kimi-code/bughunter/state/auth/
 

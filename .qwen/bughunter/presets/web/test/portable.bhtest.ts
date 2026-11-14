@@ -19,7 +19,7 @@ const productRoot = resolve(presetRoot, '../..');
 const workspaceRoot = resolve(productRoot, '../..');
 const fixtureRoot = join(productRoot, 'fixtures');
 const sourceDemo = join(fixtureRoot, 'buggy-app');
-const coreToolNames = [
+const toolNames = [
   'bh_start_run',
   'bh_resume_run',
   'bh_explore_next',
@@ -254,7 +254,7 @@ export default defineConfig({
     client = new Client({ name: 'bughunter-portability', version: '1.0.0' });
     await client.connect(transport);
     const listed = await client.listTools();
-    assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [...coreToolNames].sort());
+    assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [...toolNames].sort());
 
     const detected = await callValue(client, 'bh_detect_tests', { path: join(projectRoot, 'src/profile.test.ts') });
     assert.equal(detected.framework, 'vitest');

@@ -40,7 +40,7 @@ test('config with a legacy field name is rejected naming the field', () => withS
   });
 }));
 
-test('run.json with legacy targetStages is not silently accepted', () => withStateDir(async (stateDir) => {
+test('run.json with legacy routeStages is not silently accepted', () => withStateDir(async (stateDir) => {
   const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   const file = join(stateDir, 'runs', run.id, 'run.json');
   const stored = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;

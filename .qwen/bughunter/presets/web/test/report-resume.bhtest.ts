@@ -225,6 +225,26 @@ test('finish rejects pending candidates without writing a report or marking fini
   assert.equal((await readRun(runId, stateDir)).status, 'finished');
 });
 
+test('finish requires a test of the kind the preset exports, not just any test', async (t) => {
+  const { stateDir, runId, runRoot } = await fixture(t);
+  const confirmed = candidate(runId, 'unit-only', {
+    status: 'confirmed', reproduction: { status: 'reproduced', attempts: 1 },
+    review: { status: 'confirmed', reason: 'Воспроизведён в чистой сессии' },
+  });
+  await writeCandidate(stateDir, confirmed);
+  await completeConfiguredRoutes(runId, stateDir);
+  await recordCandidateTest(runId, confirmed.id, 'unit', join(runRoot, 'unit.test.ts'), stateDir);
+
+  // Гарантия «red-тест на каждый подтверждённый баг» держится на виде теста, который
+  // экспортирует пресет: unit-тест его не заменяет.
+  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
+  assert.equal((await readRun(runId, stateDir)).status, 'exploring');
+
+  await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir);
+  await finishRun(runId, stateDir);
+  assert.equal((await readRun(runId, stateDir)).status, 'finished');
+});
+
 test('finish rejects an exploring route even with zero candidates', async (t) => {
   const { stateDir, runId, runRoot } = await fixture(t);
   await updateRun(runId, {

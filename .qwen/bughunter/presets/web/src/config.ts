@@ -19,6 +19,9 @@ export const webConfigSchema = commonConfigSchema.extend({
   baseUrl: z.url(),
   allowedOrigins: z.array(z.url()).min(1),
   routes: z.array(z.string().startsWith('/')).min(1),
+  // Цель в веб-пресете — путь, начинающийся с `/`: опечатка в карте иначе молча расширила бы
+  // `diff`-прогон до всего инвентаря, потому что ни одна цель не совпала бы с `routes`.
+  targetMap: z.record(z.string(), z.array(z.string().startsWith('/'))),
   browser: z.strictObject({
     launchArgs: z.array(z.string().min(1)).max(64).optional(),
     proxy: z.string().min(1).optional(),

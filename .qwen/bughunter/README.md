@@ -12,7 +12,7 @@
 
 ## 2. Честный статус проверки
 
-**Автоматические проверки проходят:** `npm run typecheck` и `npm test` из `.qwen/bughunter` — **core 42/42** и веб-пресет **254 pass / 0 fail / 1 skipped (255)**, включая portable-копию (`npm ci`, настоящий MCP stdio handshake, все **19** инструментов, экспорт и red-вердикт без шага сборки), тест-запрет доменной лексики и импортов пресета в `core/src` и тест честности этой документации. Пропущенный тест — замер стоимости обхода на фикстуре `bi-app`, он запускается с `BH_BI_FULL_SWEEP=1` (см. §10).
+**Автоматические проверки проходят:** `npm run typecheck` в обоих пакетах и `npm test` из `.qwen/bughunter` — core и веб-пресет без падений, включая portable-копию (`npm ci`, настоящий MCP stdio handshake, все **19** инструментов, экспорт и red-вердикт без шага сборки), тест-запрет доменной лексики и импортов пресета в `core/src`, тест игнорирования рантайм-состояния и тест честности этой документации. Точные счётчики здесь намеренно не приведены: они устаревают в следующем же коммите. Пропущенный тест один — замер стоимости обхода на фикстуре `bi-app`, он запускается с `BH_BI_FULL_SWEEP=1` (см. §10).
 
 **Модельные гейты на Qwen Code CLI 1.0.0-preview пройдены полностью:** полный и two-candidate resume (2026-11-12), интерактивный folder trust без headless-флагов (2026-11-13), модельный smoke-прогон на BI-фикстуре (2026-11-13) и route-репетиция после разреза на core и пресеты (2026-11-14). Фаза 1 для крупных BI-приложений принята на фикстуре `bi-app` — см. `docs/superpowers/reports/2026-11-12-bi-app-phase1-acceptance.md`. Первые четыре прогона выполнены **до** разреза; после него новая лексика (`target`/`sweep`, `bh_export_test`) проверена route-репетицией — единственным модельным доказательством, которое разрешает спецификация (§6.11): полный гейт после разреза не запускался.
 
@@ -251,6 +251,18 @@ Bughunter не должен коммитить или менять код при
 
 **Для обновления заменяйте только `.qwen/bughunter/core/` и `.qwen/bughunter/presets/`.** Не удаляйте и не перезаписывайте `.qwen/bughunter/presets/web/state/`. После замены выполните `cd .qwen/bughunter && npm ci`. Не копируйте новый `bughunter/` поверх установки целиком: это может затереть config, known/suppressions, runs и auth.
 
+### Обновление с установки до разреза core/пресеты
+
+Каталог состояния переехал: раньше он лежал в `.qwen/bughunter/state/`, теперь — в `.qwen/bughunter/presets/web/state/`. Git переносит только отслеживаемые файлы (`config.json`, `known-bugs.json`, `suppressions.json`), а `runs/` и `auth/` остаются на старом месте, и инструмент их больше не видит: resume прежних прогонов не работает, авторизацию нужно получать заново. Перенесите их вручную:
+
+```sh
+cd .qwen/bughunter
+mv state/runs state/auth presets/web/state/ 2>/dev/null || true
+rmdir state 2>/dev/null || ls state          # что осталось — перенесите или удалите осознанно
+```
+
+`config.json` при этом уже заменён версией из новой схемы: поля `routes`/`routeStages` в `run.json` прежних прогонов больше не читаются — старое состояние отклоняется явно (`RUN_SCHEMA_INVALID: <поле>`), миграция не предусмотрена (решение автора об однократном разрыве схемы). `auth/storage-state.json` содержит секреты сессии: оба пути — и прежний, и новый — игнорируются Git, проверьте это командой `git status --porcelain .qwen/bughunter/state` (вывод должен быть пустым).
+
 ## 9. Изоляция от инструментов целевого проекта
 
 Проверьте, что build/typecheck/lint/test целевого проекта не захватывают `.qwen/`. Тесты сервера имеют суффикс `.bhtest.ts`, но фикстуры содержат обычные `.test.*`, поэтому одного суффикса недостаточно.
@@ -313,7 +325,7 @@ npm run typecheck
 node --test test/portable.bhtest.ts
 ```
 
-`npm test` из корня `.qwen/bughunter` запускает наборы обоих workspace-пакетов: core (`core/test/*.bhtest.ts`, 42 теста — метод, очередь, воспроизведение, обход, экспорт, конфиг, граница и промпт-контракт) и веб-пресет. Отдельный build не требуется.
+`npm test` из корня `.qwen/bughunter` запускает наборы обоих workspace-пакетов: core (`core/test/*.bhtest.ts` — метод, очередь, воспроизведение, обход, экспорт, конфиг, граница, упаковка и промпт-контракт) и веб-пресет. Отдельный build не требуется.
 
 У фикстуры `bi-app` есть собственный набор, который не входит в `npm test` пресета (он запускается vitest из каталога фикстуры):
 
@@ -324,7 +336,7 @@ env -u PLAYWRIGHT_BROWSERS_PATH node --test test/bi-app-acceptance.bhtest.ts    
 BH_BI_FULL_SWEEP=1 env -u PLAYWRIGHT_BROWSERS_PATH node --test test/bi-app-acceptance.bhtest.ts   # + замер стоимости, перезаписывает fixtures/bi-app/ACCEPTANCE.md
 ```
 
-`npm test` последовательно запускает `test/*.bhtest.ts` через `node:test`; отдельный build не требуется. Portable test копирует демо и `.qwen/` без `node_modules`, `state/runs` и `state/auth`, делает `git init`, выполняет `npm ci` в copied server/demo, проверяет project-tool isolation, поднимает скопированное демо и проходит candidate lifecycle через все 19 инструментов настоящего stdio MCP (`node src/index.ts`). Он также проверяет exported e2e red и удаляет только свою временную копию и процессы.
+`npm test` последовательно запускает `test/*.bhtest.ts` через `node:test`; отдельный build не требуется. Portable test копирует демо и `.qwen/` без `node_modules`, `state/runs` и `state/auth`, делает `git init`, выполняет `npm ci` в корне workspaces копии и в демо, проверяет project-tool isolation, поднимает скопированное демо и проходит candidate lifecycle через все 19 инструментов настоящего stdio MCP (`node src/index.ts`). Он также проверяет exported e2e red и удаляет только свою временную копию и процессы.
 
 Не запускайте `node src/index.ts` как обычный CLI с ожиданием текстового ответа: это долгоживущий MCP stdio-сервер, stdout зарезервирован для протокола. Подключение выполняет Qwen Code через `.mcp.json` / `.qwen/settings.json`.
 
@@ -365,7 +377,7 @@ cd "$G" && caffeinate -i qwen -p '/bughunter full' --output-format stream-json \
 
 | Проверка | Статус | Фактический результат |
 | --- | --- | --- |
-| Typecheck + 19 tools (automated) | PASS | `npm run typecheck` в обоих пакетах; `npm test` из `.qwen/bughunter`: core 42/42 и пресет 254 pass / 0 fail / 1 skipped (255) за ~330 с; portable-копия проходит stdio handshake всех 19 инструментов |
+| Typecheck + 19 tools (automated) | PASS | `npm run typecheck` в обоих пакетах; `npm test` из `.qwen/bughunter`: core и пресет без падений (один тест пропущен под флагом) за ~330 с; portable-копия проходит stdio handshake всех 19 инструментов |
 | Project skills discovery | PASS | `qwen skills list`: шесть скиллов Enabled — `bughunter` (entry, `disable-model-invocation`), `bughunter-core-contract`, `bughunter-preset-guide`, `bughunter-preset-card`, `bughunter-oracles`, `bughunter-red-test` |
 | Project agents discovery | PASS | `qwen agents list`: `bh-explorer`, `bh-reviewer`, `bh-test-writer` (Project, model Inherit) |
 | `/bughunter` shorthand headless | PASS | `qwen -p '/bughunter __probe__' --output-format stream-json`: `Skill **bughunter** activated.`, `$ARGUMENTS` передан, невалидный аргумент остановил прогон за один turn без tool-вызовов |

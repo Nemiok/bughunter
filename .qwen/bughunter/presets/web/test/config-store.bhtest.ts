@@ -123,6 +123,17 @@ test('invalid and unknown config fields include the concrete path and Zod issue'
   });
 });
 
+test('targetMap value without a leading slash is rejected naming the field', async () => {
+  const root = await temporaryDirectory('bh-config-');
+  const invalid: Config = { ...configTemplate(), targetMap: { 'src/pages/orders/**': ['orders'] } };
+  const file = await writeConfig(root, invalid);
+  await assert.rejects(loadConfig(root), (error) => {
+    assert.ok(String(error).includes(`CONFIG_INVALID: ${file}:`));
+    assert.match(String(error), /targetMap/);
+    return true;
+  });
+});
+
 test('project root is found by walking up to .git', async () => {
   const root = await temporaryDirectory('bh-project-');
   await mkdir(join(root, '.git'));

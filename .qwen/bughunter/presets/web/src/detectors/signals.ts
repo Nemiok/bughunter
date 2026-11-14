@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { Page } from 'playwright-core';
 import { normalizeMessage, signalSignature } from '@bughunter/core';
 import type { Signal, SignatureInput } from '@bughunter/core';

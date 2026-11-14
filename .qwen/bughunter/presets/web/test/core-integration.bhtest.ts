@@ -459,6 +459,7 @@ test('startup reports missing dependencies on stderr without polluting stdout', 
   // Модульные импорты точки входа копируются вместе с ней: они не тянут сторонних зависимостей
   // (только типы core), поэтому дружелюбная подсказка об отсутствии node_modules сохраняется.
   await copyFile(join(serverRoot, 'src/errors.ts'), join(directory, 'errors.ts'));
+  await copyFile(join(serverRoot, 'src/checks.ts'), join(directory, 'checks.ts'));
   await copyFile(join(serverRoot, 'src/snapshot.ts'), join(directory, 'snapshot.ts'));
   try {
     const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'] });
