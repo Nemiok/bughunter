@@ -8,7 +8,7 @@ import type { ViteDevServer } from '../../../fixtures/buggy-app/node_modules/vit
 import { SessionManager } from '../src/browser/session.ts';
 import type { CandidateInput } from '../src/browser/session.ts';
 import { signalSignature } from '@bughunter/core';
-import { checkViolated, replayAndMinimize, reproduceCandidate } from '../src/reproduce.ts';
+import { checkViolated, reproduceCandidate } from '../src/reproduce.ts';
 import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
 import type { Candidate } from '@bughunter/core';
@@ -243,70 +243,6 @@ test('signal-backed candidates ignore a violated check when the normalized signa
     await manager.closeAll();
     await rm(stateDir, { recursive: true, force: true });
   }
-});
-
-function algorithmSteps(count: number): Step[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `step-${index}`,
-    kind: 'probe',
-    probe: 'mobile_viewport',
-    timestamp: '2026-11-10T00:00:00.000Z',
-    targetRef: '/',
-  }));
-}
-
-test('fake replay minimizes by removal and restores required steps exactly', async () => {
-  const calls: string[][] = [];
-  const result = await replayAndMinimize(algorithmSteps(3), 1, async (steps) => {
-    calls.push(steps.map((step) => step.id));
-    return steps.some((step) => step.id === 'step-1') && steps.some((step) => step.id === 'step-2');
-  });
-  assert.deepEqual(calls, [
-    ['step-0', 'step-1', 'step-2'],
-    ['step-1', 'step-2'],
-    ['step-2'],
-    ['step-1'],
-  ]);
-  assert.equal(result.successes, 1);
-  assert.equal(result.evaluations, 4);
-  assert.deepEqual(result.minimalSteps.map((step) => step.id), ['step-1', 'step-2']);
-});
-
-test('fake replay never invokes the 21st evaluation including initial attempts', async () => {
-  let calls = 0;
-  const result = await replayAndMinimize(algorithmSteps(25), 3, async () => {
-    calls += 1;
-    return true;
-  });
-  assert.equal(calls, 20);
-  assert.equal(result.evaluations, 20);
-  assert.equal(result.successes, 3);
-  assert.equal(result.minimalSteps.length, 8);
-});
-
-test('deadline aborts pending replay and prevents further evaluations', async () => {
-  let calls = 0;
-  let aborted = 0;
-  let clock = 0;
-  let clockReads = 0;
-  const result = await replayAndMinimize(algorithmSteps(3), 3, async () => {
-    calls += 1;
-    return await new Promise<boolean>(() => undefined);
-  }, {
-    now: () => {
-      clockReads += 1;
-      return clockReads === 3 ? 299_999 : clock;
-    },
-    abort: async () => {
-      aborted += 1;
-      clock = 300_000;
-    },
-  });
-  assert.equal(calls, 1);
-  assert.equal(aborted, 1);
-  assert.equal(result.evaluations, 1);
-  assert.equal(result.successes, 0);
-  assert.equal(result.minimalSteps.length, 3);
 });
 
 test('text checks judge by a visible match, not by the first DOM match', async () => {

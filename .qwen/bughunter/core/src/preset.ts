@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Candidate, Check, Config, Finding, FindingDraft, Signal, StepBase } from './types.ts';
+import type { Candidate, Check, Config, Finding, FindingDraft, Journal, Signal, StepBase } from './types.ts';
 
 /** Единица исследования: шаблон маршрута в web-пресете, эндпоинт в node-пресете. */
 export type TargetRef = string;
@@ -44,9 +44,21 @@ export type Checks = {
   violated(handle: SessionHandle, check: Check): Promise<boolean>;
 };
 
-/** Исполнение журнала шагов в чистой сессии; протокол повтора и минимизация — в core. */
+/** Результат одного повтора журнала: совпал ли симптом и какие артефакты он оставил. */
+export type ReplayOutcome = { matched: boolean; artifacts: string[] };
+
+/** Что пресет знает о повторяемом кандидате: сам кандидат, его журнал и каталог состояния. */
+export type ReplayContext = { candidate: Candidate; journal: Journal; stateDir: string };
+
+/**
+ * Исполнение журнала шагов в чистой сессии и сопоставление симптома. Протокол повтора,
+ * бюджеты и минимизация — в core (`reproduce.ts`); пресет отвечает на вопрос
+ * «совпал ли симптом» и отдаёт артефакты повтора. `abort` прерывает висящий повтор
+ * по дедлайну core.
+ */
 export type Replay = {
-  replay(steps: StepBase[], input: { target: TargetRef; persona: string; stateDir: string }): Promise<boolean>;
+  replay(steps: StepBase[], context: ReplayContext): Promise<ReplayOutcome>;
+  abort?(): Promise<void>;
 };
 
 export type TestGenerator = {
