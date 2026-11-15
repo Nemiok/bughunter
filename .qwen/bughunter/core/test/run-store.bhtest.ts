@@ -6,7 +6,8 @@ import { test } from 'node:test';
 
 import type { ReportFormat } from '../src/preset.ts';
 import {
-  createRun, finishRun, recordCandidateTest, recordTargetExploration,
+  completeExplorationLease, createRun, finishRun, leaseNextExploration,
+  recordCandidateTest, recordTargetExploration,
 } from '../src/run-store.ts';
 import type { Candidate, Config, Finding } from '../src/types.ts';
 
@@ -78,7 +79,10 @@ test('the report renders candidates and findings through the preset format', () 
   const findings = join(stateDir, 'runs', run.id, 'findings');
   await mkdir(findings, { recursive: true });
   await writeFile(join(findings, `${finding.id}.json`), `${JSON.stringify(finding, null, 2)}\n`, 'utf8');
+  const leased = await leaseNextExploration(run.id, { personas: ['p'] }, stateDir);
+  if (leased.status !== 'task') throw new Error('не достигнуто');
   await recordTargetExploration(run.id, '/a', 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
 
   const { report } = await finishRun(run.id, stateDir, format);
   const contents = await readFile(report, 'utf8');
@@ -86,6 +90,34 @@ test('the report renders candidates and findings through the preset format', () 
   assert.match(contents, /SENTINEL_FINDING/);
   assert.match(contents, /## Confirmed/);
   assert.match(contents, /## Pending\n\nNone\./);
+}));
+
+/**
+ * `targetStages` грубее очереди: цель помечается готовой закрытием любой её сессии, а очередь
+ * держит задачу на каждую пару цель×персона. Без проверки очереди прогон, исследовавший по одной
+ * персоне на цель, завершался с `finished` и `Pending: None`.
+ */
+test('finish refuses a run whose explore queue is not drained', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('full', undefined, {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А', 'персона Б'], targets: ['/a'],
+  });
+  await recordTargetExploration(run.id, '/a', 'done', stateDir);
+  await assert.rejects(() => finishRun(run.id, stateDir, format), /RUN_INCOMPLETE: queue/);
+}));
+
+test('finish accepts a run whose explore queue is drained', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('full', undefined, {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А'], targets: ['/a'],
+  });
+  const leased = await leaseNextExploration(run.id, { personas: ['персона А'] }, stateDir);
+  assert.equal(leased.status, 'task');
+  if (leased.status !== 'task') throw new Error('не достигнуто');
+  await recordTargetExploration(run.id, leased.target, 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  const { report } = await finishRun(run.id, stateDir, format);
+  assert.match(await readFile(report, 'utf8'), /## Pending\n\nNone\./);
 }));
 
 test('a test kind is an arbitrary preset string', () => withStateDir(async (stateDir) => {

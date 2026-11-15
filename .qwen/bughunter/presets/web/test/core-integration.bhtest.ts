@@ -359,8 +359,14 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     await rm(failedCandidatePath, { recursive: true });
     const reopened = await openLeased(client, runId as string, '/');
     await callValue(client, 'bh_close', { sessionId: reopened.sessionId });
-    for (const route of ['/clean', '/orders', '/orders/new']) {
-      const completed = await openLeased(client, runId as string, route);
+    // `finishRun` требует исчерпанной очереди: добираем оставшиеся пары маршрут×персона.
+    for (;;) {
+      const task = await callValue(client, 'bh_explore_next', { runId });
+      if (task.status === 'done') break;
+      assert.equal(task.status, 'task', JSON.stringify(task));
+      const completed = await callValue(client, 'bh_open', {
+        runId, target: task.target, persona: task.persona, leaseId: task.leaseId,
+      });
       await callValue(client, 'bh_close', { sessionId: completed.sessionId });
     }
 

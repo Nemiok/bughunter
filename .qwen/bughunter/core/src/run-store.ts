@@ -656,6 +656,14 @@ export async function finishRun(runId: string, stateDir: string, format: ReportF
   if (run.scope === 'sweep' && run.stages.sweep !== 'done') {
     throw new Error('RUN_INCOMPLETE: sweep');
   }
+  // Очередь точнее `targetStages`: цель помечается готовой закрытием любой её сессии, а задача
+  // очереди есть на каждую пару цель×персона. Без этой проверки прогон, исследовавший по одной
+  // персоне на цель, завершался с `finished` и `Pending: None`.
+  const queue = run.exploreQueue ?? [];
+  const unfinishedTasks = queue.filter((item) => item.status !== 'done');
+  if (unfinishedTasks.length > 0) {
+    throw new Error(`RUN_INCOMPLETE: queue ${unfinishedTasks.length} of ${queue.length}`);
+  }
   const incompleteTargets = run.targets.filter((target) => run.targetStages[target] !== 'done');
   if (incompleteTargets.length > 0) {
     throw new Error(`RUN_INCOMPLETE: targets ${incompleteTargets.join(',')}`);

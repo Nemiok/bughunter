@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
+  completeExplorationLease,
   readCandidate,
   readRun,
   recordCandidateTest,
@@ -17,7 +18,7 @@ import {
 import type { Candidate } from '@bughunter/core';
 import type { Step } from '../src/types.ts';
 import type { WebConfig as Config } from '../src/config.ts';
-import { createRun, finishRun } from '../src/runs.ts';
+import { createRun, finishRun, leaseNextExploration } from '../src/runs.ts';
 
 const createdAt = '2026-11-10T00:00:00.000Z';
 
@@ -67,8 +68,23 @@ async function writeCandidate(stateDir: string, value: Candidate): Promise<void>
   await writeJsonAtomic(join(stateDir, 'runs', value.runId, 'candidates', `${value.id}.json`), value);
 }
 
+/**
+ * Цель становится готовой от закрытия любой её сессии, а `finishRun` требует ещё и исчерпанной
+ * очереди, поэтому задачи добираются для каждой пары маршрут×персона.
+ */
+async function drainExploreQueue(runId: string, stateDir: string): Promise<void> {
+  for (;;) {
+    const task = await leaseNextExploration(runId, {}, stateDir);
+    if (task.status === 'done') return;
+    assert.equal(task.status, 'task', JSON.stringify(task));
+    if (task.status !== 'task') return;
+    await completeExplorationLease(runId, task.leaseId, stateDir);
+  }
+}
+
 async function completeConfiguredRoutes(runId: string, stateDir: string): Promise<void> {
   for (const route of config().routes) await recordTargetExploration(runId, route, 'done', stateDir);
+  await drainExploreQueue(runId, stateDir);
 }
 
 test('finish writes a deterministic escaped Markdown report with steps, artifacts, tests, and review reasons', async (t) => {
@@ -276,7 +292,9 @@ test('finish requires actual resumed route completion after terminal candidate w
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
   assert.equal((await readRun(runId, stateDir)).stages.explore, 'running');
   await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir);
-  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
+  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE: queue/);
+  await drainExploreQueue(runId, stateDir);
+  await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE: targets/);
   await recordTargetExploration(runId, '/', 'done', stateDir);
   await recordTargetExploration(runId, '/orders', 'done', stateDir);
   await finishRun(runId, stateDir);

@@ -311,8 +311,11 @@ export default defineConfig({
     const resumed = await callValue(client, 'bh_resume_run', { runId });
     assert.deepEqual(resumed.candidates, []);
     assert.deepEqual(await callValue(client, 'bh_close', { sessionId }), { ok: true });
-    for (const route of ['/', '/orders', '/orders/new', '/clean']) {
-      const routeTask = await callValue(client, 'bh_explore_next', { runId, target: route });
+    // `finishRun` требует исчерпанной очереди: задачи берутся, пока сервер не ответит `done`,
+    // то есть по одной на каждую пару маршрут×персона.
+    for (;;) {
+      const routeTask = await callValue(client, 'bh_explore_next', { runId });
+      if (routeTask.status === 'done') break;
       assert.equal(routeTask.status, 'task', JSON.stringify(routeTask));
       const completed = await callValue(client, 'bh_open', {
         runId, target: routeTask.target, persona: routeTask.persona, leaseId: routeTask.leaseId,
