@@ -42,11 +42,29 @@ async function readJson(request) {
 }
 
 async function route(request, response) {
-  const path = new URL(request.url, 'http://localhost').pathname;
+  const url = new URL(request.url, 'http://localhost');
+  const path = url.pathname;
   const { method } = request;
 
   if (method === 'GET' && path === '/health') {
     return send(response, 200, { status: 'ok' });
+  }
+
+  // Служебный эндпоинт тестов: держит ответ, чтобы проверить таймаут запроса пресета.
+  if (method === 'GET' && path === '/slow') {
+    const requested = Number(url.searchParams.get('ms') ?? '0');
+    const delay = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 30_000) : 0;
+    await new Promise((done) => setTimeout(done, delay));
+    if (request.destroyed || response.writableEnded) return undefined;
+    return send(response, 200, { sleptMs: delay });
+  }
+
+  // Служебный эндпоинт тестов: два мегабайта не-UTF8 байтов — проверка усечения тела.
+  if (method === 'GET' && path === '/blob') {
+    const size = 2 * 1024 * 1024;
+    response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': size });
+    response.end(Buffer.alloc(size, 0xff));
+    return undefined;
   }
 
   if (method === 'GET' && path === '/orders') {
@@ -102,6 +120,8 @@ async function route(request, response) {
 
 export function createApp() {
   return createHttpServer((request, response) => {
+    // Клиент вправе оборвать запрос (таймаут пресета): запись в закрытый сокет не должна ронять стенд.
+    response.on('error', () => undefined);
     route(request, response).catch((error) => {
       if (error instanceof BadRequest) {
         send(response, 400, { error: error.message });
