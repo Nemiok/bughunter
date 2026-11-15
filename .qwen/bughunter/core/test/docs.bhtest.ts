@@ -8,6 +8,8 @@ const projectRoot = join(import.meta.dirname, '../../../..');
 const docs = {
   root: 'README.md',
   preset: '.qwen/bughunter/README.md',
+  nodePreset: '.qwen/bughunter/presets/node/README.md',
+  contractSkill: '.qwen/skills/bughunter-core-contract/SKILL.md',
   invariants: 'docs/concept/invariants.md',
   guide: 'docs/concept/preset-guide.md',
 };
@@ -84,4 +86,43 @@ test('the concept docs restate the invariants and the preset guide', async () =>
   }
   assert.ok(guide.includes('```'), 'preset guide doc must carry a snippet');
   assert.match(guide, /bughunter-preset-guide/, 'the prose guide must point at the skill the model reads');
+});
+
+test('the root readme names both presets and their research unit', async () => {
+  const body = await read(docs.root);
+  for (const required of ['presets/web', 'presets/node', '@bughunter/node']) {
+    assert.ok(body.includes(required), `root readme missing: ${required}`);
+  }
+  // Единица исследования каждого пресета названа явно: без этого «два пресета» — просто слова.
+  assert.match(body, /экран/i);
+  assert.match(body, /эндпоинт/i);
+  // Протокол воспроизведения принадлежит core, а не пресету.
+  assert.ok(!/replay вместе с протоколом воспроизведения/.test(body), 'протокол воспроизведения приписан пресету');
+});
+
+test('the contract skill no longer defers what core already owns', async () => {
+  const skill = await read(docs.contractSkill);
+  const section = skill.match(/^## Что объявлено, но ещё не перенесено в core\n([\s\S]*?)(?=^## )/m);
+  assert.ok(section, 'раздел границы в контракт-скилле не найден');
+  assert.ok(!/протокол воспроизведения/i.test(section[1]), 'протокол воспроизведения уже в core');
+  assert.match(section[1], /LIMIT_REACHED/);
+  assert.match(section[1], /limits\.candidatesPerRun/);
+  assert.match(skill, /core\/src\/reproduce\.ts/);
+  assert.match(skill, /reproductionBudget/);
+  // Заглушки в поставляемом пресете запрещены, и это проверяется тестом, а не обещанием.
+  assert.match(skill, /contract-usage/);
+});
+
+test('the node readme states the install command and the five tools', async () => {
+  const body = await read(docs.nodePreset);
+  assert.match(body, /npm ci/);
+  assert.match(body, /\.mcp\.json/);
+  assert.match(body, /presets\/node\/src\/index\.ts/);
+  for (const tool of ['bh_open', 'bh_state', 'bh_act', 'bh_sweep', 'bh_close']) {
+    assert.ok(body.includes(tool), `в README node-пресета нет инструмента ${tool}`);
+  }
+  for (const foreign of ['bh_navigate', 'bh_probe', 'bh_crawl']) {
+    assert.ok(!body.includes(foreign), `в README node-пресета чужой инструмент ${foreign}`);
+  }
+  assert.match(body, /node-api-app/);
 });
