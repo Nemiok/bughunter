@@ -159,6 +159,46 @@ test('a binary or oversized body does not break the snapshot', async () => {
   }
 });
 
+test('a JSON string body is sent as the value the model meant', async () => {
+  const handle = await openSession('POST /orders');
+  try {
+    // Аргументы MCP приходят JSON'ом, и модель передаёт тело строкой: без разбора строка
+    // кодировалась второй раз, приложение отвечало 400, и модель заявляла ложного кандидата.
+    const { response } = await performRequest(handle, { method: 'POST', path: '/orders', body: '{"qty": 2}' }, state.config);
+    assert.equal(response.status, 200, `приложение отклонило тело: ${response.raw.slice(0, 160)}`);
+    assert.equal((response.body as { totalCents: number }).totalCents, 2400);
+    assert.deepEqual((handle.steps() as NodeStep[])[0]!.body, { qty: 2 }, 'в журнал попадает отправленное значение');
+
+    // Сырой текст остаётся телом как есть: не всякая строка — ошибка модели.
+    const raw = await performRequest(handle, { method: 'POST', path: '/orders', body: 'plain text' }, state.config);
+    assert.equal(raw.response.status, 400);
+    assert.equal((handle.steps() as NodeStep[])[1]!.body, 'plain text');
+  } finally {
+    await handle.close();
+  }
+});
+
+test('the snapshot shows the declared contract of the endpoint', async () => {
+  const handle = await openSession('POST /orders');
+  try {
+    const snapshot = await handle.snapshot() as {
+      scenarios: Array<{ name: string; request: { method: string; path: string }; expect?: unknown }>;
+    };
+    assert.deepEqual(
+      snapshot.scenarios.map((scenario) => scenario.name).sort(),
+      ['boundary', 'empty', 'invalid', 'valid'],
+      'снимок обязан показывать четыре объявленных сценария своей цели',
+    );
+    assert.deepEqual(
+      snapshot.scenarios.find((scenario) => scenario.name === 'valid')!.expect,
+      { status: 200, jsonPath: [{ pointer: '/totalCents', expected: 3600 }] },
+    );
+    assert.ok(snapshot.scenarios.every((scenario) => scenario.request.path.startsWith('/orders')));
+  } finally {
+    await handle.close();
+  }
+});
+
 test('read-only config and forbidden action text are enforced before the request', async () => {
   const handle = await openSession('POST /orders');
   try {

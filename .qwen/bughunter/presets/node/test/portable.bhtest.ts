@@ -159,10 +159,10 @@ test('a portable copy serves sixteen tools and keeps its own state', { timeout: 
       'TARGET_NOT_ALLOWED',
     );
     assert.ok((await readdir(join(stateDir, 'runs'))).includes(runId));
-    await assert.rejects(
-      stat(join(presetRoot, 'state', 'runs')),
-      'прогон не должен писать в состояние разработчика',
-    );
+    // Прогон копии не должен писать в состояние разработчика: проверяем именно этот runId,
+    // потому что в `state/runs` разработки законно лежат изъятые доказательства прошлых прогонов.
+    const developerRuns = await readdir(join(presetRoot, 'state', 'runs')).catch(() => [] as string[]);
+    assert.ok(!developerRuns.includes(runId), `прогон копии попал в состояние разработчика: ${runId}`);
 
     await client.close();
   } finally {

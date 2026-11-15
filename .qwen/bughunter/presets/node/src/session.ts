@@ -8,10 +8,10 @@ import type { Check, Journal, Session, SessionHandle, Signal } from '@bughunter/
 import { loadNodeConfig } from './config.ts';
 import type { NodeConfig } from './config.ts';
 import { scanResponse } from './detectors.ts';
-import { templatisedPath } from './inventory.ts';
+import { targetOfRequest, templatisedPath } from './inventory.ts';
 import { loadNodeProfile } from './profile.ts';
 import { nodeCheckSignature } from './signature.ts';
-import type { EndpointEntry, NodeStep } from './types.ts';
+import type { EndpointEntry, NodeScenario, NodeStep } from './types.ts';
 
 export type NodeActInput = {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -157,6 +157,8 @@ function handleFor(state: NodeSessionState): NodeSessionHandle {
         target: state.target,
         persona: state.persona,
         endpoints: state.endpoints,
+        // Объявленный контракт своей цели: модель обязана брать ожидания отсюда, а не из обычаев REST.
+        scenarios: scenariosFor(state),
         stepsLeft: Math.max(0, state.config.limits.stepsPerSession - state.journal.steps.length),
         responses: [...state.responses],
         signals: state.pendingSignals.splice(0, state.pendingSignals.length),
@@ -196,20 +198,41 @@ export async function performRequest(
   const state = stateOf(handle);
   const journaled = options.journal !== false;
   if (journaled && state.journal.steps.length >= config.limits.stepsPerSession) throw new Error('LIMIT_REACHED');
-  const method = input.method.toUpperCase();
-  assertSafety(config, method, input);
-  const url = resolveRequestUrl(input.path, config);
-  assertHostAllowed(input.headers, config);
+  const request: NodeActInput = {
+    ...input,
+    method: input.method.toUpperCase() as NodeActInput['method'],
+    body: normalizeBody(input.body),
+  };
+  assertSafety(config, request.method, request);
+  const url = resolveRequestUrl(request.path, config);
+  assertHostAllowed(request.headers, config);
 
-  const response = await sendRequest(url, method, input, config);
+  const response = await sendRequest(url, request.method, request, config);
   const signals = scanResponse(response, config);
   if (journaled) {
     state.responses.push(response);
     state.pendingSignals.push(...signals);
     for (const signal of signals) state.signals.set(signal.id, signal);
-    await appendStep(state, input, response, signals);
+    await appendStep(state, request, response, signals);
   }
   return { response, signals };
+}
+
+/**
+ * Аргументы инструмента приходят JSON'ом, и модель регулярно передаёт тело строкой с JSON вместо
+ * значения. Без разбора такая строка кодировалась второй раз, приложение отвечало 400 «тело не
+ * объект», и модель заявляла ложного кандидата на исправное поведение. Строка, которая разбирается
+ * в объект или массив, отправляется значением; прочий текст остаётся сырым телом — оно законно.
+ */
+function normalizeBody(body: unknown): unknown {
+  if (typeof body !== 'string') return body;
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return body;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return body;
+  }
 }
 
 /**
@@ -360,6 +383,13 @@ function assertSafety(config: NodeConfig, method: string, input: NodeActInput): 
   const haystack = [method, input.path, input.body === undefined ? '' : JSON.stringify(input.body)].join(' ');
   const forbidden = forbiddenActionText.find((token) => token.length > 0 && haystack.includes(token));
   if (forbidden !== undefined) throw new Error(`FORBIDDEN_ACTION: ${forbidden}`);
+}
+
+/** Объявленные сценарии своей цели: контракт приложения, который модель читает вместо догадок. */
+function scenariosFor(state: NodeSessionState): NodeScenario[] {
+  return state.config.scenarios.filter(
+    (scenario) => targetOfRequest(state.endpoints, scenario.request.method, scenario.request.path) === state.target,
+  );
 }
 
 async function appendStep(

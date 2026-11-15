@@ -178,17 +178,17 @@ async function main(): Promise<void> {
   }));
 
   server.registerTool('bh_state', {
-    description: 'Получить инвентарь эндпоинтов, последние ответы сессии (тела усечены), новые симптомы и остаток шагов',
+    description: 'Получить инвентарь эндпоинтов, объявленные сценарии своей цели с ожиданиями (контракт приложения), последние ответы сессии (тела усечены), новые симптомы и остаток шагов',
     inputSchema: z.strictObject({ sessionId }),
   }, async ({ sessionId: id }) => invoke(async () => compactState(await sessionHandle(id).snapshot())));
 
   server.registerTool('bh_act', {
-    description: 'Выполнить один HTTP-запрос в сессии: метод, путь от baseUrl приложения, необязательное JSON-тело и заголовки. Ответ и симптомы возвращаются сразу',
+    description: 'Выполнить один HTTP-запрос в сессии: метод, путь от baseUrl приложения, необязательное тело и заголовки. Ответ и симптомы возвращаются сразу. Ожидаемые коды ответов и поля бери из сценариев bh_state, а не из обычаев REST',
     inputSchema: z.strictObject({
       sessionId,
       method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
       path: z.string().min(1),
-      body: z.unknown().optional(),
+      body: z.unknown().optional().describe('Тело запроса как JSON-значение: объект, массив, число, строка. Передавай значение, а не его строковое представление — строка, разбирающаяся в объект или массив, будет разобрана сервером'),
       headers: z.record(z.string(), z.string()).optional(),
     }),
   }, async ({ sessionId: id, ...input }) => invoke(async () => {
