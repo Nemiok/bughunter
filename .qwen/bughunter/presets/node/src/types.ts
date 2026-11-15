@@ -8,6 +8,7 @@ export type NodeStep = StepBase & {
   method?: string;
   path?: string;
   body?: unknown;
+  headers?: Record<string, string>;
   status?: number;
   durationMs?: number;
 };

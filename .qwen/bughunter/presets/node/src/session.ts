@@ -322,6 +322,7 @@ async function appendStep(
     method: response.method,
     path: response.path,
     ...(input.body === undefined ? {} : { body: input.body }),
+    ...(input.headers === undefined ? {} : { headers: input.headers }),
     status: response.status,
     durationMs: response.durationMs,
   };
