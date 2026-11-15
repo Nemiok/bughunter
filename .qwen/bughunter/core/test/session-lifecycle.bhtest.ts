@@ -156,3 +156,25 @@ test('leaseNext hands out one task at a time through the same lock', () => withS
   const second = await lifecycle.leaseNext(run.id, {});
   assert.equal(second.status, 'busy');
 }));
+
+test('an exploration abandoned by a dead subagent is released by the next lease request', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas, targets: ['/a', '/b'] });
+  const { lifecycle, closed } = harness(stateDir);
+  const first = await leasedTask(run.id, stateDir);
+  await lifecycle.open({ runId: run.id, target: first.target, persona: first.persona, leaseId: first.leaseId });
+
+  // Субагент отменён или упал: `close` не будет никогда. Оркестрация последовательная, поэтому
+  // к моменту запроса следующей задачи живых исследователей нет, а брошенная сессия иначе
+  // держала бы очередь до старения lease и отвечала EXPLORER_BUSY до перезапуска сервера.
+  const second = await lifecycle.leaseNext(run.id);
+  assert.equal(second.status, 'task', 'очередь обязана продолжить работу после брошенной сессии');
+  if (second.status !== 'task') throw new Error('не достигнуто');
+  assert.notEqual(second.leaseId, first.leaseId);
+  assert.equal(second.target, first.target, 'брошенная задача возвращается в очередь и выдаётся снова');
+  assert.deepEqual(closed, ['sess-1'], 'брошенная сессия закрывается');
+
+  const queue = (await readRun(run.id, stateDir)).exploreQueue ?? [];
+  assert.equal(queue.length, 2, 'задача не потеряна и не задвоена');
+  assert.equal(new Set(queue.map((item) => item.id)).size, 2);
+  assert.deepEqual([...lifecycle.liveLeaseIds(run.id)], [], 'брошенный lease больше не считается живым');
+}));

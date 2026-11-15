@@ -69,6 +69,26 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     return leases;
   }
 
+  /**
+   * Брошенное исследование: субагент отменён или упал, поэтому `close` не придёт никогда.
+   * Оркестрация последовательная — исследователь запускается в foreground и главный агент ждёт его
+   * результата, — значит к моменту запроса следующей задачи живых исследователей нет, а любая ещё
+   * открытая сессия этого прогона брошена. Без возврата задачи очередь вставала до старения lease
+   * (30 минут), а повторное открытие того же прогона отвечало `EXPLORER_BUSY` до перезапуска сервера.
+   */
+  async function releaseAbandoned(runId: string): Promise<void> {
+    const abandoned = [...explorations].filter(([, exploration]) => exploration.runId === runId);
+    if (abandoned.length === 0) return;
+    for (const [sessionId, exploration] of abandoned) {
+      explorations.delete(sessionId);
+      await deps.close(sessionId).catch(() => undefined);
+      const leaseId = exploration.leaseId;
+      if (leaseId === undefined) continue;
+      await withQueueLock(runId, () => releaseExplorationLease(runId, leaseId, deps.stateDir)).catch(() => undefined);
+    }
+    activeRuns.delete(runId);
+  }
+
   return {
     async open({ runId, target, persona, leaseId }) {
       if (activeRuns.has(runId)) throw new LifecycleError(`EXPLORER_BUSY: ${runId}`);
@@ -133,7 +153,8 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       }
     },
 
-    leaseNext(runId, options) {
+    async leaseNext(runId, options) {
+      await releaseAbandoned(runId);
       return withQueueLock(runId, () => leaseNextExploration(runId, {
         personas: deps.personas,
         ...(options?.target === undefined ? {} : { target: options.target }),
