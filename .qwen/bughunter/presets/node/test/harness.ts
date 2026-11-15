@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { copyFile, cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -72,6 +73,27 @@ export type FixtureState = {
   config: NodeConfig;
   cleanup(): Promise<void>;
 };
+
+export type VitestProject = { root: string; cleanup(): Promise<void> };
+
+/**
+ * Проект с vitest во временном каталоге: нужен, чтобы запускать сгенерированные тесты настоящим
+ * раннером, не загрязняя ни фикстуру, ни дерево разработки.
+ */
+export async function vitestProject(): Promise<VitestProject> {
+  const root = await mkdtemp(join(tmpdir(), 'bh-node-vitest-'));
+  await cp(join(fixtureRoot, '../vitest-project/node_modules'), join(root, 'node_modules'), {
+    recursive: true,
+    mode: constants.COPYFILE_FICLONE,
+  });
+  await writeFile(join(root, 'package.json'), `${JSON.stringify({
+    name: 'bh-node-generated',
+    private: true,
+    type: 'module',
+    devDependencies: { vitest: '^3.2.4' },
+  }, null, 2)}\n`, 'utf8');
+  return { root, cleanup: () => rm(root, { recursive: true, force: true }) };
+}
 
 /**
  * Каталог состояния под фикстуру: конфиг с адресом стенда и копия поставляемого профиля, чтобы

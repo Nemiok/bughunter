@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { constants } from 'node:fs';
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 
@@ -12,12 +10,11 @@ import type { NodeConfig } from '../src/config.ts';
 import { exportNodeTest, nodeExportTarget, nodeTestGenerator } from '../src/export-vitest.ts';
 import { apiKind, nodeTestKinds, nodeTestRunner, verifyNodeRed } from '../src/test-runner.ts';
 import type { NodeStep } from '../src/types.ts';
-import { startFixture, stateForFixture } from './harness.ts';
+import { startFixture, stateForFixture, vitestProject } from './harness.ts';
 import type { Fixture, FixtureState } from './harness.ts';
 
 const createdAt = '2026-11-15T00:00:00.000Z';
 const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/node-api-app');
-const vitestFixtureRoot = resolve(import.meta.dirname, '../../../fixtures/vitest-project');
 
 let fixture: Fixture;
 let state: FixtureState;
@@ -72,22 +69,6 @@ async function generate(runId = 'run-export'): Promise<string> {
     initialTarget: 'POST /orders',
     stateDir: state.stateDir,
   });
-}
-
-/** Проект с vitest, чтобы запустить сгенерированный файл настоящим раннером. */
-async function vitestProject(): Promise<{ root: string; cleanup(): Promise<void> }> {
-  const root = await mkdtemp(join(tmpdir(), 'bh-node-export-'));
-  await cp(join(vitestFixtureRoot, 'node_modules'), join(root, 'node_modules'), {
-    recursive: true,
-    mode: constants.COPYFILE_FICLONE,
-  });
-  await writeFile(join(root, 'package.json'), `${JSON.stringify({
-    name: 'bh-node-export',
-    private: true,
-    type: 'module',
-    devDependencies: { vitest: '^3.2.4' },
-  }, null, 2)}\n`, 'utf8');
-  return { root, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
 async function confirmedBug(config: NodeConfig): Promise<{ runId: string; bugId: string }> {

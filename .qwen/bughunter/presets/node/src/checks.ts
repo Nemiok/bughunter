@@ -1,8 +1,7 @@
 import type { Check, Checks, SessionHandle } from '@bughunter/core';
 
 import { readPointer } from './json-pointer.ts';
-import { performRequest, sessionView } from './session.ts';
-import type { CapturedResponse, NodeActInput, NodeSessionHandle } from './session.ts';
+import { sessionView } from './session.ts';
 
 /** Словарь оракулов node-пресета: что именно сравнивается с ответом приложения. */
 export const nodeCheckKinds = ['status', 'jsonPath', 'headerContains'] as const;
@@ -36,14 +35,15 @@ export function validateNodeCheck(check: Check): void {
 
 /**
  * Нарушен ли оракул. Судит по последнему ответу сессии — так же, как веб-оракул судит по текущей
- * странице: состояние API наблюдается только через запрос, и повтор кандидата уже оставил ответ
- * в сессии. Если ответов ещё нет (кандидат без шагов), запрос из `check.target` выполняется
- * без записи в журнал, чтобы проверка не исказила шаги.
+ * странице: состояние API наблюдается только через запрос, и повтор кандидата уже оставил этот
+ * ответ в сессии. Если ответов нет, нарушение не фиксируется: у API нечего наблюдать, а запрос
+ * «из оракула» без тела и истории ломал бы минимизацию — шаг журнала оказывался бы необязательным.
  */
 export async function nodeCheckViolated(handle: SessionHandle, check: Check): Promise<boolean> {
   const oracle = check as NodeCheck;
   validateNodeCheck(oracle);
-  const response = await responseFor(handle as NodeSessionHandle, oracle);
+  const response = sessionView(handle).responses.at(-1);
+  if (response === undefined) return false;
   switch (oracle.kind) {
     case 'status':
       return response.status !== Number(oracle.expected);
@@ -56,21 +56,6 @@ export async function nodeCheckViolated(handle: SessionHandle, check: Check): Pr
       return !header[1].includes(String(oracle.expected));
     }
   }
-}
-
-async function responseFor(handle: NodeSessionHandle, check: NodeCheck): Promise<CapturedResponse> {
-  const view = sessionView(handle);
-  const last = view.responses.at(-1);
-  if (last !== undefined) return last;
-  const request = requestLine.exec(check.target.trim());
-  if (request === null) throw new Error(`CHECK_INVALID: ${check.target}`);
-  const { response } = await performRequest(
-    handle,
-    { method: request[1] as NodeActInput['method'], path: request[2]! },
-    view.config,
-    { journal: false },
-  );
-  return response;
 }
 
 /** Равенство значений ответа: примитивы напрямую, составные — по JSON-представлению. */

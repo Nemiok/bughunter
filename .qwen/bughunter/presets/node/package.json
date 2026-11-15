@@ -8,7 +8,8 @@
   "scripts": {
     "test": "node --test --test-concurrency=1 test/*.bhtest.ts",
     "typecheck": "tsc",
-    "start": "node src/index.ts"
+    "start": "node src/index.ts",
+    "acceptance": "BH_NODE_ACCEPTANCE=1 node --test --test-concurrency=1 test/node-api-acceptance.bhtest.ts"
   },
   "dependencies": {
     "@bughunter/core": "*",

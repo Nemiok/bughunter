@@ -9,10 +9,6 @@ import type { NodeSessionHandle } from '../src/session.ts';
 import { startFixture, stateForFixture } from './harness.ts';
 import type { Fixture, FixtureState } from './harness.ts';
 
-/** Литералы оракулов типизируются как NodeCheck: в базовом Check поля pointer нет. */
-const violated = (handle: NodeSessionHandle, check: NodeCheck) => nodeChecks.violated(handle, check);
-const validate = (check: NodeCheck) => nodeChecks.validate(check);
-
 let fixture: Fixture;
 let state: FixtureState;
 let config: NodeConfig;
@@ -37,18 +33,24 @@ async function openSession(target: string): Promise<NodeSessionHandle> {
   }) as NodeSessionHandle;
 }
 
+/** Литералы оракулов типизируются как NodeCheck: в базовом Check поля pointer нет. */
+const violated = (handle: NodeSessionHandle, check: NodeCheck) => nodeChecks.violated(handle, check);
+const validate = (check: NodeCheck) => nodeChecks.validate(check);
+
+async function request(handle: NodeSessionHandle, method: 'GET' | 'POST', path: string, body?: unknown) {
+  return performRequest(handle, { method, path, ...(body === undefined ? {} : { body }) }, config);
+}
+
 test('a status check compares the expected code', async () => {
   const handle = await openSession('GET /orders/:id');
   try {
     // N3: неизвестный идентификатор отдаётся как 200 и null, хотя контракт ждёт 404.
-    assert.equal(
-      await violated(handle, { kind: 'status', target: 'GET /orders/ord-unknown', expected: 404 }),
-      true,
-    );
-    assert.equal(
-      await violated(handle, { kind: 'status', target: 'GET /health', expected: 200 }),
-      false,
-    );
+    await request(handle, 'GET', '/orders/ord-unknown');
+    assert.equal(await violated(handle, { kind: 'status', target: 'GET /orders/ord-unknown', expected: 404 }), true);
+
+    await request(handle, 'GET', '/health');
+    assert.equal(await violated(handle, { kind: 'status', target: 'GET /health', expected: 200 }), false);
+    assert.equal(await violated(handle, { kind: 'status', target: 'GET /health', expected: 404 }), true);
   } finally {
     await handle.close();
   }
@@ -57,20 +59,20 @@ test('a status check compares the expected code', async () => {
 test('a jsonPath check reads the pointer and compares the value', async () => {
   const handle = await openSession('GET /orders/:id');
   try {
-    const id = (check: NodeCheck) => violated(handle, check);
-    assert.equal(await id({ kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '$.id', expected: 'ord-1' }), false);
-    assert.equal(await id({ kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '$.id', expected: 'ord-2' }), true);
-    assert.equal(await id({ kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '/id', expected: 'ord-1' }), false);
-    assert.equal(await id({ kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '/qty', expected: 2 }), false);
+    await request(handle, 'GET', '/orders/ord-1');
+    assert.equal(await violated(handle, { kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '$.id', expected: 'ord-1' }), false);
+    assert.equal(await violated(handle, { kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '$.id', expected: 'ord-2' }), true);
+    assert.equal(await violated(handle, { kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '/id', expected: 'ord-1' }), false);
+    assert.equal(await violated(handle, { kind: 'jsonPath', target: 'GET /orders/ord-1', pointer: '/qty', expected: 2 }), false);
   } finally {
     await handle.close();
   }
 });
 
-test('a check is judged by the last response of the session, not by a fresh request', async () => {
+test('a check is judged by the last response of the session', async () => {
   const handle = await openSession('POST /orders');
   try {
-    await performRequest(handle, { method: 'POST', path: '/orders', body: { qty: -5 } }, config);
+    await request(handle, 'POST', '/orders', { qty: -5 });
     // N2: заказ с отрицательным количеством создан. Оракул смотрит на последний ответ сессии,
     // поэтому повторный запрос не нужен и журнал не растёт.
     assert.equal(await violated(handle, { kind: 'status', target: 'POST /orders', expected: 400 }), true);
@@ -85,9 +87,21 @@ test('a check is judged by the last response of the session, not by a fresh requ
   }
 });
 
+test('a check without responses is not violated and performs no request', async () => {
+  const handle = await openSession('GET /health');
+  try {
+    assert.equal(await violated(handle, { kind: 'status', target: 'GET /health', expected: 500 }), false);
+    assert.equal(handle.responses.length, 0, 'оракул не выполняет запросов за сессию');
+    assert.equal(handle.steps().length, 0, 'оракул не пишет шагов в журнал');
+  } finally {
+    await handle.close();
+  }
+});
+
 test('a jsonPath check on a missing pointer reports the pointer, not a stack', async () => {
   const handle = await openSession('GET /health');
   try {
+    await request(handle, 'GET', '/health');
     await assert.rejects(
       violated(handle, { kind: 'jsonPath', target: 'GET /health', pointer: '$.absent', expected: 1 }),
       (error) => {
@@ -103,12 +117,17 @@ test('a jsonPath check on a missing pointer reports the pointer, not a stack', a
 test('a headerContains check reads the header case-insensitively', async () => {
   const handle = await openSession('GET /health');
   try {
+    await request(handle, 'GET', '/health');
     assert.equal(
       await violated(handle, { kind: 'headerContains', target: 'GET /health', pointer: 'content-TYPE', expected: 'application/json' }),
       false,
     );
     assert.equal(
       await violated(handle, { kind: 'headerContains', target: 'GET /health', pointer: 'Content-Type', expected: 'text/html' }),
+      true,
+    );
+    assert.equal(
+      await violated(handle, { kind: 'headerContains', target: 'GET /health', pointer: 'X-Absent', expected: 'x' }),
       true,
     );
   } finally {
