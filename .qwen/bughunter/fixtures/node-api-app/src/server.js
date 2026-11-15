@@ -1,4 +1,5 @@
 import { createServer as createHttpServer } from 'node:http';
+import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -133,7 +134,11 @@ export function createApp() {
   });
 }
 
-const invokedDirectly = process.argv[1] === undefined ? undefined : pathToFileURL(process.argv[1]).href;
+// `import.meta.url` Node приводит к настоящему пути, а `process.argv[1]` может прийти через
+// симлинк (на macOS `/var` → `/private/var`): без realpath прямой запуск не распознаётся.
+const invokedDirectly = process.argv[1] === undefined
+  ? undefined
+  : pathToFileURL(realpathSync(process.argv[1])).href;
 if (invokedDirectly === import.meta.url) {
   createApp().listen(Number(process.env.PORT ?? 3000), '127.0.0.1', function announceReady() {
     process.stdout.write(`listening ${this.address().port}\n`);

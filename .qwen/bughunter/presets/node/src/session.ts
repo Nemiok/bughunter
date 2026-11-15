@@ -2,14 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 
-import { writeJsonAtomic } from '@bughunter/core';
-import type { Journal, Session, SessionHandle, Signal } from '@bughunter/core';
+import { reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
+import type { Check, Journal, Session, SessionHandle, Signal } from '@bughunter/core';
 
 import { loadNodeConfig } from './config.ts';
 import type { NodeConfig } from './config.ts';
 import { scanResponse } from './detectors.ts';
 import { templatisedPath } from './inventory.ts';
 import { loadNodeProfile } from './profile.ts';
+import { nodeCheckSignature } from './signature.ts';
 import type { EndpointEntry, NodeStep } from './types.ts';
 
 export type NodeActInput = {
@@ -61,6 +62,10 @@ type NodeSessionState = {
   journal: Journal;
   responses: CapturedResponse[];
   pendingSignals: Signal[];
+  /** Все симптомы сессии по идентификаторам: `bh_report_candidate` ссылается на них по id. */
+  signals: Map<string, Signal>;
+  /** Дескриптор этой сессии: точка входа и оракулы работают с ним, а не с состоянием напрямую. */
+  handle?: NodeSessionHandle;
 };
 
 const sessions = new Map<string, NodeSessionState>();
@@ -111,6 +116,7 @@ export async function openNodeSession(input: {
     },
     responses: [],
     pendingSignals: [],
+    signals: new Map(),
   };
   sessions.set(id, state);
   try {
@@ -121,7 +127,23 @@ export async function openNodeSession(input: {
     sessions.delete(id);
     throw error;
   }
-  return handleFor(state);
+  const handle = handleFor(state);
+  state.handle = handle;
+  return handle;
+}
+
+/** Дескриптор открытой сессии по идентификатору. */
+export function sessionHandle(sessionId: string): NodeSessionHandle {
+  const handle = sessions.get(sessionId)?.handle;
+  if (handle === undefined) throw new Error(`SESSION_NOT_FOUND: ${sessionId}`);
+  return handle;
+}
+
+/** Закрытие по идентификатору: отсутствующая сессия — не ошибка, её мог закрыть прерванный lease. */
+export async function closeNodeSession(sessionId: string): Promise<void> {
+  const handle = sessions.get(sessionId)?.handle;
+  if (handle === undefined) return;
+  await handle.close();
 }
 
 function handleFor(state: NodeSessionState): NodeSessionHandle {
@@ -184,9 +206,43 @@ export async function performRequest(
   if (journaled) {
     state.responses.push(response);
     state.pendingSignals.push(...signals);
+    for (const signal of signals) state.signals.set(signal.id, signal);
     await appendStep(state, input, response, signals);
   }
   return { response, signals };
+}
+
+/**
+ * Заявка кандидата: журнал и симптомы уже в сессии, поэтому точка входа передаёт только суть
+ * наблюдения. Сигнатуру оракула считаем сами — с учётом `pointer`, которого core не знает.
+ */
+export async function reportNodeCandidate(
+  handle: NodeSessionHandle,
+  input: { title: string; expected: string; actual: string; signalIds: string[]; check?: Check & { pointer?: string } },
+): Promise<{ candidateId: string; duplicateOf?: string }> {
+  const state = stateOf(handle);
+  const referenced = input.signalIds.map((id) => {
+    const signal = state.signals.get(id);
+    if (signal === undefined) throw new Error(`SIGNAL_NOT_FOUND: ${id}`);
+    return signal;
+  });
+  return reportCoreCandidate({
+    runId: state.runId,
+    sessionId: state.id,
+    target: state.target,
+    title: input.title,
+    expected: input.expected,
+    actual: input.actual,
+    steps: [...state.journal.steps],
+    signalIds: [...input.signalIds],
+    ...(referenced.length > 0
+      ? { signalSignature: referenced[0]!.signature }
+      : input.check === undefined
+        ? {}
+        : { signalSignature: nodeCheckSignature(input.check, state.target) }),
+    ...(input.check === undefined ? {} : { check: input.check }),
+    stateDir: state.stateDir,
+  });
 }
 
 async function sendRequest(

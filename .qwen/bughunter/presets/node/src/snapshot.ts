@@ -20,13 +20,14 @@ export const nodeSnapshot: Snapshot = {
     const responses = snapshot.responses as CapturedResponse[];
     return {
       ...snapshot,
-      responses: responses.slice(-maximumResponsesInSnapshot).map(trimmed),
+      responses: responses.slice(-maximumResponsesInSnapshot).map(trimResponse),
       totalResponses: responses.length,
     };
   },
 };
 
-function trimmed(response: CapturedResponse): CapturedResponse & { truncated?: boolean } {
+/** Один ответ для модели: тело усекается, факт усечения виден явно. */
+export function trimResponse(response: CapturedResponse): CapturedResponse & { truncated?: boolean } {
   const raw = response.raw.length > maximumBodyInSnapshot
     ? response.raw.slice(0, maximumBodyInSnapshot)
     : response.raw;
