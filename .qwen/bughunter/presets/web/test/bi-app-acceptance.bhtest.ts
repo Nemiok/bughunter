@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import type { Page } from 'playwright-core';
 import type { ViteDevServer } from '../../../fixtures/bi-app/node_modules/vite/dist/node/index.d.ts';
 import { SCENARIO_KEY } from '../../../fixtures/bi-app/src/mocks/scenarios.ts';
 import { SessionManager, type StateResult } from '../src/browser/session.ts';
@@ -168,6 +169,27 @@ async function pointOfThirdBar(): Promise<{ at: { x: number; y: number }; delta:
   } finally {
     await browser.close();
   }
+}
+
+/**
+ * Прокрутка страницы и перерисовка canvas асинхронны, а координаты приходят из отдельного браузера:
+ * без ожидания клик ловил гонку (`POINT_TARGET_UNRESOLVED`) под нагрузкой полного прогона.
+ * Ждём того же, чего требует production-путь, — чтобы под точкой был элемент и хук профиля назвал цель.
+ */
+async function waitForPointTarget(page: Page, at: { x: number; y: number }): Promise<void> {
+  const hook = profile.interactions?.resolvePoint;
+  assert.ok(hook, 'профиль приёмки обязан объявлять interactions.resolvePoint');
+  await page.waitForFunction(
+    (input: { source: string; x: number; y: number }) => {
+      if (document.elementFromPoint(input.x, input.y) === null) return false;
+      const resolvePoint = new Function('point', `return (${input.source})(point);`) as
+        (point: { x: number; y: number }) => { locator?: unknown } | null;
+      const resolved = resolvePoint({ x: input.x, y: input.y });
+      return resolved !== null && typeof resolved.locator === 'string' && resolved.locator.length > 0;
+    },
+    { source: hook, x: at.x, y: at.y },
+    { timeout: 20_000, polling: 100 },
+  );
 }
 
 let acceptance: BiAcceptanceContext;
@@ -398,6 +420,7 @@ test('drag and coordinate actions work on the fixture', async () => {
       action: 'scroll', scroll: { direction: 'down', delta },
     });
     assert.equal(scrolled.ok, true, scrolled.error ?? 'scroll страницы не выполнен');
+    await waitForPointTarget(dashboard.manager.pageOf(dashboard.sessionId), at);
     const clicked = await dashboard.manager.act(dashboard.sessionId, { action: 'clickAt', at });
     assert.equal(clicked.ok, true, clicked.error ?? 'clickAt не выполнен');
 
