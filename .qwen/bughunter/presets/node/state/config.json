@@ -1,0 +1,321 @@
+{
+  "baseUrl": "http://127.0.0.1:3000",
+  "allowedHosts": [
+    "127.0.0.1",
+    "localhost"
+  ],
+  "profile": "node-api-app",
+  "scenarios": [
+    {
+      "name": "valid",
+      "request": {
+        "method": "GET",
+        "path": "/health"
+      },
+      "expect": {
+        "status": 200,
+        "jsonPath": [
+          {
+            "pointer": "/status",
+            "expected": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty",
+      "request": {
+        "method": "GET",
+        "path": "/health?"
+      },
+      "expect": {
+        "status": 200,
+        "jsonPath": [
+          {
+            "pointer": "/status",
+            "expected": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid",
+      "request": {
+        "method": "GET",
+        "path": "/health",
+        "headers": {
+          "Accept": "text/plain"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonPath": [
+          {
+            "pointer": "/status",
+            "expected": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "name": "boundary",
+      "request": {
+        "method": "GET",
+        "path": "/health?trace=ыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыы"
+      },
+      "expect": {
+        "status": 200,
+        "jsonPath": [
+          {
+            "pointer": "/status",
+            "expected": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "name": "valid",
+      "request": {
+        "method": "GET",
+        "path": "/orders"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "empty",
+      "request": {
+        "method": "GET",
+        "path": "/orders?filter="
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid",
+      "request": {
+        "method": "GET",
+        "path": "/orders?filter[]=x"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "boundary",
+      "request": {
+        "method": "GET",
+        "path": "/orders?limit=-1"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "valid",
+      "request": {
+        "method": "GET",
+        "path": "/orders/ord-1"
+      },
+      "expect": {
+        "status": 200,
+        "jsonPath": [
+          {
+            "pointer": "/id",
+            "expected": "ord-1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty",
+      "request": {
+        "method": "GET",
+        "path": "/orders/"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "invalid",
+      "request": {
+        "method": "GET",
+        "path": "/orders/ord-unknown"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "boundary",
+      "request": {
+        "method": "GET",
+        "path": "/orders/99999999999999999999999999999999"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "valid",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "qty": 3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonPath": [
+          {
+            "pointer": "/totalCents",
+            "expected": 3600
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {}
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "qty": "abc"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "boundary",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "qty": -5
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "valid",
+      "request": {
+        "method": "POST",
+        "path": "/payments",
+        "body": {
+          "orderId": "ord-1",
+          "amountCents": 1000,
+          "idempotencyKey": "bh_sweep_valid"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "empty",
+      "request": {
+        "method": "POST",
+        "path": "/payments",
+        "body": {}
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid",
+      "request": {
+        "method": "POST",
+        "path": "/payments",
+        "body": {
+          "orderId": "ord-1",
+          "amountCents": "много",
+          "idempotencyKey": "bh_sweep_invalid"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "boundary",
+      "request": {
+        "method": "POST",
+        "path": "/payments",
+        "body": {
+          "orderId": "ord-1",
+          "amountCents": 1,
+          "idempotencyKey": "bh_sweep_boundary"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ],
+  "reset": {
+    "method": "POST",
+    "path": "/__reset"
+  },
+  "requestTimeoutMs": 10000,
+  "targetMap": {
+    "fixtures/node-api-app/src/**": [
+      "GET /health",
+      "GET /orders",
+      "POST /orders",
+      "GET /orders/:id",
+      "POST /payments"
+    ]
+  },
+  "baseBranch": "main",
+  "limits": {
+    "stepsPerSession": 60,
+    "candidatesPerRun": 20
+  },
+  "safety": {
+    "forbiddenActionText": [
+      "DELETE",
+      "drop",
+      "truncate"
+    ],
+    "readOnly": false
+  },
+  "testDataPrefix": "bh_",
+  "detectors": {
+    "anomalyTexts": [
+      "undefined",
+      "NaN",
+      "[object Object]",
+      "ECONNREFUSED",
+      "at Object.<anonymous>"
+    ],
+    "ignoreStatuses": []
+  },
+  "tests": {
+    "unit": {
+      "command": "npx vitest run"
+    },
+    "generated": {
+      "dir": "test/bughunter"
+    }
+  }
+}
