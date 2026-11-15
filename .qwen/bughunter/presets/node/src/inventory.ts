@@ -20,6 +20,8 @@ export function endpointTarget(entry: Pick<EndpointEntry, 'method' | 'template'>
 /**
  * `/orders/7f3ab4c9` и `/orders/12` — один эндпоинт `/orders/:id`. Без шаблонизации инвентарь
  * сервиса с миллионами записей состоял бы из миллиона целей и не годился бы для обхода.
+ * Эвристика нужна для значений, у которых под рукой нет профиля; объявленные шаблоны точны
+ * и применяются в `targetOfRequest`.
  */
 export function templatisedPath(path: string, idSegmentPattern: string = nodeIdSegmentPattern): string {
   const matcher = new RegExp(idSegmentPattern);
@@ -27,6 +29,36 @@ export function templatisedPath(path: string, idSegmentPattern: string = nodeIdS
     .split('/')
     .map((segment) => (segment.length > 0 && matcher.test(segment) ? ':id' : segment))
     .join('/');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Регулярное выражение шаблона эндпоинта: `:id` — любой непустой сегмент пути. */
+export function templatePattern(template: string): RegExp {
+  const body = template
+    .split('/')
+    .map((segment) => (segment.startsWith(':') ? '[^/]+' : escapeRegExp(segment)))
+    .join('/');
+  return new RegExp(`^${body}$`);
+}
+
+/**
+ * Цель запроса по объявленным шаблонам профиля: `GET /orders/ord-1` → `GET /orders/:id`.
+ * Сопоставление точное (профиль — источник правды), поэтому префиксные идентификаторы вроде
+ * `ord-1` не приходится угадывать эвристикой. Query в сопоставлении не участвует.
+ */
+export function targetOfRequest(
+  endpoints: readonly EndpointEntry[],
+  method: string,
+  path: string,
+): string | undefined {
+  const pathname = path.split('?')[0]!;
+  const wanted = method.toUpperCase();
+  return endpoints
+    .filter((endpoint) => endpoint.method.toUpperCase() === wanted && templatePattern(endpoint.template).test(pathname))
+    .map(endpointTarget)[0];
 }
 
 /** Путь из цели, адреса или URL: метод отбрасывается, query не участвует в шаблоне. */

@@ -133,7 +133,7 @@
       "name": "empty",
       "request": {
         "method": "GET",
-        "path": "/orders/"
+        "path": "/orders/0"
       },
       "expect": {
         "status": 404

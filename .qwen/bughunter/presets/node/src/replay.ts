@@ -35,7 +35,8 @@ export function createNodeReplay(): NodeReplay {
         });
         active = handle;
         const config = sessionView(handle).config;
-        if (nodeReset.supported) await nodeReset.apply(handle);
+        // Без рецепта сброса повтор всё равно законный: стенд может быть одноразовым по природе.
+        if (config.reset !== null) await nodeReset.apply(handle);
 
         const signals: Signal[] = [];
         for (const step of steps) {

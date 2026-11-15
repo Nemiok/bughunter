@@ -73,7 +73,8 @@ async function responseFor(handle: NodeSessionHandle, check: NodeCheck): Promise
   return response;
 }
 
-function sameValue(actual: unknown, expected: unknown): boolean {
+/** Равенство значений ответа: примитивы напрямую, составные — по JSON-представлению. */
+export function sameValue(actual: unknown, expected: unknown): boolean {
   if (actual === expected) return true;
   if (actual === null || expected === null) return false;
   if (typeof actual !== 'object' || typeof expected !== 'object') return false;

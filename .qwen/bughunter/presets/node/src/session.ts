@@ -333,6 +333,7 @@ async function appendStep(
   await appendFile(log, `${JSON.stringify({ step: step.id, response })}\n`, 'utf8');
 }
 
-function responseHash(response: CapturedResponse): string {
+/** Отпечаток ответа: им находки обхода ссылаются на конкретный ответ приложения. */
+export function responseHash(response: CapturedResponse): string {
   return createHash('sha256').update(`${response.status}\n${response.raw}`).digest('hex');
 }

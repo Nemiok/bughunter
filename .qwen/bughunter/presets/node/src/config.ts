@@ -100,7 +100,7 @@ function fixtureScenarios(): NodeScenario[] {
       request: { method: 'GET', path: '/orders/ord-1' },
       expect: { status: 200, jsonPath: [{ pointer: '/id', expected: 'ord-1' }] },
     },
-    { name: 'empty', request: { method: 'GET', path: '/orders/' }, expect: { status: 404 } },
+    { name: 'empty', request: { method: 'GET', path: '/orders/0' }, expect: { status: 404 } },
     { name: 'invalid', request: { method: 'GET', path: '/orders/ord-unknown' }, expect: { status: 404 } },
     { name: 'boundary', request: { method: 'GET', path: `/orders/${longId}` }, expect: { status: 404 } },
 
