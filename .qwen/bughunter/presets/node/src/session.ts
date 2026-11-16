@@ -363,6 +363,13 @@ function resolveRequestUrl(path: string, config: NodeConfig): URL {
     url = new URL(trimmed, config.baseUrl);
   }
   if (!config.allowedHosts.includes(url.hostname)) throw new Error(`FORBIDDEN_ORIGIN: ${url.hostname}`);
+  // `allowedHosts` называет хосты, но стенд занимает конкретный порт: другой порт того же хоста —
+  // другой сервис, и запрос к нему выходит за пределы прогона. Дополнительные хосты из списка
+  // остаются свободными в выборе порта — их объявил автор конфига.
+  const base = new URL(config.baseUrl);
+  if (url.hostname === base.hostname && url.port !== base.port) {
+    throw new Error(`FORBIDDEN_ORIGIN: ${url.host}`);
+  }
   return url;
 }
 

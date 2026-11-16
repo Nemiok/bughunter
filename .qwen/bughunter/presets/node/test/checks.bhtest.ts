@@ -151,4 +151,16 @@ test('validate rejects a check without a request line', () => {
   assert.throws(() => validate({ kind: 'jsonPath', target: 'GET /health', expected: 200 }), /CHECK_INVALID/);
   assert.throws(() => validate({ kind: 'headerContains', target: 'GET /health', expected: 'json' }), /CHECK_INVALID/);
   assert.throws(() => validate({ kind: 'status', target: 'GET /health' }), /CHECK_INVALID/);
+
+  // `expected` у status — целый HTTP-код. Строка даёт NaN, и тогда «нарушен» любой ответ:
+  // это класс ложных срабатываний, который веб-пресет уже закрыл для `elementCount`.
+  assert.throws(() => validate({ kind: 'status', target: 'GET /health', expected: 'abc' }), /CHECK_INVALID/);
+  assert.throws(() => validate({ kind: 'status', target: 'GET /health', expected: 2000 }), /CHECK_INVALID/);
+  assert.throws(() => validate({ kind: 'status', target: 'GET /health', expected: 200.5 }), /CHECK_INVALID/);
+
+  // Синтаксис указателя проверяется при заявке кандидата: иначе ошибка тонет в повторе.
+  assert.throws(
+    () => validate({ kind: 'jsonPath', target: 'GET /health', pointer: 'not a pointer', expected: 1 }),
+    /POINTER_INVALID/,
+  );
 });

@@ -270,7 +270,7 @@ async function main(): Promise<void> {
       ...(kind === undefined ? {} : { kind }),
     });
     if (id !== undefined && candidateId !== undefined) {
-      await recordCandidateTest(id, candidateId, kind ?? apiKind, absoluteTestFile, stateDir);
+      await recordCandidateTest(id, candidateId, kind ?? apiKind, absoluteTestFile, stateDir, verdict.status);
       await recordRunStage(id, 'export', 'done', stateDir);
     }
     return verdict;

@@ -135,6 +135,8 @@ export type Journal = {
   createdAt: string;
 };
 
+export type CandidateVerdict = 'red' | 'green' | 'broken';
+
 export type Candidate = {
   id: string;
   runId: string;
@@ -161,5 +163,7 @@ export type Candidate = {
   };
   /** Виды тестов — открытый словарь пресета (`TestRunner.kinds`, `ExportTarget.kind`). */
   tests?: Record<string, string>;
+  /** Вердикты `bh_verify_red` по видам тестов: `green` и `broken` не закрывают баг. */
+  verdicts?: Record<string, CandidateVerdict>;
   minimalSteps?: StepBase[];
 };

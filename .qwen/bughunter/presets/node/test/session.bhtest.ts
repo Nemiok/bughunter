@@ -104,6 +104,7 @@ test('a hung endpoint times out and becomes a signal', async () => {
 
 test('requests outside allowedHosts are blocked before they are sent', async () => {
   let hits = 0;
+  let sameHostHits = 0;
   const spy = createServer((_request, response) => {
     hits += 1;
     response.end('{}');
@@ -116,6 +117,22 @@ test('requests outside allowedHosts are blocked before they are sent', async () 
       performRequest(handle, { method: 'GET', path: `http://[::1]:${spyPort}/x` }, state.config),
       /FORBIDDEN_ORIGIN/,
     );
+    // Другой порт того же хоста — другой сервис, а не стенд: план требует блокировки.
+    const sameHostSpy = createServer((_request, response) => {
+      sameHostHits += 1;
+      response.end('{}');
+    });
+    const sameHostPort = await freePort('127.0.0.1');
+    await new Promise<void>((done) => sameHostSpy.listen(sameHostPort, '127.0.0.1', () => done()));
+    try {
+      await assert.rejects(
+        performRequest(handle, { method: 'GET', path: `http://127.0.0.1:${sameHostPort}/x` }, state.config),
+        /FORBIDDEN_ORIGIN/,
+      );
+    } finally {
+      await new Promise<void>((done) => sameHostSpy.close(() => done()));
+    }
+    assert.equal(sameHostHits, 0, 'запрос на другой порт того же хоста не должен уйти');
     await assert.rejects(
       performRequest(handle, { method: 'GET', path: '/health', headers: { Host: 'evil.example' } }, state.config),
       /FORBIDDEN_ORIGIN/,

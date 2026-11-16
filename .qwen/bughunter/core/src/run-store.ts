@@ -4,7 +4,7 @@ import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type { ReportFormat } from './preset.ts';
-import type { Candidate, Config, ExploreQueueItem, Finding, OperationStage, TargetStage, Run, Scope } from './types.ts';
+import type { Candidate, CandidateVerdict, Config, ExploreQueueItem, Finding, OperationStage, TargetStage, Run, Scope } from './types.ts';
 
 const execFile = promisify(execFileCallback);
 
@@ -428,7 +428,11 @@ function requiresWork(candidate: Candidate, requiredTestKind?: string): boolean 
     const missingTest = requiredTestKind === undefined
       ? Object.keys(candidate.tests ?? {}).length === 0
       : candidate.tests?.[requiredTestKind] === undefined;
-    return candidate.reproduction?.status !== 'reproduced' || missingTest;
+    // Записанный тест — ещё не регрессия: `bh_verify_red` мог вернуть `green` или `broken`.
+    // Вердикта может не быть у кандидата, записанного без проверки; явный не-`red` — работа.
+    const verdict = requiredTestKind === undefined ? undefined : candidate.verdicts?.[requiredTestKind];
+    return candidate.reproduction?.status !== 'reproduced' || missingTest
+      || (verdict !== undefined && verdict !== 'red');
   }
   return candidate.reproduction?.status !== 'unreproduced' || candidate.reproduction.attempts === 0;
 }
@@ -459,12 +463,14 @@ export async function recordCandidateTest(
   kind: string,
   file: string,
   stateDir: string,
+  verdict?: CandidateVerdict,
 ): Promise<Candidate> {
   const candidate = await readCandidate(runId, candidateId, stateDir);
   if (candidate.runId !== runId) throw new Error(`CANDIDATE_RUN_MISMATCH: ${candidateId}`);
   const updated: Candidate = {
     ...candidate,
     tests: { ...candidate.tests, [kind]: storedTestPath(file, runId, stateDir) },
+    ...(verdict === undefined ? {} : { verdicts: { ...candidate.verdicts, [kind]: verdict } }),
   };
   await writeJsonAtomic(candidatePath(runId, candidateId, stateDir), updated);
   return updated;

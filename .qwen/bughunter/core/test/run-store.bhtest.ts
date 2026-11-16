@@ -120,6 +120,32 @@ test('finish accepts a run whose explore queue is drained', () => withStateDir(a
   assert.match(await readFile(report, 'utf8'), /## Pending\n\nNone\./);
 }));
 
+/**
+ * Экспорт записывает тест, но не доказывает, что он ловит баг: `bh_verify_red` может вернуть
+ * `green` или `broken`. Подтверждённый баг с таким вердиктом не закрыт, иначе отчёт обещает
+ * регрессию, которой нет.
+ */
+test('a confirmed bug needs a red verdict, not just a recorded test', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('full', undefined, {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А'], targets: ['/a'],
+  });
+  await writeConfirmedCandidate(run.id, stateDir);
+  await recordCandidateTest(
+    run.id, 'cand-1', 'api', join(stateDir, 'runs', run.id, 'api', 'x.test.ts'), stateDir, 'green',
+  );
+  const leased = await leaseNextExploration(run.id, { personas: ['персона А'] }, stateDir);
+  if (leased.status !== 'task') throw new Error('не достигнуто');
+  await recordTargetExploration(run.id, leased.target, 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
+
+  await assert.rejects(() => finishRun(run.id, stateDir, format, 'api'), /RUN_INCOMPLETE: cand-1/);
+  await recordCandidateTest(
+    run.id, 'cand-1', 'api', join(stateDir, 'runs', run.id, 'api', 'x.test.ts'), stateDir, 'red',
+  );
+  await finishRun(run.id, stateDir, format, 'api');
+}));
+
 test('a test kind is an arbitrary preset string', () => withStateDir(async (stateDir) => {
   const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   await writeConfirmedCandidate(run.id, stateDir);

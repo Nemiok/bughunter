@@ -20,6 +20,14 @@ export function readPointer(value: unknown, pointer: string): unknown {
   return current;
 }
 
+/**
+ * Проверка синтаксиса указателя без чтения значения: ошибка видна при заявке кандидата, а не
+ * тонет в «невоспроизведён 0/3» на повторе.
+ */
+export function assertPointerSyntax(pointer: string): void {
+  parsePointer(pointer);
+}
+
 function parsePointer(pointer: string): string[] {
   const trimmed = pointer.trim();
   if (trimmed.startsWith('$')) return parseDotted(trimmed.slice(1), pointer);

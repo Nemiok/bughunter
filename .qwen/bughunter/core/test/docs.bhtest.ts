@@ -113,6 +113,23 @@ test('the contract skill no longer defers what core already owns', async () => {
   assert.match(skill, /contract-usage/);
 });
 
+/**
+ * Раздел «объявлено, но не перенесено» задачей 11 был исправлен, а строка таблицы границы
+ * осталась с прежней формулировкой; приёмка гайдлайнов нашла это расхождение (C4).
+ */
+test('the boundary table does not defer the reproduction protocol to the preset', async () => {
+  for (const file of [docs.contractSkill, docs.invariants]) {
+    const body = await read(file);
+    const row = body.split('\n').find((line) => /^\| Воспроизведение \|/.test(line));
+    assert.ok(row, `${file}: строка «Воспроизведение» в таблице границы не найдена`);
+    assert.ok(
+      !/живут в пресете|а сегодня также протокол/i.test(row),
+      `${file}: таблица границы всё ещё отдаёт протокол воспроизведения пресету`,
+    );
+    assert.match(row, /протокол|бюджет/i);
+  }
+});
+
 test('the node readme states the install command and the five tools', async () => {
   const body = await read(docs.nodePreset);
   assert.match(body, /npm ci/);

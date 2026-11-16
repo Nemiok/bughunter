@@ -1,6 +1,6 @@
 import type { Check, Checks, SessionHandle } from '@bughunter/core';
 
-import { readPointer } from './json-pointer.ts';
+import { assertPointerSyntax, readPointer } from './json-pointer.ts';
 import { sessionView } from './session.ts';
 
 /** Словарь оракулов node-пресета: что именно сравнивается с ответом приложения. */
@@ -31,6 +31,12 @@ export function validateNodeCheck(check: Check): void {
     throw new Error(`CHECK_INVALID: ${oracle.kind}.pointer обязателен`);
   }
   if (oracle.expected === undefined) throw new Error(`CHECK_INVALID: ${oracle.kind}.expected обязателен`);
+  if (oracle.kind === 'status'
+    && (typeof oracle.expected !== 'number' || !Number.isInteger(oracle.expected)
+      || oracle.expected < 100 || oracle.expected > 599)) {
+    throw new Error(`CHECK_INVALID: status.expected — целый HTTP-код 100–599, получено: ${String(oracle.expected)}`);
+  }
+  if (oracle.kind === 'jsonPath') assertPointerSyntax(oracle.pointer as string);
 }
 
 /**
