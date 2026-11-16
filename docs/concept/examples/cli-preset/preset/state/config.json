@@ -1,0 +1,86 @@
+{
+  "appDir": "cli-app",
+  "appEntry": "src/cli.js",
+  "databaseFile": "orders.json",
+  "profile": "cli-app",
+  "scenarios": [
+    {
+      "name": "valid",
+      "target": "add <name> <qty>",
+      "argv": ["add", "apple", "3"],
+      "expect": { "exitCode": 0, "stdoutContains": ["ok apple total=300"] }
+    },
+    {
+      "name": "invalid",
+      "target": "add <name> <qty>",
+      "argv": ["add", "x", "abc"],
+      "expect": {
+        "exitCode": 2,
+        "stdoutNotContains": ["NaN"],
+        "stderrContains": ["количество"]
+      }
+    },
+    {
+      "name": "boundary",
+      "target": "add <name> <qty>",
+      "argv": ["add", "banana", "-5"],
+      "expect": {
+        "exitCode": 2,
+        "stdoutNotContains": ["total=-500"],
+        "stderrContains": ["количество"]
+      }
+    },
+    {
+      "name": "valid",
+      "target": "show <name>",
+      "setup": [{ "argv": ["add", "apple", "3"] }],
+      "argv": ["show", "apple"],
+      "expect": { "exitCode": 0, "stdoutContains": ["300"] }
+    },
+    {
+      "name": "invalid",
+      "target": "show <name>",
+      "argv": ["show", "missing"],
+      "expect": { "exitCode": 2, "stderrNotContains": ["    at "] }
+    },
+    {
+      "name": "valid",
+      "target": "list",
+      "argv": ["list"],
+      "expect": { "exitCode": 0, "stdoutContains": ["[]"] }
+    },
+    {
+      "name": "empty",
+      "target": "list",
+      "setup": [{ "argv": ["add", "apple", "3"] }],
+      "argv": ["list"],
+      "expect": {
+        "exitCode": 0,
+        "stdoutContains": ["\"name\":\"apple\"", "\"qty\":3", "\"total\":300"]
+      }
+    },
+    {
+      "name": "boundary",
+      "target": "list",
+      "argv": ["list", "extra"],
+      "expect": { "exitCode": 0, "stdoutContains": ["[]"] }
+    }
+  ],
+  "reset": { "kind": "delete-db" },
+  "timeoutMs": 10000,
+  "targetMap": {
+    "cli-app/src/**": ["add <name> <qty>", "show <name>", "list"]
+  },
+  "baseBranch": "main",
+  "limits": { "stepsPerSession": 40, "candidatesPerRun": 20 },
+  "safety": { "forbiddenActionText": [], "readOnly": false },
+  "testDataPrefix": "bh_",
+  "detectors": {
+    "allowedExitCodes": [0, 2],
+    "anomalyTexts": ["NaN", "undefined", "[object Object]"]
+  },
+  "tests": {
+    "unit": { "command": "node --test" },
+    "generated": { "dir": "test/bughunter" }
+  }
+}

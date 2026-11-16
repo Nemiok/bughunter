@@ -1,0 +1,12 @@
+{
+  "name": "cli-app",
+  "private": true,
+  "type": "module",
+  "description": "Мини-фикстура пресета CLI: учёт заказов в JSON-файле",
+  "bughunter": {
+    "target": "cli"
+  },
+  "scripts": {
+    "start": "node src/cli.js"
+  }
+}

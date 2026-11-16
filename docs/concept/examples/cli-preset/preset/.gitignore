@@ -1,0 +1,5 @@
+state/preset.json
+state/runs/
+state/known-bugs.json
+state/suppressions.json
+.test-*
