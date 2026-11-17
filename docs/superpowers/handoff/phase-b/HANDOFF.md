@@ -6,6 +6,9 @@
 > Ниже — снимок состояния на 2026-11-16 00:50; разделы «Что осталось» и «Отложено» читать как
 > историю. Актуальные итоги — в отчётах `docs/superpowers/reports/2026-11-15-node-preset-model-run.md`
 > и `2026-11-16-guidelines-acceptance.md`, решения — в `progress-ledger.md` рядом.
+>
+> Доказательства гейтов сохранены в `.superpowers/evidence/phase-b/` (git-ignored, 60 МБ);
+> три прогона node-гейта — в `presets/node/state/runs/`.
 
 Документ для того, кто продолжает работу с чистого контекста: другой сессии, другого агента или
 другой модели. Читается вместе с `progress-ledger.md` (полный журнал решений) и
@@ -15,8 +18,8 @@
 
 | Что | Значение |
 | --- | --- |
-| Worktree | `/Users/nemiok/Desktop/projects/vault/bughunter-phase-b` |
-| Ветка | `phase-b-node-preset`, base = `main` (`a6d2252`) |
+| Worktree | основное дерево `/Users/nemiok/Desktop/projects/vault/bughunter` (worktree фазы B удалён после слияния) |
+| Ветка | `main` (`ea01fd8`, fast-forward из `phase-b-node-preset`; ветка удалена) |
 | План | `docs/superpowers/plans/2026-11-14-bughunter-node-preset.md` (13 задач) |
 | Спецификация | `docs/superpowers/specs/2026-11-13-bughunter-core-and-presets-design.md` (§6.2, §6.7, §6.8, критерии 6.7.1–6.7.5) |
 | Метод исполнения | superpowers:executing-plans — инлайн, один свежий ревьюер в конце |
