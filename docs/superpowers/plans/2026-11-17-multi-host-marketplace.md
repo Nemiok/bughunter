@@ -50,7 +50,7 @@
 
 **Interfaces:**
 - Consumes: ничего из новых задач; использует только Node builtins.
-- Produces: `defineHostDescriptor(value)`, `hostPaths(host, projectRoot, preset)`, `mcpToolName(host, tool)`, `qwenHost`/`host`. Все последующие задачи используют поля `id`, `pluginId`, `outDir`, `pluginRoot`, `optInPath`, `stateRoot`, `mcpToolPrefix`, `skillNamespace`, `agentNamespace`, `reloadInstruction`.
+- Produces: `defineHostDescriptor(value)`, `hostPaths(host, projectRoot, preset)`, `mcpToolName(host, tool)`, `qwenHost`/`host`. Все последующие задачи используют поля `id`, `pluginId`, `outDir`, `pluginRoot`, `optInPath`, `stateRoot`, `mcpToolPrefix`, `skillNamespace`, `agentNamespace`, `reloadInstruction`, `refreshInstruction`.
 
 - [ ] **Step 1: Написать failing tests на paths, tool names и запрет unsafe paths**
 
@@ -101,7 +101,7 @@ import { isAbsolute, join } from 'node:path';
 
 const fields = [
   'id', 'pluginId', 'outDir', 'pluginRoot', 'optInPath', 'stateRoot',
-  'mcpToolPrefix', 'skillNamespace', 'agentNamespace', 'reloadInstruction',
+  'mcpToolPrefix', 'skillNamespace', 'agentNamespace', 'reloadInstruction', 'refreshInstruction',
 ];
 
 export function defineHostDescriptor(value) {
@@ -116,7 +116,7 @@ export function defineHostDescriptor(value) {
       throw new Error(`HOST_DESCRIPTOR_INVALID: ${field}`);
     }
   }
-  if (!/^mcp__[a-z0-9_]+__$/.test(value.mcpToolPrefix)) {
+  if (!/^mcp__[a-z0-9_-]+__$/.test(value.mcpToolPrefix)) {
     throw new Error('HOST_DESCRIPTOR_INVALID: mcpToolPrefix');
   }
   return Object.freeze({ ...value });
@@ -154,6 +154,7 @@ export const qwenHost = defineHostDescriptor({
   skillNamespace: 'bughunter:',
   agentNamespace: 'bughunter:',
   reloadInstruction: '/plugins reload',
+  refreshInstruction: '`/plugins reload` (или открой новую сессию)',
 });
 
 export const host = qwenHost;
@@ -1365,6 +1366,7 @@ export const claudeHost = defineHostDescriptor({
   skillNamespace: 'bughunter:',
   agentNamespace: 'bughunter:',
   reloadInstruction: '/reload-plugins',
+  refreshInstruction: '`/reload-plugins`',
   entryInvocation: '/bughunter:bughunter',
   clients: ['cli', 'desktop'],
 });
