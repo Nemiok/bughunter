@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -10,9 +10,16 @@ const out = join(repoRoot, 'plugin', 'dist', 'kimi', 'bughunter');
 test('kimi artifact has native manifest and no Qwen paths', async () => {
   const manifest = JSON.parse(await readFile(join(out, 'kimi.plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'bughunter');
-  assert.equal(manifest.mcpServers.bughunter.args[0], '${KIMI_PLUGIN_ROOT}/server/mcp.mjs');
+  // Runtime-verified on Kimi 2.5.3: args are not variable-expanded, the MCP
+  // server runs with cwd = plugin root, so the script path must be relative.
+  assert.equal(manifest.mcpServers.bughunter.args[0], './server/mcp.mjs');
   assert.equal(manifest.skills.length, 7);
-  assert.equal(manifest.agents.length, 6);
+  // agents/ is auto-discovered; declaring agent files is a diagnostic.
+  assert.equal(manifest.agents, undefined);
+  assert.equal((await readdir(join(out, 'agents'))).filter((file) => file.endsWith('.md')).length, 6);
+  // SessionStart hook bridges the workspace cwd into the sandboxed MCP server.
+  assert.deepEqual(manifest.hooks, [{ event: 'SessionStart', command: 'node ./hooks/session-start.mjs' }]);
+  assert.ok(existsSync(join(out, 'hooks', 'session-start.mjs')));
   assert.equal(existsSync(join(out, '.claude-plugin', 'plugin.json')), false);
   const entry = await readFile(join(out, 'skills', 'bughunter', 'SKILL.md'), 'utf8');
   assert.ok(entry.includes('.kimi-code/bughunter.json'));

@@ -59,7 +59,7 @@ export async function setupProject({ host, projectRoot, preset, serverRoot, pref
   };
 }
 
-export async function startDormantServer({ host, version, serverRoot, projectRoot }) {
+export async function startDormantServer({ host, version, serverRoot, projectRoot, projectUnknown = false }) {
   const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
   const { z } = await import('zod');
@@ -69,6 +69,9 @@ export async function startDormantServer({ host, version, serverRoot, projectRoo
     inputSchema: { preset: z.enum(['web', 'node']) },
   }, async ({ preset }) => {
     try {
+      if (projectUnknown) {
+        throw new Error('BUGHUNTER_PROJECT_UNKNOWN: start a Kimi session in the project before bh_setup');
+      }
       const value = await setupProject({ host, projectRoot, preset, serverRoot });
       return { content: [{ type: 'text', text: JSON.stringify(value) }] };
     } catch (error) {

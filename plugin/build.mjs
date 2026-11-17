@@ -151,6 +151,7 @@ async function main() {
           version,
         });
       } else {
+        await cp(join(pluginRoot, 'hooks'), join(out, 'hooks'), { recursive: true });
         await writeKimiMarketplace();
       }
       const megabytes = (await sizeOf(out)) / 1024 / 1024;

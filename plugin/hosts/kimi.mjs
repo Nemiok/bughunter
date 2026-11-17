@@ -27,13 +27,16 @@ export function kimiManifest(version) {
       './skills/bughunter-preset-card-web', './skills/bughunter-preset-card-node',
       './skills/bughunter-preset-guide', './skills/bughunter-core-contract',
     ],
-    agents: [
-      './agents/bh-explorer.md', './agents/bh-reviewer.md', './agents/bh-test-writer.md',
-      './agents/bh-explorer-node.md', './agents/bh-reviewer-node.md', './agents/bh-test-writer-node.md',
-    ],
+    // agents/ is auto-discovered by the Kimi runtime; declaring file paths
+    // produces "path is not a directory" diagnostics (verified on 2.5.3).
     mcpServers: {
-      bughunter: { command: 'node', args: ['${KIMI_PLUGIN_ROOT}/server/mcp.mjs'] },
+      bughunter: { command: 'node', args: ['./server/mcp.mjs'] },
     },
+    // Records the session workspace under KIMI_CODE_HOME so the MCP server
+    // (sandboxed to the plugin root) can resolve the project. See hooks/.
+    hooks: [
+      { event: 'SessionStart', command: 'node ./hooks/session-start.mjs' },
+    ],
     interface: {
       displayName: 'Bughunter',
       shortDescription: 'Evidence-based bug hunting with red regression tests.',

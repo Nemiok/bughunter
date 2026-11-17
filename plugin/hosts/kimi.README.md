@@ -2,7 +2,14 @@
 
 Плагин ставит Bughunter нативно для Kimi Code CLI и Desktop: собирает сервер, регистрирует его как plugin MCP-сервер, включает промпт-слой и после выбора пресета создаёт opt-in-файл проекта. Копировать дерево и писать MCP-конфигурацию вручную не нужно.
 
-Проверено на схеме плагина Kimi (`kimi.plugin.json`, custom marketplace версии `2`, клиенты `cli` и `desktop`). Нужны Node.js ≥ 22.18 и Git в целевом проекте; для веб-пресета — установленный Google Chrome.
+Проверено на схеме плагина Kimi (`kimi.plugin.json`, custom marketplace версии `2`, клиенты `cli` и `desktop`) против реального локального сервера Kimi Code CLI 2.5.3 (`kimi web`, REST `/api/v1/*`): установка, 7 скиллов/1 MCP-сервер/0 диагностик, dormant-режим, 19 web- и 16 node-инструментов, обновление на `0.1.1-test.1` с сохранением состояния проекта. Нужны Node.js ≥ 22.18 и Git в целевом проекте; для веб-пресета — установленный Google Chrome.
+
+Поведение хоста, зафиксированное прогоном (не предположениями):
+
+- Плагинный MCP-сервер запускается с `cwd` = каталог установленного плагина (`$KIMI_CODE_HOME/plugins/managed/<id>`), переменные в `args` не раскрываются, путь к скрипту в манифесте относительный: `./server/mcp.mjs`.
+- Клиент MCP присылает пустые capabilities — рабочий каталог сессии серверу не передаётся. Мост — `SessionStart`-хук плагина: он записывает cwd сессии в `$KIMI_CODE_HOME/bughunter/session-cwd`, лаунчер читает его при старте. Инструменты в сессии именуются `mcp__plugin-bughunter_bughunter__*`; после `bh_setup` MCP-сервер перечитывается (`/reload` или рестарт MCP-сервера), без этого новая сессия видит прежний набор.
+- Обновление — повторный `POST /api/v1/plugins` с новым `expectedVersion`: managed-копия заменяется, файлы состояния проекта (`.kimi-code/bughunter/state/`, opt-in) не трогаются.
+- Marketplace принимает `platforms` в обоих написаниях: `macos`/`windows`/`linux`/`cloud` и их алиасы `darwin`/`win32`; сравнение идёт с `process.platform`.
 
 ## Установка
 
@@ -71,11 +78,12 @@ BUGHUNTER_STATE_DIR="$PWD/.kimi-code/bughunter/state/web" \
 ## Сборка и проверка
 
 ```sh
-node plugin/build.mjs --host all   # собрать Qwen- и Kimi-артефакты из одного staged payload
-npm --prefix plugin test           # в том числе artifact-тест Kimi
+node plugin/build.mjs --host all            # собрать Qwen- и Kimi-артефакты из одного staged payload
+npm --prefix plugin test                    # в том числе artifact-тест Kimi
+npm --prefix plugin run test:kimi-marketplace  # жизненный цикл Kimi против реального `kimi web` (изолированный KIMI_CODE_HOME)
 ```
 
-`plugin/dist/` — генерируемый каталог, в Git не попадает. Custom marketplace в этой инструкции — локальный JSON-каталог, который оператор добавляет вручную; это не публикация в центральном каталоге Kimi.
+`plugin/dist/` — генерируемый каталог, в Git не попадает. Custom marketplace в этой инструкции — локальный JSON-каталог, который оператор добавляет вручную; это не публикация в центральном каталоге Kimi. Гейт `test:kimi-marketplace` поднимает `kimi web` на свободном порту с временным `KIMI_CODE_HOME` и токеном только внутри него; модель не настраивается и не расходуется.
 
 ## Ограничения
 

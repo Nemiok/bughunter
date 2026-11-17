@@ -9,6 +9,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:kimi-artifact": "node --test test/kimi-artifact.test.mjs",
     "test:install": "node test-install.mjs",
-    "test:qwen-marketplace": "node test/qwen-marketplace-install.mjs"
+    "test:qwen-marketplace": "node test/qwen-marketplace-install.mjs",
+    "test:kimi-marketplace": "node test/kimi-marketplace-install.mjs"
   }
 }
