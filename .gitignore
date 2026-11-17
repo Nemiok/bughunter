@@ -24,3 +24,6 @@ bughunter-gate/
 
 # SDD-воркспейсы (ledger, briefs) — рабочий скретч, не артефакт
 .superpowers/
+
+# Isolated development worktrees
+.worktrees/
