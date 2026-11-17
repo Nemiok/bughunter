@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import type { ReportFormat } from '../src/preset.ts';
 import {
   completeExplorationLease, createRun, finishRun, leaseNextExploration,
-  recordCandidateTest, recordTargetExploration,
+  readFindings, recordCandidateTest, recordTargetExploration,
 } from '../src/run-store.ts';
 import type { Candidate, Config, Finding } from '../src/types.ts';
 
@@ -57,6 +57,28 @@ test('the persona roster comes from the caller, not from the store', () => withS
   });
   assert.deepEqual(run.exploreQueue?.map((item) => item.persona), ['персона А', 'персона Б']);
   assert.deepEqual(run.exploreQueue?.map((item) => item.target), ['/a', '/a']);
+}));
+
+test('findings written before the envelope rename stay readable', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  const directory = join(stateDir, 'runs', run.id, 'findings');
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'find-old.json'), JSON.stringify({
+    id: 'find-old',
+    runId: run.id,
+    targetRef: '/a',
+    widget: 'orders',
+    kind: 'response-captured',
+    detail: 'старая находка',
+    responseHashes: ['hash-1'],
+    status: 'new',
+    createdAt,
+  }), 'utf8');
+
+  const [finding] = await readFindings(run.id, stateDir);
+  assert.equal(finding?.subject, 'orders');
+  assert.deepEqual(finding?.evidenceHashes, ['hash-1']);
+  assert.ok(!('widget' in (finding as object)) && !('responseHashes' in (finding as object)));
 }));
 
 test('the report renders candidates and findings through the preset format', () => withStateDir(async (stateDir) => {

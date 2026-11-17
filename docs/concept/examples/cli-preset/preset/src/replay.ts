@@ -51,8 +51,10 @@ export function createCliReplay(): CliReplay {
 
         artifacts.push(...handle.artifacts());
         const { candidate } = context;
+        // Композитная сигнатура кандидата включает оракул; повтор ищет сырую сигнатуру симптома.
+        const symptomSignature = candidate.signalSignature ?? candidate.signature;
         const matched = candidate.signalIds.length > 0
-          ? signals.some((signal) => signal.signature === candidate.signature)
+          ? signals.some((signal) => signal.signature === symptomSignature)
           : candidate.check !== undefined && await cliCheckViolated(handle, candidate.check);
         return { matched, artifacts };
       } catch {

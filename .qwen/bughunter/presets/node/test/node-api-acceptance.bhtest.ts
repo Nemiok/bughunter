@@ -288,11 +288,11 @@ test('one symptom with two different oracles stays two bugs and two regression t
       check: { kind: 'status', target: 'POST /payments', expected: 200 },
     });
     const second = await reportNodeCandidate(handle, {
-      title: 'Сбой шлюза оставляет баланс неизменным',
-      expected: 'баланс 9000 после списания 1000',
-      actual: '502, баланс не изменился',
+      title: 'Сбой шлюза всё равно списывает деньги',
+      expected: 'баланс 10000: неуспешный платёж не списывает',
+      actual: '502, но баланс уменьшился до 9000',
       signalIds: [symptom.id],
-      check: { kind: 'jsonPath', target: 'POST /payments', pointer: '$.balanceCents', expected: 9000 },
+      check: { kind: 'jsonPath', target: 'POST /payments', pointer: '$.balanceCents', expected: 10000 },
     });
     assert.equal(first.duplicateOf, undefined);
     assert.equal(second.duplicateOf, undefined, 'общий симптом с другим оракулом — не дубль');
@@ -330,7 +330,22 @@ test('one symptom with two different oracles stays two bugs and two regression t
   const exportedFiles = await Promise.all(reported.map(async (bugId) =>
     (await exportNodeTest({ runId: collisionRun.id, bugId, stateDir: state.stateDir })).file));
   assert.notEqual(exportedFiles[0], exportedFiles[1], 'у разных багов разные файлы регрессий');
-  for (const file of exportedFiles) assert.match(await readFile(file, 'utf8'), /from 'vitest'/);
+  const project = await vitestProject();
+  try {
+    const verdicts: string[] = [];
+    for (const [index, file] of exportedFiles.entries()) {
+      const source = await readFile(file, 'utf8');
+      assert.match(source, /from 'vitest'/);
+      const destination = join(project.root, 'bughunter', `collision-${index}.test.ts`);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, source, 'utf8');
+      const verdict = await verifyNodeRed(destination, { kind: apiKind });
+      verdicts.push(verdict.status);
+    }
+    assert.deepEqual(verdicts, ['red', 'red'], 'оба оракула обязаны давать красный тест');
+  } finally {
+    await project.cleanup();
+  }
 
   const finished = await finishRun(collisionRun.id, state.stateDir);
   assert.match(finished.report, /report\.md$/);

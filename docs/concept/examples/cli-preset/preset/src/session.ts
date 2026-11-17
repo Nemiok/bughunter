@@ -345,11 +345,8 @@ export async function reportCliCandidate(
     actual: input.actual,
     steps: [...state.journal.steps],
     signalIds: [...input.signalIds],
-    ...(referenced.length > 0
-      ? { signalSignature: referenced[0]!.signature }
-      : input.check === undefined
-        ? {}
-        : { signalSignature: cliCheckSignature(input.check, state.target) }),
+    ...(referenced.length > 0 ? { signalSignature: referenced[0]!.signature } : {}),
+    ...(input.check === undefined ? {} : { checkSignature: cliCheckSignature(input.check, state.target) }),
     ...(input.check === undefined ? {} : { check: input.check }),
     stateDir: state.stateDir,
   });

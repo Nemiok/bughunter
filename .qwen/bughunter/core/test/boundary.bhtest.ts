@@ -25,10 +25,11 @@ const domainStems = [
 const presetImportPatterns = [/from\s+'[^']*presets\//, /from\s+'@bughunter\/web/];
 
 /**
- * Историческое имя поля, которое core обязан узнать, чтобы отвергнуть состояние прежней схемы.
- * Это совместимость с прошлым, а не знание домена; строка исключена из лексиконной проверки.
+ * Совместимость с записанным состоянием прежней схемы: core обязан узнать эти имена, чтобы
+ * прочитать старый прогон или отвергнуть его. Это не знание домена, поэтому строки с маркером
+ * `legacy-envelope` и миграционный guard исключены из лексиконной проверки.
  */
-const legacySchemaGuard = /const retiredRunFields = /;
+const legacySchemaGuard = /const retiredRunFields =|legacy-envelope/;
 
 /** Оракулы и виды проверок принадлежат пресету: core-тесты не должны закреплять их имена. */
 const presetCheckKindPattern = /\bkind:\s*'(?:status|jsonPath|headerContains|pointer|visibleText|elementCount)'/;

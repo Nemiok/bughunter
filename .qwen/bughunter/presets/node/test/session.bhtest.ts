@@ -260,11 +260,11 @@ test('a candidate keeps the raw symptom signature when an oracle is attached', a
       check: { kind: 'status', target: 'POST /payments', expected: 200 },
     });
     const second = await reportNodeCandidate(handle, {
-      title: 'Сбой шлюза оставляет баланс неизменным',
-      expected: 'баланс 9000 после списания 1000',
-      actual: '502, баланс не изменился',
+      title: 'Сбой шлюза всё равно списывает деньги',
+      expected: 'баланс 10000: неуспешный платёж не списывает',
+      actual: '502, но баланс уменьшился до 9000',
       signalIds: [symptom.id],
-      check: { kind: 'jsonPath', target: 'POST /payments', pointer: '$.balanceCents', expected: 9000 },
+      check: { kind: 'jsonPath', target: 'POST /payments', pointer: '$.balanceCents', expected: 10000 },
     });
     assert.equal(first.duplicateOf, undefined);
     assert.equal(second.duplicateOf, undefined, 'общий симптом с другим оракулом — не дубль');
@@ -277,6 +277,36 @@ test('a candidate keeps the raw symptom signature when an oracle is attached', a
     assert.equal(firstRaw.signalSignature, symptom.signature, 'сырая сигнатура нужна повтору');
     assert.notEqual(firstRaw.signature, symptom.signature, 'сигнатура кандидата учитывает оракул');
     assert.notEqual(firstRaw.signature, secondRaw.signature);
+  } finally {
+    await handle.close();
+  }
+});
+
+test('jsonPath oracles with the same expectation and different pointers are different bugs', async () => {
+  const handle = await openSession('POST /payments');
+  try {
+    const { signals } = await performRequest(
+      handle,
+      { method: 'POST', path: '/payments', body: { orderId: 'ord-1', amountCents: 1000, idempotencyKey: 'bh_pointer_identity' } },
+      state.config,
+    );
+    const symptom = signals.find((signal) => signal.kind === 'status');
+    assert.ok(symptom);
+    const base = {
+      title: 'Сбой шлюза',
+      expected: 'поле ответа',
+      actual: '502',
+      signalIds: [symptom.id],
+      check: { kind: 'jsonPath' as const, target: 'POST /payments', expected: 9000 },
+    };
+    const first = await reportNodeCandidate(handle, { ...base, check: { ...base.check, pointer: '$.balanceCents' } });
+    const second = await reportNodeCandidate(handle, { ...base, check: { ...base.check, pointer: '$.chargeId' } });
+    const read = async (candidateId: string) => JSON.parse(await readFile(
+      join(state.stateDir, 'runs', 'run-session', 'candidates', `${candidateId}.json`),
+      'utf8',
+    )) as { signature: string };
+    const [firstRaw, secondRaw] = await Promise.all([read(first.candidateId), read(second.candidateId)]);
+    assert.notEqual(firstRaw.signature, secondRaw.signature, 'указатель входит в сигнатуру оракула');
   } finally {
     await handle.close();
   }

@@ -139,6 +139,15 @@ test('replay of a signal-backed candidate matches by signature, not by check', a
     }), steps));
     assert.equal(matched.matched, true, 'сырая сигнатура симптома совпала');
 
+    // Кандидат, записанный до появления `signalSignature`, хранит сырую сигнатуру в `signature`.
+    const legacy = await replay.replay(steps, contextFor(candidate({
+      target: 'POST /orders',
+      signalIds: ['signal-one'],
+      signature,
+      check: { kind: 'status', target: 'POST /orders', expected: 500 },
+    }), steps));
+    assert.equal(legacy.matched, true, 'старый кандидат повторяется по signature');
+
     const missed = await replay.replay(steps, contextFor(candidate({
       target: 'POST /orders',
       signalIds: ['signal-one'],

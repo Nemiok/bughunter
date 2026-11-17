@@ -33,7 +33,7 @@ export function scanExecution(execution: CommandExecution, target: string, confi
       signature: signalSignature({ kind, message, target, ...(stack === undefined ? {} : { stack }) }),
       target,
       timestamp: new Date().toISOString(),
-      ...(execution.exitCode === null ? {} : { status: execution.exitCode }),
+      ...(execution.exitCode === null ? {} : { details: { exitCode: execution.exitCode } }),
     });
   };
 

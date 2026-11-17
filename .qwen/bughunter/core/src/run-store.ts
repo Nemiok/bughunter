@@ -385,6 +385,24 @@ export function findingPath(runId: string, findingId: string, stateDir: string):
   return join(stateDir, 'runs', runId, 'findings', `${findingId}.json`);
 }
 
+/** legacy-envelope: имена конверта до нейтрализации — по ним читаются находки старых прогонов. */
+type LegacyEnvelope = { widget?: string; responseHashes?: string[] }; // legacy-envelope
+
+type StoredFinding = Omit<Finding, 'subject' | 'evidenceHashes'> & {
+  subject?: string;
+  evidenceHashes?: string[];
+} & LegacyEnvelope;
+
+function normalizeFinding(stored: StoredFinding): Finding {
+  const { widget, responseHashes, ...finding } = stored; // legacy-envelope
+  const subject = finding.subject ?? widget; // legacy-envelope
+  return {
+    ...finding,
+    ...(subject === undefined ? {} : { subject }),
+    evidenceHashes: finding.evidenceHashes ?? responseHashes ?? [],
+  };
+}
+
 export async function readFindings(runId: string, stateDir: string): Promise<Finding[]> {
   const directory = join(stateDir, 'runs', runId, 'findings');
   let files: string[];
@@ -395,7 +413,7 @@ export async function readFindings(runId: string, stateDir: string): Promise<Fin
     throw error;
   }
   const findings = await Promise.all(files.filter((file) => file.endsWith('.json'))
-    .map(async (file) => JSON.parse(await readFile(join(directory, file), 'utf8')) as Finding));
+    .map(async (file) => normalizeFinding(JSON.parse(await readFile(join(directory, file), 'utf8')) as StoredFinding)));
   return findings.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
