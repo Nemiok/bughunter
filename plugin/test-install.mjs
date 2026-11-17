@@ -5,6 +5,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { withMcpClient } from './test/mcp-client.mjs';
+
 const pluginRoot = resolve(import.meta.dirname);
 const dist = join(pluginRoot, 'dist', 'bughunter');
 const qwen = process.env.QWEN_BIN ?? 'qwen';
@@ -134,10 +136,25 @@ try {
   await rm(join(project, '.qwen', 'bughunter'), { recursive: true, force: true });
   const dormant = summarize(await initOf());
   assert.deepEqual(dormant.mcp, ['bughunter:connected']);
-  assert.equal(dormant.bhTools.length, 0, 'dormant plugin must expose no Bughunter tools');
+  assert.equal(dormant.bhTools.length, 1, `dormant tools: ${dormant.bhTools.join(', ')}`);
   assert.equal(dormant.skills.length, 7);
   assert.equal(dormant.agents.length, 6);
   assert.ok(!existsSync(join(project, '.qwen', 'bughunter')), 'dormant plugin must not create project state');
+
+  const setup = await withMcpClient(join(dist, 'server'), project, async (client) => {
+    const tools = await client.listTools();
+    assert.deepEqual(tools.tools.map((tool) => tool.name), ['bh_setup']);
+    return client.callTool({ name: 'bh_setup', arguments: { preset: 'web' } });
+  });
+  assert.equal(setup.isError, undefined);
+  assert.equal(JSON.parse(setup.content[0].text).code, 'CONFIG_CREATED');
+  assert.ok(existsSync(join(project, '.qwen', 'bughunter.json')));
+  assert.ok(existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'config.json')));
+  assert.ok(!existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'runs')));
+  assert.ok(!existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'auth')));
+  const afterSetup = summarize(await initOf());
+  assert.deepEqual(afterSetup.mcp, ['bughunter:connected']);
+  assert.equal(afterSetup.bhTools.length, 19);
   assert.ok(existsSync(join(dist, 'AUTHORING.md')));
   assert.ok(existsSync(join(dist, 'template', 'authoring-brief.md')));
   assert.ok(existsSync(join(dist, 'template', 'cli-preset', 'preset', 'test', 'acceptance.bhtest.ts')));
@@ -146,6 +163,7 @@ try {
     web: { tools: web.bhTools.length, skills: web.skills.length, agents: web.agents.length },
     node: { tools: node.bhTools.length },
     dormant: { tools: dormant.bhTools.length, state: false },
+    afterSetup: { tools: afterSetup.bhTools.length },
   }));
 } finally {
   await rm(root, { recursive: true, force: true });

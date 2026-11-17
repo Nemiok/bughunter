@@ -59,6 +59,7 @@ function namespacedSkillRefs(text) {
 
 async function renderEntry() {
   let text = await readFile(join(source, 'skills', 'bughunter', 'SKILL.md'), 'utf8');
+  const setup = await readFile(join(pluginRoot, 'prompts', 'setup.md'), 'utf8');
   text = text
     .replaceAll('bughunter-preset-card', '<card>')
     .replaceAll('bh-test-writer', '<writer>')
@@ -75,6 +76,8 @@ async function renderEntry() {
     'Подстановки для вызовов ниже: для web — `<card>=bughunter:bughunter-preset-card-web`, `<explorer>=bughunter:bh-explorer`, `<reviewer>=bughunter:bh-reviewer`, `<writer>=bughunter:bh-test-writer`; для node — `<card>=bughunter:bughunter-preset-card-node`, `<explorer>=bughunter:bh-explorer-node`, `<reviewer>=bughunter:bh-reviewer-node`, `<writer>=bughunter:bh-test-writer-node`. Подставляй эти значения вместо угловых скобок.',
     '',
     'Состояние прогона: `.qwen/bughunter/state/<preset>/`. Если инструмент вернул `CONFIG_CREATED`, покажи путь оператору и остановись.',
+    '',
+    setup.trim(),
     '',
   ].join('\n');
   return insertAfterFrontmatter(text, preamble);
@@ -230,10 +233,18 @@ async function copyAuthoring() {
   await cp(join(pluginRoot, 'AUTHORING.md'), join(out, 'AUTHORING.md'));
 }
 
+async function copySetupLayer() {
+  await mkdir(join(server, 'hosts'), { recursive: true });
+  await cp(join(pluginRoot, 'setup.mjs'), join(server, 'setup.mjs'));
+  await cp(join(pluginRoot, 'preflight.mjs'), join(server, 'preflight.mjs'));
+  await cp(join(pluginRoot, 'hosts', 'descriptor.mjs'), join(server, 'hosts', 'descriptor.mjs'));
+}
+
 async function main() {
   await rm(out, { recursive: true, force: true });
   await buildServerPayload({ workspace, server });
   await writeLauncher({ pluginRoot, server, host: qwenHost, version });
+  await copySetupLayer();
   await writePromptLayer();
   await writeManifest();
   await cp(join(pluginRoot, 'README.md'), join(out, 'README.md'));

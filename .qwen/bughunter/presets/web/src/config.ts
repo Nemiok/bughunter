@@ -44,7 +44,7 @@ export const webConfigSchema = commonConfigSchema.extend({
 
 export type WebConfig = z.infer<typeof webConfigSchema>;
 
-function configTemplate(): WebConfig {
+export function webConfigTemplate(): WebConfig {
   return {
     baseUrl: 'https://dev-stand.example.local',
     allowedOrigins: ['https://dev-stand.example.local'],
@@ -69,5 +69,5 @@ export async function loadConfig(stateDir?: string): Promise<WebConfig> {
 }
 
 export async function ensureConfig(stateDir?: string): Promise<{ config?: WebConfig; createdPath?: string }> {
-  return ensureCoreConfig(stateDir ?? defaultStateDir, webConfigSchema, configTemplate());
+  return ensureCoreConfig(stateDir ?? defaultStateDir, webConfigSchema, webConfigTemplate());
 }

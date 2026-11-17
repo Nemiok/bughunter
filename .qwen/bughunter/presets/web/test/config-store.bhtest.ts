@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { after, test } from 'node:test';
-import { defaultElementsPerSnapshot, ensureConfig, loadConfig } from '../src/config.ts';
+import { defaultElementsPerSnapshot, ensureConfig, loadConfig, webConfigSchema } from '../src/config.ts';
 import { findProjectRoot } from '@bughunter/core';
 import { readRun, updateRun, writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
@@ -90,6 +90,11 @@ test('existing valid config loads without being recreated', async () => {
   assert.deepEqual(await loadConfig(root), configTemplate());
   assert.deepEqual(await ensureConfig(root), { config: configTemplate() });
   assert.equal(JSON.parse(await readFile(file, 'utf8')).baseBranch, 'main');
+});
+
+test('web template is exported for host setup without duplicating JSON', async () => {
+  const { webConfigTemplate } = await import('../src/config.ts');
+  assert.deepEqual(webConfigSchema.parse(webConfigTemplate()), webConfigTemplate());
 });
 
 test('malformed config JSON includes the concrete path', async () => {

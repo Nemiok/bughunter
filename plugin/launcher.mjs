@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { hostPaths } from './descriptor.mjs';
 import { host } from './host.mjs';
+import { startDormantServer } from './setup.mjs';
 
 const version = '__PLUGIN_VERSION__';
 
@@ -20,10 +21,12 @@ function selectedPreset() {
 }
 
 async function dormant() {
-  const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
-  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
-  const server = new McpServer({ name: 'bughunter', version });
-  await server.connect(new StdioServerTransport());
+  return startDormantServer({
+    host,
+    version,
+    serverRoot: import.meta.dirname,
+    projectRoot: process.cwd(),
+  });
 }
 
 async function main() {
