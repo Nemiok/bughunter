@@ -134,7 +134,9 @@ async function renderAgent(from, suffix, card) {
   const { head, body } = splitFrontmatter(await readFile(from, 'utf8'));
   const title = head.replace(/^(name:\s*\S+)\s*$/m, `$1${suffix}`);
   const rendered = namedAgents(body, suffix)
-    .replace(/(?<!bughunter:)bughunter-preset-card/g, `bughunter:${card}`);
+    .replace(/(?<!bughunter:)bughunter-preset-card/g, `bughunter:${card}`)
+    .replaceAll('.qwen/bughunter/presets/web/state/', '.qwen/bughunter/state/web/')
+    .replaceAll('.qwen/bughunter/presets/node/state/', '.qwen/bughunter/state/node/');
   return `${title}\n${rendered}`;
 }
 
@@ -161,7 +163,7 @@ async function writePromptLayer() {
     join(out, 'skills', 'bughunter-preset-guide', 'SKILL.md'),
     await renderAuthoringSkill(
       join(source, 'skills', 'bughunter-preset-guide', 'SKILL.md'),
-      '\nВ плагине шаблон — `<installPath>/template/cli-preset` (готовый CLI-пресет с фикстурой и приёмкой), core — `<installPath>/server/core`, бриф — `<installPath>/template/authoring-brief.md`, порядок — `<installPath>/AUTHORING.md`. `<installPath>` — поле из `qwen plugins list --json`. Шаг 1 ниже описывает репозиторный `presets/web`; в плагине копируй CLI-шаблон.\n',
+      '\nВ плагине шаблон — `<installPath>/template/cli-preset` (готовый CLI-пресет с фикстурой и приёмкой), core — `<installPath>/server/core`, бриф — `<installPath>/template/authoring-brief.md`, порядок — `<installPath>/AUTHORING.md`. `<installPath>` — поле из `qwen plugins list --json`. Шаги 1–2 ниже описывают репозиторную установку; в плагине не создавай `presets/<name>` и `.mcp.json` — копируй CLI-шаблон и работай по `AUTHORING.md`.\n',
     ),
     'utf8',
   );

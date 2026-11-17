@@ -73,6 +73,12 @@ try {
   assert.match(entry, /<explorer>=bughunter:bh-explorer-node/);
   assert.match(await readFile(join(dist, 'agents', 'bh-explorer.md'), 'utf8'), /bughunter:bughunter-preset-card-web/);
   assert.match(await readFile(join(dist, 'agents', 'bh-explorer-node.md'), 'utf8'), /bughunter:bughunter-preset-card-node/);
+  for (const file of ['bh-reviewer.md', 'bh-reviewer-node.md', 'bh-test-writer.md', 'bh-test-writer-node.md']) {
+    const text = await readFile(join(dist, 'agents', file), 'utf8');
+    assert.ok(!text.includes('.qwen/bughunter/presets/'), `${file}: manual-install state path leaked into the plugin`);
+  }
+  assert.match(await readFile(join(dist, 'agents', 'bh-reviewer.md'), 'utf8'), /\.qwen\/bughunter\/state\/web\/runs\//);
+  assert.match(await readFile(join(dist, 'agents', 'bh-reviewer-node.md'), 'utf8'), /\.qwen\/bughunter\/state\/node\/runs\//);
   await mkdir(configDir, { recursive: true });
   await mkdir(join(project, '.qwen'), { recursive: true });
   await writeFile(join(configDir, 'settings.json'), `${JSON.stringify({
