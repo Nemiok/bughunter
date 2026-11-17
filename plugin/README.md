@@ -83,6 +83,18 @@ BUGHUNTER_STATE_DIR="$PWD/.qwen/bughunter/state/web" \
 
 Скрипт открывает headed Chrome по `baseUrl` из конфига, после входа сохраняет `state/web/auth/storage-state.json` — туда, откуда его читает сессия. Путь к кэшу плагина зависит от версии; его печатает `qwen plugins list --json` (`installPath`).
 
+## Авторство нового пресета
+
+В плагин входят авторские скиллы `bughunter:bughunter-preset-guide` и
+`bughunter:bughunter-core-contract`, рабочий шаблон CLI-пресета и бриф. Порядок работы —
+`<installPath>/AUTHORING.md`, шаблон — `<installPath>/template/cli-preset`, бриф —
+`<installPath>/template/authoring-brief.md`; `installPath` печатает установщик или
+`qwen plugins list --json`.
+
+Один бриф — это одно задание агенту: он адаптирует шаблон под домен, пишет фикстуру и прогоняет
+детерминированную приёмку. Это не one-shot на минуту: отчёт, порог засеянных дефектов, 0 ложных и
+независимая перепроверка red-тестов обязательны.
+
 ## Обновление и удаление
 
 ```sh
@@ -106,7 +118,7 @@ node plugin/build.mjs        # собрать и провалидировать 
 node plugin/test-install.mjs # изолированный --config-dir: install/enable + dormant/web/node init
 ```
 
-`test-install.mjs` не вызывает модель: он читает `system/init` и проверяет, что плагин поднял MCP-сервер, отдал 19 web- или 16 node-инструментов, пять скиллов и шесть агентов, а в dormant-режиме не создал состояние.
+`test-install.mjs` не вызывает модель: он читает `system/init` и проверяет, что плагин поднял MCP-сервер, отдал 19 web- или 16 node-инструментов, семь скиллов и шесть агентов, а в dormant-режиме не создал состояние.
 
 `plugin/dist/` — генерируемый каталог, в Git не попадает.
 

@@ -7,8 +7,7 @@ import { cliConfigTemplate } from '../src/config.ts';
 import type { CliConfig } from '../src/config.ts';
 
 export const presetRoot = resolve(import.meta.dirname, '..');
-export const copyRoot = resolve(presetRoot, '../../..');
-export const fixtureDir = join(copyRoot, 'cli-app');
+export const fixtureDir = resolve(presetRoot, '..', 'cli-app');
 
 /** Одноразовый каталог внутри копии: тесты не должны оставлять следов в системном tmp. */
 export function ownTemporaryDirectory(prefix: string): Promise<string> {

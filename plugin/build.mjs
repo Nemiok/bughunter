@@ -94,6 +94,13 @@ function namedAgents(text, suffix) {
     .replace(/(?<!bughunter:)bughunter-red-test/g, 'bughunter:bughunter-red-test');
 }
 
+function namespacedSkillRefs(text) {
+  return text.replace(
+    /(?<!bughunter:)bughunter-(core-contract|preset-guide|oracles|red-test)/g,
+    'bughunter:bughunter-$1',
+  );
+}
+
 async function renderEntry() {
   let text = await readFile(join(source, 'skills', 'bughunter', 'SKILL.md'), 'utf8');
   text = text
@@ -131,10 +138,33 @@ async function renderAgent(from, suffix, card) {
   return `${title}\n${rendered}`;
 }
 
+async function renderAuthoringSkill(from, preamble) {
+  const { head, body } = splitFrontmatter(await readFile(from, 'utf8'));
+  return insertAfterFrontmatter(`${head}\n${namespacedSkillRefs(body)}`, preamble);
+}
+
 async function writePromptLayer() {
   await mkdir(join(out, 'skills'), { recursive: true });
   await cp(join(source, 'skills', 'bughunter-oracles'), join(out, 'skills', 'bughunter-oracles'), { recursive: true });
   await cp(join(source, 'skills', 'bughunter-red-test'), join(out, 'skills', 'bughunter-red-test'), { recursive: true });
+  await mkdir(join(out, 'skills', 'bughunter-core-contract'), { recursive: true });
+  await writeFile(
+    join(out, 'skills', 'bughunter-core-contract', 'SKILL.md'),
+    await renderAuthoringSkill(
+      join(source, 'skills', 'bughunter-core-contract', 'SKILL.md'),
+      '\nВ плагине пути ниже даны для репозитория Bughunter; установленный шаблон — `<installPath>/template/cli-preset`, core — `<installPath>/server/core`, где `installPath` — поле из `qwen plugins list --json`.\n',
+    ),
+    'utf8',
+  );
+  await mkdir(join(out, 'skills', 'bughunter-preset-guide'), { recursive: true });
+  await writeFile(
+    join(out, 'skills', 'bughunter-preset-guide', 'SKILL.md'),
+    await renderAuthoringSkill(
+      join(source, 'skills', 'bughunter-preset-guide', 'SKILL.md'),
+      '\nВ плагине шаблон — `<installPath>/template/cli-preset` (готовый CLI-пресет с фикстурой и приёмкой), core — `<installPath>/server/core`, бриф — `<installPath>/template/authoring-brief.md`, порядок — `<installPath>/AUTHORING.md`. `<installPath>` — поле из `qwen plugins list --json`. Шаг 1 ниже описывает репозиторный `presets/web`; в плагине копируй CLI-шаблон.\n',
+    ),
+    'utf8',
+  );
   await mkdir(join(out, 'skills', 'bughunter'), { recursive: true });
   await writeFile(join(out, 'skills', 'bughunter', 'SKILL.md'), await renderEntry(), 'utf8');
   await mkdir(join(out, 'skills', 'bughunter-preset-card-web'), { recursive: true });
@@ -176,6 +206,8 @@ async function writeManifest() {
       './skills/bughunter-red-test',
       './skills/bughunter-preset-card-web',
       './skills/bughunter-preset-card-node',
+      './skills/bughunter-preset-guide',
+      './skills/bughunter-core-contract',
     ],
     agents: [
       './agents/bh-explorer.md',
@@ -230,6 +262,22 @@ async function sizeOf(path) {
   return total;
 }
 
+async function copyAuthoring() {
+  const examples = join(repoRoot, 'docs', 'concept', 'examples', 'cli-preset');
+  await cp(examples, join(out, 'template', 'cli-preset'), {
+    recursive: true,
+    filter: (path) => {
+      const rel = relative(examples, path);
+      if (rel === '') return true;
+      const parts = rel.split(sep);
+      if (parts.some((part) => part === 'node_modules' || part.startsWith('.test-') || part === '.DS_Store')) return false;
+      return !(parts.includes('state') && (parts.includes('runs') || parts.includes('auth')));
+    },
+  });
+  await cp(join(pluginRoot, 'authoring-brief.md'), join(out, 'template', 'authoring-brief.md'));
+  await cp(join(pluginRoot, 'AUTHORING.md'), join(out, 'AUTHORING.md'));
+}
+
 async function main() {
   await rm(out, { recursive: true, force: true });
   await mkdir(server, { recursive: true });
@@ -253,6 +301,7 @@ async function main() {
   await writePromptLayer();
   await writeManifest();
   await cp(join(pluginRoot, 'README.md'), join(out, 'README.md'));
+  await copyAuthoring();
   validate();
   const megabytes = (await sizeOf(out)) / 1024 / 1024;
   console.log(`built ${out} (${megabytes.toFixed(1)} MB)`);

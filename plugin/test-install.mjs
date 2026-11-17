@@ -105,6 +105,8 @@ try {
     'bughunter:bughunter-red-test',
     'bughunter:bughunter-preset-card-web',
     'bughunter:bughunter-preset-card-node',
+    'bughunter:bughunter-preset-guide',
+    'bughunter:bughunter-core-contract',
   ].sort());
   assert.deepEqual(web.agents.sort(), [
     'bughunter:bh-explorer',
@@ -127,9 +129,12 @@ try {
   const dormant = summarize(await initOf());
   assert.deepEqual(dormant.mcp, ['bughunter:connected']);
   assert.equal(dormant.bhTools.length, 0, 'dormant plugin must expose no Bughunter tools');
-  assert.equal(dormant.skills.length, 5);
+  assert.equal(dormant.skills.length, 7);
   assert.equal(dormant.agents.length, 6);
   assert.ok(!existsSync(join(project, '.qwen', 'bughunter')), 'dormant plugin must not create project state');
+  assert.ok(existsSync(join(dist, 'AUTHORING.md')));
+  assert.ok(existsSync(join(dist, 'template', 'authoring-brief.md')));
+  assert.ok(existsSync(join(dist, 'template', 'cli-preset', 'preset', 'test', 'acceptance.bhtest.ts')));
 
   console.log(JSON.stringify({
     web: { tools: web.bhTools.length, skills: web.skills.length, agents: web.agents.length },

@@ -59,8 +59,11 @@ if (args.includes('--rebuild') || !existsSync(join(dist, 'server', 'mcp.mjs'))) 
 
 const installed = run(qwen, qwenArgs('plugins', 'install', '-s', scope, dist, '--json'), { capture: true });
 let pluginId = 'bughunter@local';
+let installPath;
 try {
-  pluginId = JSON.parse(installed.stdout).pluginId ?? pluginId;
+  const parsedInstall = JSON.parse(installed.stdout);
+  pluginId = parsedInstall.pluginId ?? pluginId;
+  installPath = parsedInstall.path;
 } catch {
   // A text-format install is still usable if the CLI changes its JSON output.
 }
@@ -129,6 +132,8 @@ Bughunter plugin: ${pluginId} (${scope}), preset: ${selected}
 Opt-in: ${optIn}
 State:  ${stateDir}
 Config: ${join(stateDir, 'config.json')}
+Authoring: ${installPath === undefined ? '<installPath>/AUTHORING.md' : join(installPath, 'AUTHORING.md')}
+Template: ${installPath === undefined ? '<installPath>/template/cli-preset' : join(installPath, 'template', 'cli-preset')}
 
 Next:
 1. Restart qwen (or run /plugins reload) so the MCP server starts.
