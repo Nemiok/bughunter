@@ -55,7 +55,9 @@ export async function setupProject({ host, projectRoot, preset, serverRoot, pref
     code: created.includes(paths.configPath) ? 'CONFIG_CREATED' : 'SETUP_READY',
     optInPath: paths.optIn,
     configPath: paths.configPath,
-    reload: host.reloadInstruction,
+    // What actually refreshes the toolset for this host (a new session alone
+    // does not on Kimi: the workspace MCP connection is reused until reloaded).
+    reload: host.refreshInstruction,
   };
 }
 

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import {
+  cp, mkdir, readFile, readdir, rename, writeFile,
+} from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { withMcpClient } from './mcp-client.mjs';
 import {
-  assertNoToken, kimiProbe, kimiRequest, makeTempRoot, removeTempRoot, withKimiServer,
+  assertExcludes, kimiProbe, kimiRequest, makeTempRoot, removeTempRoot, withKimiServer,
 } from './kimi-server.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
@@ -18,9 +20,10 @@ const nodeProject = join(root, 'node-project');
 const marketplaceRoot = join(root, 'marketplace');
 const evidencePath = join(pluginRoot, 'evidence', 'kimi', 'install.json');
 
-// Kimi 2.5.3 namespaces plugin MCP tools by the runtime server name
-// (plugin-<pluginId>:<serverName>), not by the bare server name.
-const BH_TOOL_PREFIX = 'mcp__plugin-bughunter_bughunter__';
+// Derived from the built artifact before the server starts (see try block).
+let BH_TOOL_PREFIX;
+// Set inside the server session; used only for leak assertions, never logged.
+let serverToken;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', cwd: options.cwd, env: { ...process.env, ...options.env } });
@@ -90,11 +93,20 @@ try {
   await writeCatalog(catalog);
   const version = catalog.plugins[0].version;
 
+  // Derive the MCP tool prefix from the built artifact — the same rendered
+  // entry the model sees — instead of hardcoding it.
+  const entrySkill = await readFile(join(distPlugin, 'skills', 'bughunter', 'SKILL.md'), 'utf8');
+  const prefixMatch = entrySkill.match(/(mcp__[a-z0-9_-]+__)bh_setup/);
+  assert.ok(prefixMatch, 'rendered entry skill must name the bh_setup tool');
+  BH_TOOL_PREFIX = prefixMatch[1];
+  assert.ok(BH_TOOL_PREFIX.startsWith('mcp__') && BH_TOOL_PREFIX.includes('bughunter'));
+
   await mkdir(home, { recursive: true });
   await mkdir(project, { recursive: true });
   await mkdir(nodeProject, { recursive: true });
 
   const result = await withKimiServer({ home, marketplace: join(marketplaceRoot, 'kimi-marketplace.json'), project }, async ({ baseUrl, token }) => {
+    serverToken = token;
     // Marketplace visibility with the Task 5 artifact platforms (darwin/win32).
     const listed = await kimiRequest(baseUrl, token, 'GET', '/api/v1/plugins/marketplace');
     const entry = listed.entries.find((value) => value.id === 'bughunter');
@@ -156,6 +168,32 @@ try {
     await mkdir(join(project, '.kimi-code', 'bughunter', 'state', 'web', 'auth'), { recursive: true });
     await writeFile(join(project, '.kimi-code', 'bughunter', 'state', 'web', 'auth', 'README'), 'not-a-credential\n');
 
+    // Direct probes spawned the way Kimi spawns plugin MCP servers: cwd =
+    // plugin root, KIMI_PLUGIN_ROOT/KIMI_CODE_HOME set. With the SessionStart
+    // bridge present, the server must resolve the project via the hook file
+    // and expose the full web toolset.
+    const kimiSpawnEnv = { KIMI_PLUGIN_ROOT: details.root, KIMI_CODE_HOME: home };
+    const bridged = await withMcpClient(join(details.root, 'server'), details.root, (client) => client.listTools(), kimiSpawnEnv);
+    assert.equal(bridged.tools.length, 19, `bridge-resolved spawn must expose 19 web tools, got ${bridged.tools.length}`);
+    // Raw MCP tools/list carries bare bh_* names; the mcp__…__ prefix is added
+    // by the host agent registry (checked separately via GET /api/v1/tools).
+    assert.ok(bridged.tools.every((tool) => tool.name.startsWith('bh_')));
+
+    // Without the bridge the same spawn cannot know the project: bh_setup
+    // must refuse with BUGHUNTER_PROJECT_UNKNOWN instead of writing opt-in
+    // into the managed plugin root.
+    const bridgeFile = join(home, 'bughunter', 'session-cwd');
+    await rename(bridgeFile, `${bridgeFile}.bak`);
+    try {
+      const unknown = await withMcpClient(join(details.root, 'server'), details.root, (client) =>
+        client.callTool({ name: 'bh_setup', arguments: { preset: 'node' } }), kimiSpawnEnv);
+      assert.equal(unknown.isError, true);
+      assert.ok(unknown.content[0].text.includes('BUGHUNTER_PROJECT_UNKNOWN'));
+    } finally {
+      await rename(`${bridgeFile}.bak`, bridgeFile);
+    }
+    assert.ok(!existsSync(join(details.root, '.kimi-code', 'bughunter.json')), 'opt-in must never be written into the managed plugin root');
+
     // The v2 engine keeps one MCP connection set per workspace, so the
     // connection opened by the dormant session must be restarted to pick up
     // the opt-in; only then does a session see the full web toolset.
@@ -196,12 +234,22 @@ try {
     const nodeTools = await bhToolNames(baseUrl, token, nodeSession.id);
     assert.equal(nodeTools.length, 16, `node preset must expose 16 tools, got ${nodeTools.length}`);
 
+    // Two opted-in projects: after the node flow and its restarts, the bridge
+    // must follow the latest started session back to the web project.
+    await sessionWithConnectedMcp(baseUrl, token, project);
+    await waitForHookCwd(home, project);
+    await restartBhMcp(baseUrl, token);
+    const webAgain = await sessionWithConnectedMcp(baseUrl, token, project);
+    const webToolsAgain = await bhToolNames(baseUrl, token, webAgain.id);
+    assert.equal(webToolsAgain.length, 19, `web project must resolve to 19 tools after the node flow, got ${webToolsAgain.length}`);
+
     return {
       installedId: installed.id,
       updatedTo: updated.version,
       rejectedPlatformMessage: rejectedMessage,
       webTools: webTools.length,
       nodeTools: nodeTools.length,
+      webToolsReasserted: webToolsAgain.length,
       skills: skills.skills.filter((skill) => skill.name.startsWith('bughunter:')).length,
       statePreserved: true,
     };
@@ -209,7 +257,8 @@ try {
 
   const clientVersion = run(kimi, ['--version']).stdout.trim();
   assert.equal(clientVersion, '2.5.3');
-  assertNoToken(result, 'gate result');
+  assertExcludes(result, serverToken, 'gate result must not contain the server token value');
+  assertExcludes(result, home, 'gate result must not contain the temp home path');
   const evidence = {
     host: 'kimi',
     clientVersion,
@@ -221,7 +270,9 @@ try {
     skills: result.skills,
     statePreserved: result.statePreserved,
   };
-  assertNoToken(evidence, 'evidence');
+  assertExcludes(evidence, serverToken, 'evidence must not contain the server token value');
+  assertExcludes(evidence, home, 'evidence must not contain the temp home path');
+  assertExcludes(evidence, 'server.token', 'evidence must not name the token file');
   await mkdir(join(pluginRoot, 'evidence', 'kimi'), { recursive: true });
   await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
 

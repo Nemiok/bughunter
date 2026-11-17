@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path';
 const fields = [
   'id', 'pluginId', 'outDir', 'pluginRoot', 'optInPath', 'stateRoot',
   'mcpToolPrefix', 'skillNamespace', 'agentNamespace', 'reloadInstruction',
+  'refreshInstruction',
 ];
 
 export function defineHostDescriptor(value) {
@@ -17,7 +18,7 @@ export function defineHostDescriptor(value) {
       throw new Error(`HOST_DESCRIPTOR_INVALID: ${field}`);
     }
   }
-  if (!/^mcp__[a-z0-9_]+__$/.test(value.mcpToolPrefix)) {
+  if (!/^mcp__[a-z0-9_-]+__$/.test(value.mcpToolPrefix)) {
     throw new Error('HOST_DESCRIPTOR_INVALID: mcpToolPrefix');
   }
   if (value.entryInvocation !== undefined

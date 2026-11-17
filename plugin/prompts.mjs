@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 
 const pluginRoot = resolve(import.meta.dirname);
 
-const KNOWN_TOKENS = new Set(['card', 'explorer', 'reviewer', 'writer', 'preset', 'template', 'path', 'pointer']);
+const KNOWN_TOKENS = new Set(['card', 'explorer', 'reviewer', 'writer', 'preset', 'template', 'path', 'pointer', 'refresh']);
 
 function assertNoUnknownTokens(text, where) {
   for (const match of text.matchAll(/<([a-z-]+)>/g)) {
@@ -18,6 +18,7 @@ function hostText(text, host) {
     .replaceAll('<optIn>', host.optInPath)
     .replaceAll('<setupTool>', `${host.mcpToolPrefix}bh_setup`)
     .replaceAll('<reload>', host.reloadInstruction)
+    .replaceAll('<refresh>', host.refreshInstruction)
     .replaceAll('mcp__bughunter__', host.mcpToolPrefix)
     .replaceAll('.qwen/bughunter.json', host.optInPath)
     .replaceAll('.qwen/bughunter/state/<preset>/', `${host.stateRoot}/<preset>/`)

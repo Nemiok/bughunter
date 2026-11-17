@@ -11,6 +11,7 @@ export const qwenHost = defineHostDescriptor({
   skillNamespace: 'bughunter:',
   agentNamespace: 'bughunter:',
   reloadInstruction: '/plugins reload',
+  refreshInstruction: '`/plugins reload` (или открой новую сессию)',
   entryInvocation: '/bughunter:bughunter',
   clients: ['cli'],
 });

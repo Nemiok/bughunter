@@ -6,7 +6,7 @@ async function load(serverRoot, relative) {
   return require(require.resolve(`@modelcontextprotocol/sdk/${relative}`));
 }
 
-export async function withMcpClient(serverRoot, cwd, callback) {
+export async function withMcpClient(serverRoot, cwd, callback, env = {}) {
   const { Client } = await load(serverRoot, 'client/index.js');
   const { StdioClientTransport } = await load(serverRoot, 'client/stdio.js');
   const client = new Client({ name: 'bh-install-test', version: '0.0.0' });
@@ -14,7 +14,7 @@ export async function withMcpClient(serverRoot, cwd, callback) {
     command: process.execPath,
     args: [join(serverRoot, 'mcp.mjs')],
     cwd,
-    env: { ...process.env },
+    env: { ...process.env, ...env },
   });
   try {
     await client.connect(transport);

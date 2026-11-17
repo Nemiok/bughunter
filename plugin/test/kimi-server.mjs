@@ -76,8 +76,10 @@ export async function removeTempRoot(root) {
   await rm(root, { recursive: true, force: true });
 }
 
-export function assertNoToken(value, label) {
-  assert.equal(JSON.stringify(value).includes('server.token'), false, `${label} must not embed the token path`);
+export function assertExcludes(haystack, needle, label) {
+  if (JSON.stringify(haystack).includes(needle)) {
+    throw new Error(`EVIDENCE_LEAK: ${label}`);
+  }
 }
 
 assert.equal(typeof withKimiServer, 'function');

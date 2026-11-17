@@ -117,7 +117,7 @@ async function writeKimiMarketplace() {
       description: kimiManifest(version).description,
       version,
       source: join(pluginRoot, kimiHost.outDir),
-      clients: ['cli', 'desktop'],
+      clients: [...kimiHost.clients],
       platforms: ['darwin', 'win32', 'linux'],
     }],
   };
@@ -141,7 +141,12 @@ async function main() {
       const readme = host.id === 'kimi'
         ? join(pluginRoot, 'hosts', 'kimi.README.md')
         : join(pluginRoot, 'README.md');
-      await cp(readme, join(out, 'README.md'));
+      const readmeText = await readFile(readme, 'utf8');
+      await writeFile(
+        join(out, 'README.md'),
+        readmeText.replaceAll('<entryInvocation>', host.entryInvocation),
+        'utf8',
+      );
       if (host.id === 'qwen') {
         await rm(join(pluginRoot, 'dist', 'qwen-marketplace'), { recursive: true, force: true });
         validateQwen(out);

@@ -7,10 +7,11 @@ export const kimiHost = defineHostDescriptor({
   pluginRoot: '${KIMI_PLUGIN_ROOT}',
   optInPath: '.kimi-code/bughunter.json',
   stateRoot: '.kimi-code/bughunter/state',
-  mcpToolPrefix: 'mcp__bughunter__',
+  mcpToolPrefix: 'mcp__plugin-bughunter_bughunter__',
   skillNamespace: 'bughunter:',
   agentNamespace: 'bughunter:',
   reloadInstruction: '/reload',
+  refreshInstruction: '`/reload` (без него новая сессия продолжит видеть прежний набор инструментов)',
   entryInvocation: '/skill:bughunter:bughunter',
   clients: ['cli', 'desktop'],
 });
