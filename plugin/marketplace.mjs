@@ -1,13 +1,13 @@
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export async function buildQwenMarketplace({ pluginDir, marketplaceRoot, version }) {
+export async function buildNativeMarketplace({ pluginDir, marketplaceRoot, version, marketplaceName, description }) {
   const destination = join(marketplaceRoot, 'plugins', 'bughunter');
   await mkdir(join(marketplaceRoot, '.claude-plugin'), { recursive: true });
   await cp(pluginDir, destination, { recursive: true });
   const catalog = {
-    name: 'bughunter-market',
-    description: 'Bughunter releases: evidence-based bug hunting for Qwen Code',
+    name: marketplaceName,
+    description,
     owner: { name: 'Bughunter' },
     plugins: [{
       name: 'bughunter',
@@ -22,4 +22,24 @@ export async function buildQwenMarketplace({ pluginDir, marketplaceRoot, version
     `${JSON.stringify(catalog, null, 2)}\n`,
     'utf8',
   );
+}
+
+export async function buildQwenMarketplace({ pluginDir, marketplaceRoot, version }) {
+  return buildNativeMarketplace({
+    pluginDir,
+    marketplaceRoot,
+    version,
+    marketplaceName: 'bughunter-market',
+    description: 'Bughunter releases: evidence-based bug hunting for Qwen Code',
+  });
+}
+
+export async function buildClaudeMarketplace({ pluginDir, marketplaceRoot, version }) {
+  return buildNativeMarketplace({
+    pluginDir,
+    marketplaceRoot,
+    version,
+    marketplaceName: 'bughunter-market',
+    description: 'Bughunter releases for Claude Code CLI and Desktop Code sessions',
+  });
 }

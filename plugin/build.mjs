@@ -2,9 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
+import { claudeHost, claudeManifest } from './hosts/claude.mjs';
 import { kimiHost, kimiManifest } from './hosts/kimi.mjs';
 import { qwenHost } from './hosts/qwen.mjs';
-import { buildQwenMarketplace } from './marketplace.mjs';
+import { buildClaudeMarketplace, buildQwenMarketplace } from './marketplace.mjs';
 import { buildServerPayload } from './payload.mjs';
 import { renderPromptLayer } from './prompts.mjs';
 import { writeLauncher } from './write-launcher.mjs';
@@ -17,12 +18,23 @@ const version = JSON.parse(await readFile(join(pluginRoot, 'package.json'), 'utf
 
 const args = process.argv.slice(2);
 const requested = args.includes('--host') ? args[args.indexOf('--host') + 1] : 'qwen';
-if (!['qwen', 'kimi', 'all'].includes(requested)) throw new Error(`HOST_INVALID: ${requested}`);
-const hosts = requested === 'all' ? [qwenHost, kimiHost] : [requested === 'qwen' ? qwenHost : kimiHost];
+if (!['qwen', 'kimi', 'claude', 'all'].includes(requested)) throw new Error(`HOST_INVALID: ${requested}`);
+const hosts = requested === 'all'
+  ? [qwenHost, kimiHost, claudeHost]
+  : [requested === 'qwen' ? qwenHost : requested === 'kimi' ? kimiHost : claudeHost];
 
 async function writeManifest(host, out) {
   if (host.id === 'kimi') {
     await writeFile(join(out, 'kimi.plugin.json'), `${JSON.stringify(kimiManifest(version), null, 2)}\n`, 'utf8');
+    return;
+  }
+  if (host.id === 'claude') {
+    await mkdir(join(out, '.claude-plugin'), { recursive: true });
+    await writeFile(
+      join(out, '.claude-plugin', 'plugin.json'),
+      `${JSON.stringify(claudeManifest(version), null, 2)}\n`,
+      'utf8',
+    );
     return;
   }
   const manifest = {
@@ -140,7 +152,9 @@ async function main() {
       await copyAuthoring(out);
       const readme = host.id === 'kimi'
         ? join(pluginRoot, 'hosts', 'kimi.README.md')
-        : join(pluginRoot, 'README.md');
+        : host.id === 'claude'
+          ? join(pluginRoot, 'hosts', 'claude.README.md')
+          : join(pluginRoot, 'README.md');
       const readmeText = await readFile(readme, 'utf8');
       await writeFile(
         join(out, 'README.md'),
@@ -153,6 +167,13 @@ async function main() {
         await buildQwenMarketplace({
           pluginDir: out,
           marketplaceRoot: join(pluginRoot, 'dist', 'qwen-marketplace'),
+          version,
+        });
+      } else if (host.id === 'claude') {
+        await rm(join(pluginRoot, 'dist', 'claude-marketplace'), { recursive: true, force: true });
+        await buildClaudeMarketplace({
+          pluginDir: out,
+          marketplaceRoot: join(pluginRoot, 'dist', 'claude-marketplace'),
           version,
         });
       } else {
