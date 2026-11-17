@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { test } from 'node:test';
 
 const sourceRoot = join(import.meta.dirname, '../src');
 const testRoot = import.meta.dirname;
+const coreRoot = join(import.meta.dirname, '..');
 
 /**
  * Слова, которыми говорит пресет. В core их быть не должно: иначе второй пресет
@@ -34,10 +35,13 @@ const legacySchemaGuard = /const retiredRunFields =|legacy-envelope/;
 /** Оракулы и виды проверок принадлежат пресету: core-тесты не должны закреплять их имена. */
 const presetCheckKindPattern = /\bkind:\s*'(?:status|jsonPath|headerContains|pointer|visibleText|elementCount)'/;
 
-async function linesUnder(root: string): Promise<Array<{ location: string; text: string }>> {
+async function linesUnder(root: string, extension = '.ts'): Promise<Array<{ location: string; text: string }>> {
   const entries = await readdir(root, { withFileTypes: true, recursive: true });
   const lines: Array<{ location: string; text: string }> = [];
-  for (const file of entries.filter((entry) => entry.isFile() && entry.name.endsWith('.ts')).map((entry) => join(entry.parentPath, entry.name))) {
+  for (const file of entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
+    .map((entry) => join(entry.parentPath, entry.name))
+    .filter((file) => !file.includes(`${sep}node_modules${sep}`))) {
     const contents = (await readFile(file, 'utf8')).split('\n');
     contents.forEach((text, index) => lines.push({ location: `${relative(root, file)}:${index + 1}`, text }));
   }
@@ -57,6 +61,17 @@ test('core sources contain no domain lexicon', async () => {
     }
   }
   assert.deepEqual(violations, [], `доменная лексика в core (файл:строка:токен): ${violations.join(', ')}`);
+});
+
+test('core markdown contains no domain lexicon', async () => {
+  const violations: string[] = [];
+  for (const { location, text } of await linesUnder(coreRoot, '.md')) {
+    if (legacySchemaGuard.test(text)) continue;
+    for (const pattern of [...domainLexicon, ...domainStems]) {
+      if (mentions(text, pattern)) violations.push(`${location}:${pattern}`);
+    }
+  }
+  assert.deepEqual(violations, [], `доменная лексика в core markdown: ${violations.join(', ')}`);
 });
 
 test('core does not import presets', async () => {

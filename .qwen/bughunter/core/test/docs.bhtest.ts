@@ -88,6 +88,17 @@ test('the concept docs restate the invariants and the preset guide', async () =>
   assert.match(guide, /bughunter-preset-guide/, 'the prose guide must point at the skill the model reads');
 });
 
+const presetVocabulary = [
+  /\bplaywright\b/i, /\burl\b/i, /\bwidget\b/i, /\bnavigate\b/i, /\bprobe\b/i,
+  /\bjsonPath\b/, /\bheaderContains\b/, /экран/i, /маршрут/i, /эндпоинт/i, /виджет/i, /браузер/i,
+];
+
+test('the core contract skill speaks no preset vocabulary', async () => {
+  const body = await read(docs.contractSkill);
+  const hits = presetVocabulary.filter((pattern) => pattern.test(body)).map((pattern) => String(pattern));
+  assert.deepEqual(hits, [], `preset vocabulary in the core contract skill: ${hits.join(', ')}`);
+});
+
 test('the root readme names both presets and their research unit', async () => {
   const body = await read(docs.root);
   for (const required of ['presets/web', 'presets/node', '@bughunter/node']) {
