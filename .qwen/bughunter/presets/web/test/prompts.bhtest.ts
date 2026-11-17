@@ -118,7 +118,7 @@ test('entry skill is manual, argument-driven, and orchestrates the complete run'
 });
 
 const skills = {
-  'bughunter-oracles': 'при исследовании страницы и разборе кандидатов в баги',
+  'bughunter-oracles': 'при исследовании цели и разборе кандидатов в баги',
   'bughunter-red-test': 'при написании теста на найденный баг',
 } as const;
 
