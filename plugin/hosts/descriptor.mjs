@@ -20,6 +20,14 @@ export function defineHostDescriptor(value) {
   if (!/^mcp__[a-z0-9_]+__$/.test(value.mcpToolPrefix)) {
     throw new Error('HOST_DESCRIPTOR_INVALID: mcpToolPrefix');
   }
+  if (value.entryInvocation !== undefined
+    && (typeof value.entryInvocation !== 'string' || value.entryInvocation.length === 0)) {
+    throw new Error('HOST_DESCRIPTOR_INVALID: entryInvocation');
+  }
+  if (value.clients !== undefined
+    && (!Array.isArray(value.clients) || value.clients.some((client) => typeof client !== 'string' || client.length === 0))) {
+    throw new Error('HOST_DESCRIPTOR_INVALID: clients');
+  }
   return Object.freeze({ ...value });
 }
 
