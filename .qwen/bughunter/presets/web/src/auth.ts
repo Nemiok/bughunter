@@ -1,15 +1,19 @@
 import { mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { loadConfig } from './config.ts';
+import { defaultStateDir } from './paths.ts';
 
-export const authStorageStatePath = resolve(import.meta.dirname, '../../state/auth/storage-state.json');
+const stateDir = process.env.BUGHUNTER_STATE_DIR === undefined
+  ? defaultStateDir
+  : resolve(process.env.BUGHUNTER_STATE_DIR);
+export const authStorageStatePath = join(stateDir, 'auth', 'storage-state.json');
 export const authLaunchOptions = { channel: 'chrome', headless: false } as const;
 
 export async function runAuth(): Promise<void> {
-  const config = await loadConfig();
+  const config = await loadConfig(stateDir);
   const browser = await chromium.launch(authLaunchOptions);
   try {
     const context = await browser.newContext();

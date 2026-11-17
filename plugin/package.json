@@ -1,0 +1,11 @@
+{
+  "name": "bughunter-qwen-plugin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "setup": "node install.mjs",
+    "test:install": "node test-install.mjs"
+  }
+}

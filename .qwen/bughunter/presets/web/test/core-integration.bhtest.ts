@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -449,11 +450,22 @@ test('real MCP stdio client validates strict schemas and compact core results', 
   }
 });
 
-test('manual auth uses headed Chrome and the module-derived storage-state path', async () => {
+test('manual auth writes storage state where the session reads it', async () => {
   const auth = await import('../src/auth.ts');
   assert.deepEqual(auth.authLaunchOptions, { channel: 'chrome', headless: false });
-  assert.equal(auth.authStorageStatePath, resolve(serverRoot, '../state/auth/storage-state.json'));
+  const expected = process.env.BUGHUNTER_STATE_DIR === undefined
+    ? join(serverRoot, 'state', 'auth', 'storage-state.json')
+    : join(resolve(process.env.BUGHUNTER_STATE_DIR), 'auth', 'storage-state.json');
+  assert.equal(auth.authStorageStatePath, expected);
   assert.equal(typeof auth.runAuth, 'function');
+
+  const envState = join(tmpdir(), 'bh-auth-env');
+  const moduleUrl = pathToFileURL(join(serverRoot, 'src', 'auth.ts')).href;
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e',
+    `import { authStorageStatePath } from ${JSON.stringify(moduleUrl)}; console.log(authStorageStatePath);`],
+    { encoding: 'utf8', env: { ...process.env, BUGHUNTER_STATE_DIR: envState } });
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.trim(), join(envState, 'auth', 'storage-state.json'));
 });
 
 test('startup reports missing dependencies on stderr without polluting stdout', async () => {
