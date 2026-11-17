@@ -1,13 +1,12 @@
 import { resolve } from 'node:path';
 
-import { cliInstallHint } from './cli-host.ts';
 import { webCheckKinds } from './checks.ts';
 import { errorCode, ToolError } from './errors.ts';
 import { defaultStateDir } from './paths.ts';
 import { webSnapshot } from './snapshot.ts';
 import type { SessionManager } from './browser/session.ts';
 
-const missingDependenciesMessage = `Зависимости Bughunter не установлены. Выполните: ${cliInstallHint()}`;
+const missingDependenciesMessage = 'Зависимости Bughunter недоступны. Переустановите плагин или выполните npm ci в workspace Bughunter.';
 
 function supportsCurrentRuntime(): boolean {
   const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);

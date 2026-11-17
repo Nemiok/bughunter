@@ -472,7 +472,6 @@ test('startup reports missing dependencies on stderr without polluting stdout', 
   const directory = await mkdtemp(join(tmpdir(), 'bh-startup-'));
   const entry = join(directory, 'index.ts');
   await copyFile(join(serverRoot, 'src/index.ts'), entry);
-  await copyFile(join(serverRoot, 'src/cli-host.ts'), join(directory, 'cli-host.ts'));
   await copyFile(join(serverRoot, 'src/paths.ts'), join(directory, 'paths.ts'));
   // Модульные импорты точки входа копируются вместе с ней: они не тянут сторонних зависимостей
   // (только типы core), поэтому дружелюбная подсказка об отсутствии node_modules сохраняется.
@@ -493,7 +492,7 @@ test('startup reports missing dependencies on stderr without polluting stdout', 
     });
     assert.notEqual(exitCode, 0);
     assert.equal(stdout, '');
-    assert.ok(stderr.includes('Зависимости Bughunter не установлены. Выполните: cd .qwen/bughunter && npm ci'));
+    assert.ok(stderr.includes('Переустановите плагин или выполните npm ci в workspace Bughunter.'));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
