@@ -122,9 +122,28 @@ node plugin/test-install.mjs # изолированный --config-dir: install/
 
 `plugin/dist/` — генерируемый каталог, в Git не попадает.
 
+## Release zip и self-hosted marketplace
+
+Собранный zip должен содержать `.claude-plugin/plugin.json` в корне и устанавливается по HTTPS URL:
+
+```sh
+qwen plugins install https://host/bughunter-0.1.0.zip
+```
+
+`https://host/...` — пример места назначения, а не действующий публичный адрес. Локальный zip CLI не принимает.
+
+Self-hosted marketplace публикуется как отдельный git-репозиторий с `.claude-plugin/marketplace.json` и `plugins/bughunter/`:
+
+```sh
+qwen plugins marketplace add owner/repo
+qwen plugins install bughunter@bughunter-market
+```
+
+`owner/repo` заменяется на реально опубликованный репозиторий. Для локальной проверки marketplace добавляется абсолютным путём. Отсутствие опубликованного URL не выдавать за выполненную публикацию.
+
 ## Ограничения
 
 - Поддержка плагинных MCP-серверов и агентов проверена на Qwen Code CLI `1.0.0-preview.1`; на других версиях поведение может отличаться.
 - Сервер стартует при каждой сессии `qwen` в любом проекте; в проектах без opt-in он dormant и не создаёт файлов.
 - Плагин — снимок дерева Bughunter. После изменений в core/пресетах пересоберите и переустановите его.
-- Публикации в npm или marketplace пока нет: распространяется каталог `plugin/` или собранный `plugin/dist/bughunter`.
+- Центральной или npm-публикации нет. Поддерживаются установка из исходника, HTTPS release zip и self-hosted marketplace; конкретный remote/URL должен задать publisher.

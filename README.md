@@ -29,8 +29,8 @@ node /путь/к/bughunter/plugin/install.mjs --preset web
 resume-гейт `20261112T114339.688Z-1e5d834da4de`, интерактивный trust-гейт
 `20261113T175433.164Z-07952730d99a`, BI-фикстура `20261113T131557.204Z-68c505592f97`,
 route-репетиция после разреза на core и пресеты `20261114T053038.281Z-4c4e72df3973`.
-Автоматическая линия: 61 тест core, 259 тестов веб-пресета (258 pass / 0 fail / 1 skipped под
-флагом) и 55 тестов node-пресета (50 pass / 0 fail / 5 skipped под флагом), typecheck трёх пакетов,
+Автоматическая линия: 68 тестов core, 259 тестов веб-пресета (258 pass / 0 fail / 1 skipped под
+флагом) и 58 тестов node-пресета (52 pass / 0 fail / 6 skipped под флагом), typecheck трёх пакетов,
 две portable-копии с настоящим stdio MCP — 19 инструментов у веб-пресета и 16 у node-пресета.
 
 **Node-пресет — все гейты пройдены, включая приёмку гайдлайнов (§6.8).**
@@ -114,11 +114,7 @@ core-инструменты у всех пресетов именуются од
 
 ## Сделать свой пресет
 
-**Пример копируй, core подключай.** Учебный пресет `presets/web` копируется и заменяется по доменам,
-а core подключается именем пакета и реализуется через 16 интерфейсов (`TargetInventory`, `Session`,
-`Snapshot`, `Detectors`, `Checks`, `Replay`, `TestGenerator`, `ProfileSchema`, `TestRunner`,
-`Personas`, `FindingKinds`, `SweepVisit`, `Reset`, `ExportTarget`, `Errors`, `ReportFormat`).
-Критерий готовности пресета — **ноль правок core**.
+**Пример копируй, core подключай.** Для нового домена копируется учебный `docs/concept/examples/cli-preset/preset`; `presets/web` и `presets/node` остаются поддерживаемыми браузерным и HTTP-образцами. Core подключается именем пакета. `Preset` содержит 16 интерфейсов (`TargetInventory`, `Session`, `Snapshot`, `Detectors`, `Checks`, `Replay`, `TestGenerator`, `ProfileSchema`, `TestRunner`, `Personas`, `FindingKinds`, `SweepVisit`, `Reset`, `ExportTarget`, `Errors`, `ReportFormat`) плюс обязательные `name` и `configSchema` — 18 полей всего. Критерий готовности пресета — **ноль правок core**.
 
 - Пошагово для человека: [`docs/concept/preset-guide.md`](docs/concept/preset-guide.md)
 - То же для модели внутри CLI: скилл `bughunter-preset-guide`
