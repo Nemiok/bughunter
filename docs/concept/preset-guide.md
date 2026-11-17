@@ -21,12 +21,7 @@ rm -rf .qwen/bughunter/presets/<name>/state
 
 Команда запускается из корня репозитория Bughunter. В standalone-копии `cli-preset` точка входа — `preset/src/index.ts`, а фикстура — `cli-app/`; plugin-автор следует `AUTHORING.md` и не переносит репозиторный `.mcp.json` без пересчёта пути.
 
-В `presets/<name>/package.json` — имя `@bughunter/<name>`, `"type": "module"`,
-`engines.node >= 22.18`, зависимость `"@bughunter/core": "*"`, скрипты `test`
-(`node --test --test-concurrency=1 test/*.bhtest.ts`), `typecheck`, `start` (`node src/index.ts`).
-Свои рантайм-зависимости объявляйте здесь: core их не тянет. Затем добавьте `"presets/<name>"`
-в `workspaces` корневого `package.json` и выполните `npm install` — core придёт workspace-симлинком,
-lockfile на всё дерево один.
+В `.qwen/bughunter/presets/<name>/package.json` — имя `@bughunter/<name>`, `"type": "module"`, `engines.node >= 22.18`, зависимость `"@bughunter/core": "*"`, скрипты `test` (`node --test --test-concurrency=1 test/*.bhtest.ts`), `typecheck`, `start` (`node src/index.ts`). Свои рантайм-зависимости объявляйте здесь: core их не тянет. Затем добавьте `"presets/<name>"` в `workspaces` файла `.qwen/bughunter/package.json` и выполните `npm install` из `.qwen/bughunter` — core придёт workspace-симлинком, lockfile на всё дерево один.
 
 Сборка не нужна: Node ≥ 22.18 исполняет `.ts` снятием типов. `tsconfig.json` оставьте как в примере,
 он нужен только для `tsc --noEmit`.
