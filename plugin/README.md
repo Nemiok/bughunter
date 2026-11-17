@@ -72,7 +72,7 @@ node plugin/install.mjs --preset web
 
 `state/<preset>/.gitignore` игнорирует `runs/` и `auth/`. `config.json`, `profiles/`, `preset.json`, `known-bugs.json` и `suppressions.json` можно версионировать.
 
-Без `.qwen/bughunter.json` плагин находится в **dormant**-режиме: MCP-сервер подключается, но не отдаёт инструментов и не создаёт состояние в проекте. Это защищает чужие проекты, где Bughunter не нужен.
+Без `.qwen/bughunter.json` плагин находится в **dormant**-режиме: MCP-сервер подключается и отдаёт только `bh_setup`; состояние в проекте не создаётся до первого setup. Это защищает чужие проекты, где Bughunter не нужен.
 
 ## Авторизация веб-стенда
 
@@ -116,9 +116,12 @@ qwen plugins uninstall bughunter@local           # удалить
 ```sh
 node plugin/build.mjs        # собрать и провалидировать плагин
 node plugin/test-install.mjs # изолированный --config-dir: install/enable + dormant/web/node init
+npm --prefix plugin run test:qwen-marketplace # нативный marketplace: add/install/update через qwen CLI
 ```
 
 `test-install.mjs` не вызывает модель: он читает `system/init` и проверяет, что плагин поднял MCP-сервер, отдал 19 web- или 16 node-инструментов, семь скиллов и шесть агентов, а в dormant-режиме не создал состояние.
+
+`test/qwen-marketplace-install.mjs` поднимает сборку как custom marketplace (`dist/qwen-marketplace` с `.claude-plugin/marketplace.json` и `plugins/bughunter/`), ставит плагин нативно через `qwen plugins marketplace add` + `qwen plugins install bughunter@bughunter-market`, проверяет dormant init (`mcp__bughunter__bh_setup`), затем обновляет marketplace и плагин (`qwen plugins marketplace update`, `qwen plugins update`) и проверяет, что config, `runs/` и `auth/` в проекте сохранились. Модель не вызывается; qwen init обрывается сразу после `system/init`.
 
 `plugin/dist/` — генерируемый каталог, в Git не попадает.
 
@@ -140,6 +143,8 @@ qwen plugins install bughunter@bughunter-market
 ```
 
 `owner/repo` заменяется на реально опубликованный репозиторий. Для локальной проверки marketplace добавляется абсолютным путём. Отсутствие опубликованного URL не выдавать за выполненную публикацию.
+
+Custom marketplace в этой инструкции — self-hosted каталог, который оператор добавляет себе вручную (`qwen plugins marketplace add`). Это не официальная публикация в маркетплейсе Qwen: записи в центральном каталоге нет, и её наличие не предполагается.
 
 ## Ограничения
 

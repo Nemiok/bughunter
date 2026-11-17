@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { withMcpClient } from './test/mcp-client.mjs';
+import { qwenInit, summarize } from './test/qwen-harness.mjs';
 
 const pluginRoot = resolve(import.meta.dirname);
 const dist = join(pluginRoot, 'dist', 'bughunter');
@@ -20,52 +21,6 @@ function run(command, args, options = {}) {
     throw new Error(`${command} ${args.join(' ')} → ${result.status}\n${result.stdout}\n${result.stderr}`);
   }
   return result;
-}
-
-function initOf() {
-  return new Promise((resolveInit, reject) => {
-    const child = spawn(qwen, [
-      '--config-dir', configDir,
-      '-p', 'hi',
-      '--output-format', 'stream-json',
-      '--no-session-persistence',
-      '--allowed-mcp-server-names', 'bughunter',
-    ], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    const timer = setTimeout(() => finish(new Error(`qwen init timed out\n${stderr}`)), 30_000);
-    const finish = (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      child.kill('SIGKILL');
-      if (error) reject(error);
-    };
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-      const line = stdout.split('\n').find((value) => value.includes('"subtype":"init"'));
-      if (line === undefined) return;
-      finish();
-      resolveInit(JSON.parse(line));
-    });
-    child.once('error', (error) => finish(error));
-    child.once('exit', (code) => {
-      if (!settled) finish(new Error(`qwen exited before init (${code})\n${stderr}\n${stdout}`));
-    });
-  });
-}
-
-function summarize(event) {
-  return {
-    mcp: event.mcp_servers.map((server) => `${server.name}:${server.status}`),
-    bhTools: event.tools.filter((tool) => tool.startsWith('mcp__bughunter__')),
-    skills: event.skills.filter((skill) => skill.startsWith('bughunter:')),
-    agents: event.agents.filter((agent) => agent.startsWith('bughunter:')),
-  };
 }
 
 try {
@@ -104,7 +59,7 @@ try {
   const optIn = JSON.parse(await readFile(join(project, '.qwen', 'bughunter.json'), 'utf8'));
   assert.equal(optIn.preset, 'web');
 
-  const web = summarize(await initOf());
+  const web = summarize(await qwenInit({ qwen, configDir, project }));
   assert.deepEqual(web.mcp, ['bughunter:connected']);
   assert.equal(web.bhTools.length, 19, `web tools: ${web.bhTools.join(', ')}`);
   assert.deepEqual(web.skills.sort(), [
@@ -127,14 +82,14 @@ try {
   assert.ok(existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'preset.json')));
 
   await writeFile(join(project, '.qwen', 'bughunter.json'), '{"preset":"node"}\n');
-  const node = summarize(await initOf());
+  const node = summarize(await qwenInit({ qwen, configDir, project }));
   assert.deepEqual(node.mcp, ['bughunter:connected']);
   assert.equal(node.bhTools.length, 16, `node tools: ${node.bhTools.join(', ')}`);
   assert.ok(existsSync(join(project, '.qwen', 'bughunter', 'state', 'node', 'preset.json')));
 
   await rm(join(project, '.qwen', 'bughunter.json'));
   await rm(join(project, '.qwen', 'bughunter'), { recursive: true, force: true });
-  const dormant = summarize(await initOf());
+  const dormant = summarize(await qwenInit({ qwen, configDir, project }));
   assert.deepEqual(dormant.mcp, ['bughunter:connected']);
   assert.equal(dormant.bhTools.length, 1, `dormant tools: ${dormant.bhTools.join(', ')}`);
   assert.equal(dormant.skills.length, 7);
@@ -152,7 +107,7 @@ try {
   assert.ok(existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'config.json')));
   assert.ok(!existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'runs')));
   assert.ok(!existsSync(join(project, '.qwen', 'bughunter', 'state', 'web', 'auth')));
-  const afterSetup = summarize(await initOf());
+  const afterSetup = summarize(await qwenInit({ qwen, configDir, project }));
   assert.deepEqual(afterSetup.mcp, ['bughunter:connected']);
   assert.equal(afterSetup.bhTools.length, 19);
   assert.ok(existsSync(join(dist, 'AUTHORING.md')));

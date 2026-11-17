@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promi
 import { join, relative, resolve, sep } from 'node:path';
 
 import { qwenHost } from './hosts/qwen.mjs';
+import { buildQwenMarketplace } from './marketplace.mjs';
 import { buildServerPayload } from './payload.mjs';
 import { writeLauncher } from './write-launcher.mjs';
 
@@ -242,6 +243,7 @@ async function copySetupLayer() {
 
 async function main() {
   await rm(out, { recursive: true, force: true });
+  await rm(join(pluginRoot, 'dist', 'qwen-marketplace'), { recursive: true, force: true });
   await buildServerPayload({ workspace, server });
   await writeLauncher({ pluginRoot, server, host: qwenHost, version });
   await copySetupLayer();
@@ -250,6 +252,11 @@ async function main() {
   await cp(join(pluginRoot, 'README.md'), join(out, 'README.md'));
   await copyAuthoring();
   validate();
+  await buildQwenMarketplace({
+    pluginDir: out,
+    marketplaceRoot: join(pluginRoot, 'dist', 'qwen-marketplace'),
+    version,
+  });
   const megabytes = (await sizeOf(out)) / 1024 / 1024;
   console.log(`built ${out} (${megabytes.toFixed(1)} MB)`);
 }

@@ -7,6 +7,7 @@
     "build": "node build.mjs",
     "setup": "node install.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "test:install": "node test-install.mjs"
+    "test:install": "node test-install.mjs",
+    "test:qwen-marketplace": "node test/qwen-marketplace-install.mjs"
   }
 }
