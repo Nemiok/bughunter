@@ -8,7 +8,7 @@ import type { Signal } from '@bughunter/core';
 
 import type { NodeConfig } from '../src/config.ts';
 import { nodeDetectors } from '../src/detectors.ts';
-import { nodeSession, performRequest } from '../src/session.ts';
+import { nodeSession, performRequest, reportNodeCandidate } from '../src/session.ts';
 import type { NodeSessionHandle } from '../src/session.ts';
 import { nodeSnapshot } from '../src/snapshot.ts';
 import type { NodeStep } from '../src/types.ts';
@@ -236,6 +236,47 @@ test('read-only config and forbidden action text are enforced before the request
     const allowed = await performRequest(handle, { method: 'GET', path: '/health' }, readOnly);
     assert.equal(allowed.response.status, 200);
     assert.equal(handle.steps().length, 1, 'заблокированный запрос не становится шагом журнала');
+  } finally {
+    await handle.close();
+  }
+});
+
+test('a candidate keeps the raw symptom signature when an oracle is attached', async () => {
+  const handle = await openSession('POST /payments');
+  try {
+    const { signals } = await performRequest(
+      handle,
+      { method: 'POST', path: '/payments', body: { orderId: 'ord-1', amountCents: 1000, idempotencyKey: 'bh_sig_collision' } },
+      state.config,
+    );
+    const symptom = signals.find((signal) => signal.kind === 'status');
+    assert.ok(symptom, '502 от платёжного шлюза обязан дать симптом статуса');
+
+    const first = await reportNodeCandidate(handle, {
+      title: 'Сбой шлюза вместо успешного платежа',
+      expected: '200 на успешный платёж',
+      actual: '502 с внутренностями',
+      signalIds: [symptom.id],
+      check: { kind: 'status', target: 'POST /payments', expected: 200 },
+    });
+    const second = await reportNodeCandidate(handle, {
+      title: 'Сбой шлюза оставляет баланс неизменным',
+      expected: 'баланс 9000 после списания 1000',
+      actual: '502, баланс не изменился',
+      signalIds: [symptom.id],
+      check: { kind: 'jsonPath', target: 'POST /payments', pointer: '$.balanceCents', expected: 9000 },
+    });
+    assert.equal(first.duplicateOf, undefined);
+    assert.equal(second.duplicateOf, undefined, 'общий симптом с другим оракулом — не дубль');
+
+    const read = async (candidateId: string) => JSON.parse(await readFile(
+      join(state.stateDir, 'runs', 'run-session', 'candidates', `${candidateId}.json`),
+      'utf8',
+    )) as { signature: string; signalSignature?: string };
+    const [firstRaw, secondRaw] = await Promise.all([read(first.candidateId), read(second.candidateId)]);
+    assert.equal(firstRaw.signalSignature, symptom.signature, 'сырая сигнатура нужна повтору');
+    assert.notEqual(firstRaw.signature, symptom.signature, 'сигнатура кандидата учитывает оракул');
+    assert.notEqual(firstRaw.signature, secondRaw.signature);
   } finally {
     await handle.close();
   }

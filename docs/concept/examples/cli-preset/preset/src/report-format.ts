@@ -18,12 +18,12 @@ export const cliReportFormat: ReportFormat = {
       `### ${finding.kind}: ${finding.targetRef}`,
       '',
       `- Finding: ${finding.id}`,
-      // В `widget` у находки обхода — сценарий: «<имя>: <argv…>».
-      ...(finding.widget === undefined ? [] : [`- Сценарий: ${finding.widget}`]),
+      // В `subject` у находки обхода — сценарий: «<имя>: <argv…>».
+      ...(finding.subject === undefined ? [] : [`- Сценарий: ${finding.subject}`]),
       `- Detail: ${finding.detail.replaceAll('\n', ' ')}`,
       `- Status: ${finding.status}`,
       ...(finding.candidateId === undefined ? [] : [`- Candidate: ${finding.candidateId}`]),
-      `- Responses: ${finding.responseHashes.length}`,
+      `- Responses: ${finding.evidenceHashes.length}`,
     ];
   },
   candidate(candidate) {

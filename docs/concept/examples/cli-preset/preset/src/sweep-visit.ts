@@ -1,7 +1,7 @@
 import { runSweep as runCoreSweep } from '@bughunter/core';
 import type { FindingDraft, Session, SessionHandle, Signal, SweepResult, SweepVisit } from '@bughunter/core';
 
-import { cliFindingKinds, scenarioWidget } from './finding-kinds.ts';
+import { cliFindingKinds, scenarioLabel } from './finding-kinds.ts';
 import { cliInventory, targetOfArgv } from './inventory.ts';
 import { cliReset } from './reset.ts';
 import { cliSession, executionHash, performCommand, sessionView } from './session.ts';
@@ -35,7 +35,7 @@ export const cliSweepVisit: SweepVisit = {
     const drafts: FindingDraft[] = [];
     for (const scenario of view.config.scenarios) {
       const belongs = targetOfArgv(view.commands, scenario.argv);
-      if (belongs === undefined) throw new Error(`SCENARIO_INVALID: ${scenarioWidget(scenario)} не подходит ни одной команде профиля`);
+      if (belongs === undefined) throw new Error(`SCENARIO_INVALID: ${scenarioLabel(scenario)} не подходит ни одной команде профиля`);
       if (belongs !== target) continue;
       // Сброс перед каждым сценарием: наблюдения не зависят друг от друга. Отказ сброса здесь
       // не находка — core уже отметил его один раз на прогон.
@@ -64,42 +64,42 @@ function findingsFor(
   stdout: string,
   stderr: string,
   signals: Signal[],
-  responseHashes: string[],
+  evidenceHashes: string[],
 ): FindingDraft[] {
-  const widget = scenarioWidget(scenario);
+  const subject = scenarioLabel(scenario);
   const drafts: FindingDraft[] = [];
   const add = (kind: string, detail: string): void => {
-    drafts.push({ targetRef: target, widget, kind, detail, responseHashes });
+    drafts.push({ targetRef: target, subject, kind, detail, evidenceHashes });
   };
   const expected = scenario.expect;
 
   if (timedOut) {
-    add('execution-failed', `${widget}: выполнение не завершилось за отведённое время`);
+    add('execution-failed', `${subject}: выполнение не завершилось за отведённое время`);
   } else if (spawnError !== undefined) {
-    add('execution-failed', `${widget}: ${spawnError}`);
+    add('execution-failed', `${subject}: ${spawnError}`);
   } else if (exitCode === null) {
-    add('execution-failed', `${widget}: процесс завершён сигналом`);
+    add('execution-failed', `${subject}: процесс завершён сигналом`);
   }
 
   if (exitCode !== expected.exitCode) {
-    add('exit-code-unexpected', `${widget}: ожидался код ${expected.exitCode}, получен ${exitCode ?? 'сигнал'}`);
+    add('exit-code-unexpected', `${subject}: ожидался код ${expected.exitCode}, получен ${exitCode ?? 'сигнал'}`);
   }
   for (const text of expected.stdoutContains ?? []) {
-    if (!stdout.includes(text)) add('output-mismatch', `${widget}: stdout не содержит ${JSON.stringify(text)}`);
+    if (!stdout.includes(text)) add('output-mismatch', `${subject}: stdout не содержит ${JSON.stringify(text)}`);
   }
   for (const text of expected.stdoutNotContains ?? []) {
-    if (stdout.includes(text)) add('output-mismatch', `${widget}: stdout содержит ${JSON.stringify(text)}`);
+    if (stdout.includes(text)) add('output-mismatch', `${subject}: stdout содержит ${JSON.stringify(text)}`);
   }
   for (const text of expected.stderrContains ?? []) {
-    if (!stderr.includes(text)) add('output-mismatch', `${widget}: stderr не содержит ${JSON.stringify(text)}`);
+    if (!stderr.includes(text)) add('output-mismatch', `${subject}: stderr не содержит ${JSON.stringify(text)}`);
   }
   for (const text of expected.stderrNotContains ?? []) {
-    if (stderr.includes(text)) add('output-mismatch', `${widget}: stderr содержит ${JSON.stringify(text)}`);
+    if (stderr.includes(text)) add('output-mismatch', `${subject}: stderr содержит ${JSON.stringify(text)}`);
   }
 
   const anomalous = signals.filter((signal) => signal.kind === 'anomaly' || signal.kind === 'stderr-stack');
   if (anomalous.length > 0) {
-    add('output-anomaly', `${widget}: ${anomalous.map((signal) => signal.message).join('; ')}`);
+    add('output-anomaly', `${subject}: ${anomalous.map((signal) => signal.message).join('; ')}`);
   }
   return drafts;
 }

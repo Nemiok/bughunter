@@ -4,43 +4,55 @@ import { join, relative } from 'node:path';
 import { test } from 'node:test';
 
 const sourceRoot = join(import.meta.dirname, '../src');
+const testRoot = import.meta.dirname;
 
 /**
  * Слова, которыми говорит пресет. В core их быть не должно: иначе второй пресет
  * не сможет переиспользовать ядро и будет править его под свой домен.
+ * Формы заданы шаблонами: лексика протекает и в косвенных формах («endpoints», «навигация»).
  */
-const domainTokens = [
-  'playwright', 'konva', 'three', 'msw', 'browser', 'chrome', 'dom', 'locator', 'viewport',
-  'click', 'hover', 'scroll', 'screen', 'route', 'endpoint', 'http', 'e2e', 'spec',
+const domainLexicon = [
+  'playwright', 'konva', 'three', 'msw', 'browsers?', 'chrome', 'dom', 'locators?', 'viewports?',
+  'clicks?', 'hovers?', 'scrolls?', 'screens?', 'routes?', 'endpoints?', 'https?', 'e2e', 'specs?',
+  'navigat[a-z]*', 'probes?', 'urls?', 'widgets?',
+];
+const domainStems = [
+  'маршрут[а-яё]*', 'эндпоинт[а-яё]*', 'браузер[а-яё]*', 'виджет[а-яё]*',
+  'навигац[а-яё]*', 'страниц[а-яё]*', 'клик[а-яё]*', 'веб[а-яё-]*',
+  'экран(?:а|у|ом|е|ы|ов|ам|ами|ах|ный|ная|ное|ные|ных)?',
 ];
 
 const presetImportPatterns = [/from\s+'[^']*presets\//, /from\s+'@bughunter\/web/];
 
-async function sourceFiles(): Promise<string[]> {
-  const entries = await readdir(sourceRoot, { withFileTypes: true, recursive: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
-    .map((entry) => join(entry.parentPath, entry.name))
-    .sort();
-}
+/**
+ * Историческое имя поля, которое core обязан узнать, чтобы отвергнуть состояние прежней схемы.
+ * Это совместимость с прошлым, а не знание домена; строка исключена из лексиконной проверки.
+ */
+const legacySchemaGuard = /const retiredRunFields = /;
 
-async function sourceLines(): Promise<Array<{ location: string; line: string; text: string }>> {
-  const files = await sourceFiles();
-  const lines: Array<{ location: string; line: string; text: string }> = [];
-  for (const file of files) {
+/** Оракулы и виды проверок принадлежат пресету: core-тесты не должны закреплять их имена. */
+const presetCheckKindPattern = /\bkind:\s*'(?:status|jsonPath|headerContains|pointer|visibleText|elementCount)'/;
+
+async function linesUnder(root: string): Promise<Array<{ location: string; text: string }>> {
+  const entries = await readdir(root, { withFileTypes: true, recursive: true });
+  const lines: Array<{ location: string; text: string }> = [];
+  for (const file of entries.filter((entry) => entry.isFile() && entry.name.endsWith('.ts')).map((entry) => join(entry.parentPath, entry.name))) {
     const contents = (await readFile(file, 'utf8')).split('\n');
-    contents.forEach((text, index) => {
-      lines.push({ location: `${relative(sourceRoot, file)}:${index + 1}`, line: String(index + 1), text });
-    });
+    contents.forEach((text, index) => lines.push({ location: `${relative(root, file)}:${index + 1}`, text }));
   }
   return lines;
 }
 
+function mentions(text: string, pattern: string): boolean {
+  return new RegExp(`(?<![a-zа-яё])(?:${pattern})(?![a-zа-яё])`, 'i').test(text);
+}
+
 test('core sources contain no domain lexicon', async () => {
   const violations: string[] = [];
-  for (const { location, text } of await sourceLines()) {
-    for (const token of domainTokens) {
-      if (new RegExp(`\\b${token}\\b`, 'i').test(text)) violations.push(`${location}:${token}`);
+  for (const { location, text } of await linesUnder(sourceRoot)) {
+    if (legacySchemaGuard.test(text)) continue;
+    for (const pattern of [...domainLexicon, ...domainStems]) {
+      if (mentions(text, pattern)) violations.push(`${location}:${pattern}`);
     }
   }
   assert.deepEqual(violations, [], `доменная лексика в core (файл:строка:токен): ${violations.join(', ')}`);
@@ -48,10 +60,19 @@ test('core sources contain no domain lexicon', async () => {
 
 test('core does not import presets', async () => {
   const violations: string[] = [];
-  for (const { location, text } of await sourceLines()) {
+  for (const { location, text } of await linesUnder(sourceRoot)) {
     for (const pattern of presetImportPatterns) {
       if (pattern.test(text)) violations.push(`${location}: ${text.trim()}`);
     }
   }
   assert.deepEqual(violations, [], `core зависит от пресета: ${violations.join(' | ')}`);
+});
+
+test('core tests do not pin preset check kinds', async () => {
+  const violations: string[] = [];
+  for (const { location, text } of await linesUnder(testRoot)) {
+    if (location.startsWith('boundary.bhtest.ts')) continue;
+    if (presetCheckKindPattern.test(text)) violations.push(location);
+  }
+  assert.deepEqual(violations, [], `имена оракулов пресета закреплены в core-тестах: ${violations.join(', ')}`);
 });

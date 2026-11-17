@@ -64,7 +64,7 @@ const findingKinds: FindingKinds = {
 };
 
 function captured(target: string): FindingDraft {
-  return { targetRef: target, kind: 'response-captured', detail: 'Ответов: 1, с телом: 1', responseHashes: [] };
+  return { targetRef: target, kind: 'response-captured', detail: 'Ответов: 1, с телом: 1', evidenceHashes: [] };
 }
 
 async function sweepRun(stateDir: string) {
@@ -118,7 +118,7 @@ test('an unreachable target is recorded in visited and does not stop the sweep',
   const run = await sweepRun(stateDir);
   const visit: SweepVisit = {
     visit: async ({ target }) => (target === '/dead'
-      ? [{ targetRef: target, kind: 'navigation-failed', detail: 'net::ERR_CONNECTION_REFUSED', responseHashes: [] }]
+      ? [{ targetRef: target, kind: 'navigation-failed', detail: 'net::ERR_CONNECTION_REFUSED', evidenceHashes: [] }]
       : [captured(target)]),
   };
 
@@ -178,7 +178,7 @@ test('a finding kind unknown to the preset is rejected', () => withStateDir(asyn
   const run = await sweepRun(stateDir);
   const events: string[] = [];
   const visit: SweepVisit = {
-    visit: async ({ target }) => [{ targetRef: target, kind: 'totally-unknown', detail: 'x', responseHashes: [] }],
+    visit: async ({ target }) => [{ targetRef: target, kind: 'totally-unknown', detail: 'x', evidenceHashes: [] }],
   };
 
   await assert.rejects(

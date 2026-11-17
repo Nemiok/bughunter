@@ -2,7 +2,7 @@ import { runSweep as runCoreSweep } from '@bughunter/core';
 import type { FindingDraft, Session, Signal, SweepResult, SweepVisit } from '@bughunter/core';
 
 import { sameValue } from './checks.ts';
-import { nodeFindingKinds, scenarioWidget } from './finding-kinds.ts';
+import { nodeFindingKinds, scenarioLabel } from './finding-kinds.ts';
 import { nodeInventory, targetOfRequest } from './inventory.ts';
 import { readPointer } from './json-pointer.ts';
 import { loadNodeProfile } from './profile.ts';
@@ -49,7 +49,7 @@ export const nodeSweepVisit: SweepVisit = {
     for (const scenario of view.config.scenarios) {
       const belongs = targetOfRequest(profile.endpoints, scenario.request.method, scenario.request.path);
       if (belongs === undefined) {
-        throw new Error(`SCENARIO_INVALID: ${scenarioWidget(scenario)} не подходит ни к одному эндпоинту профиля`);
+        throw new Error(`SCENARIO_INVALID: ${scenarioLabel(scenario)} не подходит ни к одному эндпоинту профиля`);
       }
       if (belongs !== target) continue;
       // Сброс перед каждым сценарием: наблюдения не должны зависеть друг от друга. Отказ сброса
@@ -73,40 +73,40 @@ function findingsFor(
   response: CapturedResponse,
   signals: Signal[],
 ): FindingDraft[] {
-  const widget = scenarioWidget(scenario);
-  const responseHashes = [responseHash(response)];
+  const subject = scenarioLabel(scenario);
+  const evidenceHashes = [responseHash(response)];
   const drafts: FindingDraft[] = [];
   const add = (kind: string, detail: string): void => {
-    drafts.push({ targetRef: target, widget, kind, detail, responseHashes });
+    drafts.push({ targetRef: target, subject, kind, detail, evidenceHashes });
   };
   const expected = scenario.expect;
 
   if (response.error !== undefined) {
-    add('request-failed', `${widget}: ${response.error}`);
+    add('request-failed', `${subject}: ${response.error}`);
   } else {
     if (expected?.status !== undefined && response.status !== expected.status) {
-      add('status-unexpected', `${widget}: ожидался статус ${expected.status}, получен ${response.status}`);
+      add('status-unexpected', `${subject}: ожидался статус ${expected.status}, получен ${response.status}`);
     } else if (expected?.status === undefined && response.status >= 500) {
-      add('status-unexpected', `${widget}: статус ${response.status} при отсутствии объявленного ожидания`);
+      add('status-unexpected', `${subject}: статус ${response.status} при отсутствии объявленного ожидания`);
     }
     for (const assertion of expected?.jsonPath ?? []) {
       let actual: unknown;
       try {
         actual = readPointer(response.body, assertion.pointer);
       } catch {
-        add('expectation-mismatch', `${widget}: ${assertion.pointer} отсутствует в ответе`);
+        add('expectation-mismatch', `${subject}: ${assertion.pointer} отсутствует в ответе`);
         continue;
       }
       if (!sameValue(actual, assertion.expected)) {
         add('expectation-mismatch',
-          `${widget}: ${assertion.pointer} = ${JSON.stringify(actual)}, ожидалось ${JSON.stringify(assertion.expected)}`);
+          `${subject}: ${assertion.pointer} = ${JSON.stringify(actual)}, ожидалось ${JSON.stringify(assertion.expected)}`);
       }
     }
   }
 
   const body = signals.filter((signal) => signal.kind === 'anomaly' || signal.kind === 'stack');
   if (body.length > 0) {
-    add('body-anomaly', `${widget}: ${body.map((signal) => signal.message).join('; ')}`);
+    add('body-anomaly', `${subject}: ${body.map((signal) => signal.message).join('; ')}`);
   }
   return drafts;
 }

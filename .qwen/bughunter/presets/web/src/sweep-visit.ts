@@ -105,13 +105,13 @@ export const webSweepVisit: SweepVisit = {
         targetRef: target,
         kind: 'navigation-failed',
         detail: `SCREEN_NOT_FOUND: ${target}`,
-        responseHashes: [],
+        evidenceHashes: [],
       }];
     }
     try {
       await sweep.page.goto(screen.sampleUrl, { waitUntil: 'domcontentloaded', timeout: sweep.settleMs * 10 });
     } catch (error) {
-      return [{ targetRef: target, kind: 'navigation-failed', detail: messageOf(error), responseHashes: [] }];
+      return [{ targetRef: target, kind: 'navigation-failed', detail: messageOf(error), evidenceHashes: [] }];
     }
     await sweep.page.waitForLoadState('networkidle', { timeout: sweep.settleMs }).catch(() => undefined);
     await sweep.network.flush();
@@ -123,10 +123,10 @@ export const webSweepVisit: SweepVisit = {
       if (widget.error === undefined) continue;
       drafts.push({
         targetRef: target,
-        ...(widget.widget === undefined ? {} : { widget: widget.widget }),
+        ...(widget.widget === undefined ? {} : { subject: widget.widget }),
         kind: 'extract-failed',
         detail: widget.error,
-        responseHashes: [],
+        evidenceHashes: [],
       });
     }
     const hashes = responses.map((response) => response.hash).filter((hash): hash is string => hash !== undefined);
@@ -135,13 +135,13 @@ export const webSweepVisit: SweepVisit = {
         targetRef: target,
         kind: 'response-missing',
         detail: 'Экран не вернул ни одного ответа; сверка данных невозможна',
-        responseHashes: [],
+        evidenceHashes: [],
       }
       : {
         targetRef: target,
         kind: 'response-captured',
         detail: `Ответов: ${responses.length}, с телом: ${hashes.length}`,
-        responseHashes: hashes,
+        evidenceHashes: hashes,
       });
     return drafts;
   },

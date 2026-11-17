@@ -147,7 +147,7 @@ export const cliTestRunner: TestRunner = {
     };
   },
   parseReport(_kind, raw, { testFile }) {
-    return parseCliReport(raw, testFile);
+    return parseCliReport(JSON.parse(raw) as unknown, testFile);
   },
   ownsProject(packageJson) {
     if (packageJson === null || typeof packageJson !== 'object') return false;

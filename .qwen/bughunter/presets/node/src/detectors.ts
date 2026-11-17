@@ -43,7 +43,7 @@ export function scanResponse(response: CapturedResponse, config: NodeConfig): Si
       signature: signalSignature({ kind, message, target, ...(stack === undefined ? {} : { stack }) }),
       target,
       timestamp: new Date().toISOString(),
-      ...(response.status === 0 ? {} : { status: response.status }),
+      ...(response.status === 0 ? {} : { details: { status: response.status } }),
     });
   };
 

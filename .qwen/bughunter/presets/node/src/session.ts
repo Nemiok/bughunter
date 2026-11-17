@@ -258,11 +258,8 @@ export async function reportNodeCandidate(
     actual: input.actual,
     steps: [...state.journal.steps],
     signalIds: [...input.signalIds],
-    ...(referenced.length > 0
-      ? { signalSignature: referenced[0]!.signature }
-      : input.check === undefined
-        ? {}
-        : { signalSignature: nodeCheckSignature(input.check, state.target) }),
+    ...(referenced.length > 0 ? { signalSignature: referenced[0]!.signature } : {}),
+    ...(input.check === undefined ? {} : { checkSignature: nodeCheckSignature(input.check, state.target) }),
     ...(input.check === undefined ? {} : { check: input.check }),
     stateDir: state.stateDir,
   });

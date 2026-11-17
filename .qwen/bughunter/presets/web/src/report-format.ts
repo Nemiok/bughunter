@@ -20,11 +20,11 @@ export const webReportFormat: ReportFormat = {
     return [
       `### ${finding.kind}: ${finding.targetRef}`, '',
       `- Finding: ${finding.id}`,
-      ...(finding.widget === undefined ? [] : [`- Widget: ${finding.widget}`]),
+      ...(finding.subject === undefined ? [] : [`- Widget: ${finding.subject}`]),
       `- Detail: ${finding.detail.replaceAll('\n', ' ')}`,
       `- Status: ${finding.status}`,
       ...(finding.candidateId === undefined ? [] : [`- Candidate: ${finding.candidateId}`]),
-      `- Responses: ${finding.responseHashes.length}`,
+      `- Responses: ${finding.evidenceHashes.length}`,
     ];
   },
 };

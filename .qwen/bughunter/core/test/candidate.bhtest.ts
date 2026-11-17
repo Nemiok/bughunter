@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,7 @@ import { test } from 'node:test';
 import { attachCandidateArtifacts, candidateSignature, reportCandidate } from '../src/candidate.ts';
 import type { Check } from '../src/types.ts';
 
-const check: Check = { kind: 'visibleText', target: 'Итого 42' };
+const check: Check = { kind: 'invariant', target: 'Итого 42' };
 
 async function withStateDir(run: (stateDir: string) => Promise<void>): Promise<void> {
   const stateDir = await mkdtemp(join(tmpdir(), 'bh-core-candidate-'));
@@ -23,12 +24,41 @@ async function writeMemory(stateDir: string, file: string, entries: unknown[]): 
   await writeFile(join(stateDir, file), `${JSON.stringify(entries, null, 2)}\n`, 'utf8');
 }
 
-test('signature prefers the signal, falls back to the check, and demands an oracle', () => {
-  assert.equal(candidateSignature({ signalSignature: 'from-signal', check, target: '/a' }), 'from-signal');
-  const fromCheck = candidateSignature({ check, target: '/a' });
-  assert.match(fromCheck, /^[0-9a-f]{64}$/);
-  assert.equal(fromCheck, candidateSignature({ check, target: '/a' }), 'сигнатура устойчива');
-  assert.notEqual(fromCheck, candidateSignature({ check, target: '/b' }), 'цель входит в сигнатуру');
+test('signature composes a signal with its oracle and keeps single-source signatures unchanged', () => {
+  assert.equal(candidateSignature({ signalSignature: 'from-signal', target: '/a' }), 'from-signal', 'без оракула сигнал остаётся сигнатурой');
+
+  const legacyCheck = createHash('sha256')
+    .update(JSON.stringify([check.kind, check.target, check.expected ?? null, '/a']))
+    .digest('hex');
+  assert.equal(candidateSignature({ check, target: '/a' }), legacyCheck, 'оракул без сигнала хешируется как раньше');
+  assert.notEqual(candidateSignature({ check, target: '/b' }), legacyCheck, 'цель входит в сигнатуру');
+
+  const withCheck = candidateSignature({ signalSignature: 'from-signal', check, target: '/a' });
+  assert.match(withCheck, /^[0-9a-f]{64}$/);
+  assert.notEqual(withCheck, 'from-signal', 'оракул не теряется при наличии сигнала');
+  assert.equal(withCheck, candidateSignature({ signalSignature: 'from-signal', check, target: '/a' }), 'сигнатура устойчива');
+  assert.notEqual(
+    withCheck,
+    candidateSignature({ signalSignature: 'from-signal', check: { ...check, expected: 'другое' }, target: '/a' }),
+    'разные оракулы — разные баги',
+  );
+  assert.notEqual(
+    withCheck,
+    candidateSignature({ signalSignature: 'other-signal', check, target: '/a' }),
+    'разные сигналы — разные баги',
+  );
+
+  const presetOracle = candidateSignature({ signalSignature: 'from-signal', checkSignature: 'preset-oracle', target: '/a' });
+  assert.notEqual(
+    presetOracle,
+    candidateSignature({ signalSignature: 'from-signal', checkSignature: 'other-oracle', target: '/a' }),
+    'явная сигнатура оракула различает пресетные оракулы',
+  );
+  assert.equal(
+    presetOracle,
+    candidateSignature({ signalSignature: 'from-signal', checkSignature: 'preset-oracle', check, target: '/a' }),
+    'явная сигнатура оракула главнее вычисленной',
+  );
   assert.throws(() => candidateSignature({ target: '/a' }), /CANDIDATE_ORACLE_REQUIRED/);
 });
 
@@ -50,6 +80,33 @@ test('reportCandidate writes an unprocessed candidate with an unreproduced verdi
   assert.deepEqual(raw.reproduction, { status: 'unreproduced', attempts: 0 });
   assert.equal(raw.target, '/a');
   assert.equal(raw.check.target, 'Итого 42');
+}));
+
+test('a signal-backed oracle candidate stores the raw signal signature next to the composite one', () => withStateDir(async (stateDir) => {
+  const { candidateId } = await reportCandidate({
+    runId: 'run-1', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: ['s1'], signalSignature: 'raw-signal', check, stateDir,
+  });
+  const raw = JSON.parse(await readFile(join(stateDir, 'runs', 'run-1', 'candidates', `${candidateId}.json`), 'utf8'));
+  assert.equal(raw.signalSignature, 'raw-signal');
+  assert.match(raw.signature, /^[0-9a-f]{64}$/);
+  assert.notEqual(raw.signature, 'raw-signal');
+}));
+
+test('the same signal with a different oracle is a different bug', () => withStateDir(async (stateDir) => {
+  const base = {
+    runId: 'run-1', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: ['s1'], signalSignature: 'raw-signal', stateDir,
+  };
+  const first = await reportCandidate({ ...base, check });
+  const firstRaw = JSON.parse(await readFile(join(stateDir, 'runs', 'run-1', 'candidates', `${first.candidateId}.json`), 'utf8'));
+  await writeMemory(stateDir, 'known-bugs.json', [{ id: 'bug-1', signature: firstRaw.signature, sourceCandidate: first.candidateId }]);
+
+  const same = await reportCandidate({ ...base, check });
+  assert.equal(same.duplicateOf, 'bug-1', 'тот же сигнал и тот же оракул — дубль');
+
+  const different = await reportCandidate({ ...base, check: { ...check, expected: 'другое' } });
+  assert.equal(different.duplicateOf, undefined, 'тот же сигнал с другим оракулом — отдельный баг');
 }));
 
 test('a known or suppressed signature is marked as a duplicate', () => withStateDir(async (stateDir) => {

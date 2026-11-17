@@ -85,7 +85,9 @@ async function executeReplay(
   try {
     const opened = await manager.open(candidate.runId, journal.target, journal.persona);
     sessionId = opened.sessionId;
-    const observedAnomaly = await observeReplayAnomaly(manager.pageOf(sessionId), config, candidate.signature);
+    // Композитная сигнатура кандидата включает оракул; повтор ищет сырую сигнатуру симптома.
+    const symptomSignature = candidate.signalSignature ?? candidate.signature;
+    const observedAnomaly = await observeReplayAnomaly(manager.pageOf(sessionId), config, symptomSignature);
     const signals: Signal[] = [];
     const collect = (emitted: Signal[]) => signals.push(...emitted);
     for (const step of steps) {
@@ -108,7 +110,7 @@ async function executeReplay(
     collect((await manager.state(sessionId)).signals);
     if (candidate.signalIds.length > 0) {
       matched = observedAnomaly.matched
-        || signals.some((signal) => signal.signature === candidate.signature);
+        || signals.some((signal) => signal.signature === symptomSignature);
     } else if (candidate.check) {
       matched = await checkViolated(manager.pageOf(sessionId), candidate.check);
     }

@@ -29,8 +29,14 @@ function currentRoute(page: Page): string {
   }
 }
 
-function addSignal(page: Page, config: Config, input: Omit<SignatureInput, 'target'> & Partial<Signal>): Signal {
+type DetectedSignal = Omit<SignatureInput, 'target'> & { url?: string; status?: number };
+
+function addSignal(page: Page, config: Config, input: DetectedSignal): Signal {
   const target = currentRoute(page);
+  const details = {
+    ...(input.url === undefined ? {} : { url: input.url }),
+    ...(input.status === undefined ? {} : { status: input.status }),
+  };
   const signal: Signal = {
     id: randomUUID(),
     kind: input.kind,
@@ -39,8 +45,7 @@ function addSignal(page: Page, config: Config, input: Omit<SignatureInput, 'targ
     target,
     timestamp: new Date().toISOString(),
     ...(input.stack === undefined ? {} : { stack: input.stack }),
-    ...(input.url === undefined ? {} : { url: input.url }),
-    ...(input.status === undefined ? {} : { status: input.status }),
+    ...(Object.keys(details).length === 0 ? {} : { details }),
   };
   pageStates.get(page)!.signals.push(signal);
   return signal;

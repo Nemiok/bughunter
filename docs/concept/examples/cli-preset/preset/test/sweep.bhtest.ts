@@ -34,7 +34,7 @@ test('sweep finds C1, C2 and C4 from declared scenarios and leaves the clean lis
     assert.equal(result.targets, 3);
 
     const add = findings.filter((finding) => finding.targetRef === 'add <name> <qty>');
-    assert.equal(add.length, 7, JSON.stringify(add.map((finding) => [finding.widget, finding.kind, finding.detail]), null, 2));
+    assert.equal(add.length, 7, JSON.stringify(add.map((finding) => [finding.subject, finding.kind, finding.detail]), null, 2));
     assert.equal(add.filter((finding) => finding.kind === 'exit-code-unexpected').length, 2);
     assert.equal(add.filter((finding) => finding.kind === 'output-mismatch').length, 4);
     assert.equal(add.some((finding) => finding.kind === 'output-anomaly' && finding.detail.includes('NaN')), true);

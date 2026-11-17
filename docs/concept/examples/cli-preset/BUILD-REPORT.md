@@ -33,7 +33,7 @@ toolkit/presets/cli/src/config.ts                       # схема и шабл
 toolkit/presets/cli/src/detectors.ts                    # exit-code, stderr-stack, anomaly
 toolkit/presets/cli/src/errors.ts                       # доменные коды и перевод нейтральных кодов core
 toolkit/presets/cli/src/export-cli.ts                   # ExportTarget и генератор node:test-файла
-toolkit/presets/cli/src/finding-kinds.ts                # виды находок, widget сценария, синтетический шаг
+toolkit/presets/cli/src/finding-kinds.ts                # виды находок, ярлык сценария, синтетический шаг
 toolkit/presets/cli/src/index.ts                        # MCP-точка входа, ровно 16 инструментов
 toolkit/presets/cli/src/inventory.ts                    # инвентарь команд и шаблоны argv
 toolkit/presets/cli/src/paths.ts                        # stateDir по умолчанию и BUGHUNTER_STATE_DIR

@@ -232,7 +232,8 @@ test('signal-backed candidates ignore a violated check when the normalized signa
     await manager.close(sessionId);
     const candidatePath = join(stateDir, 'runs', run.id, 'candidates', `${candidateId}.json`);
     const candidate = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate;
-    candidate.signature = signalSignature({ kind: 'pageerror', message: 'A different error 42', target: '/profile' });
+    // Повтор сверяется с сырой сигнатурой симптома: подменяем именно её.
+    candidate.signalSignature = signalSignature({ kind: 'pageerror', message: 'A different error 42', target: '/profile' });
     await writeJsonAtomic(candidatePath, candidate);
     const result = await reproduceCandidate({ runId: run.id, candidateId, attempts: 1, stateDir });
     const saved = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate & { minimalSteps?: Step[] };

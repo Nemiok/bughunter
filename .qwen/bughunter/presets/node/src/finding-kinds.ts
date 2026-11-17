@@ -13,8 +13,8 @@ export const nodeFindingKindsList = [
   'reset-unsupported',
 ] as const;
 
-/** `widget` находки обхода — заявка сценария: «<имя сценария> <МЕТОД> <путь>». */
-export function scenarioWidget(scenario: NodeScenario): string {
+/** Ярлык находки обхода — заявка сценария: «<имя сценария> <МЕТОД> <путь>». */
+export function scenarioLabel(scenario: NodeScenario): string {
   return `${scenario.name} ${scenario.request.method.toUpperCase()} ${scenario.request.path}`;
 }
 
@@ -26,8 +26,8 @@ export const nodeFindingKinds: FindingKinds = {
    */
   syntheticStep: async (finding: Finding, stateDir: string): Promise<SyntheticStep> => {
     const config = await loadNodeConfig(stateDir);
-    const scenario = config.scenarios.find((candidate) => scenarioWidget(candidate) === finding.widget);
-    if (scenario === undefined) throw new Error(`SCENARIO_INVALID: ${finding.widget ?? '<без сценария>'}`);
+    const scenario = config.scenarios.find((candidate) => scenarioLabel(candidate) === finding.subject);
+    if (scenario === undefined) throw new Error(`SCENARIO_INVALID: ${finding.subject ?? '<без сценария>'}`);
     const step: NodeStep = {
       id: randomUUID(),
       kind: 'act',

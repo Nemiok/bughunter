@@ -8,7 +8,8 @@ import type { Finding } from '@bughunter/core';
 
 import { exportNodeTest } from '../src/export-vitest.ts';
 import { createNodeReplay } from '../src/replay.ts';
-import { createRun, promoteFindingToCandidate } from '../src/runs.ts';
+import { createRun, finishRun, promoteFindingToCandidate } from '../src/runs.ts';
+import { openNodeSession, performRequest, reportNodeCandidate } from '../src/session.ts';
 import { runSweep } from '../src/sweep-visit.ts';
 import { apiKind, verifyNodeRed } from '../src/test-runner.ts';
 import type { NodeReplay } from '../src/replay.ts';
@@ -42,7 +43,7 @@ const MEASURED_MISSES: Readonly<Record<string, string>> = {
 
 type Promotion = {
   bug: string;
-  widget: string;
+  subject: string;
   kind: string;
   title: string;
   expected: string;
@@ -54,7 +55,7 @@ type Promotion = {
 const PROMOTIONS: readonly Promotion[] = [
   {
     bug: 'N1',
-    widget: 'invalid POST /orders',
+    subject: 'invalid POST /orders',
     kind: 'status-unexpected',
     title: 'Нечисловое количество даёт 500 со стеком',
     expected: '400 и внятная ошибка валидации количества',
@@ -63,7 +64,7 @@ const PROMOTIONS: readonly Promotion[] = [
   },
   {
     bug: 'N3',
-    widget: 'invalid GET /orders/ord-unknown',
+    subject: 'invalid GET /orders/ord-unknown',
     kind: 'status-unexpected',
     title: 'Неизвестный заказ отдаётся как 200',
     expected: '404 для неизвестного идентификатора',
@@ -72,7 +73,7 @@ const PROMOTIONS: readonly Promotion[] = [
   },
   {
     bug: 'N6',
-    widget: 'valid POST /payments',
+    subject: 'valid POST /payments',
     kind: 'body-anomaly',
     title: 'Сбой платёжного шлюза отдаёт внутренности',
     expected: '502 и код сбоя без внутреннего текста ошибки',
@@ -119,8 +120,8 @@ after(async () => {
 
 function detectedBugs(): string[] {
   const found = new Set<string>();
-  const has = (widget: string, kind: string, needle?: RegExp): boolean =>
-    findings.some((finding) => finding.widget === widget
+  const has = (subject: string, kind: string, needle?: RegExp): boolean =>
+    findings.some((finding) => finding.subject === subject
       && finding.kind === kind
       && (needle === undefined || needle.test(finding.detail)));
   if (has('invalid POST /orders', 'status-unexpected', /получен 500/)
@@ -162,8 +163,8 @@ test('every promoted finding reproduces and exports a red vitest test', { skip }
   const project = await vitestProject();
   try {
     for (const promotion of PROMOTIONS) {
-      const finding = findings.find((entry) => entry.widget === promotion.widget && entry.kind === promotion.kind);
-      assert.ok(finding, `находка для ${promotion.bug} не записана: ${promotion.widget}`);
+      const finding = findings.find((entry) => entry.subject === promotion.subject && entry.kind === promotion.kind);
+      assert.ok(finding, `находка для ${promotion.bug} не записана: ${promotion.subject}`);
 
       const { candidateId } = await promoteFindingToCandidate({
         runId,
@@ -219,8 +220,8 @@ test('two manifestations of one root cause share a signature and one regression 
   // N1 (нечисловое qty) и N2 (отрицательное qty) — одна причина: валидации количества нет.
   // Сигнатура находки core считается по виду и цели, поэтому обе промоции дают один известный баг
   // и один регрессионный тест. Это измеряемое свойство, а не потеря: оба проявления видны в находках.
-  const invalid = findings.find((entry) => entry.widget === 'invalid POST /orders');
-  const boundary = findings.find((entry) => entry.widget === 'boundary POST /orders');
+  const invalid = findings.find((entry) => entry.subject === 'invalid POST /orders');
+  const boundary = findings.find((entry) => entry.subject === 'boundary POST /orders');
   assert.ok(invalid && boundary, 'обе находки POST /orders обязаны быть');
 
   const first = await promoteFindingToCandidate({
@@ -249,6 +250,90 @@ test('two manifestations of one root cause share a signature and one regression 
     )) as { signature: string }).signature));
   assert.equal(signatures[0], signatures[1], 'одна причина — одна сигнатура');
   sharedSignature = { first: first.candidateId, second: second.candidateId };
+});
+
+test('one symptom with two different oracles stays two bugs and two regression tests', { skip }, async () => {
+  // Коллизия: сырая сигнатура 502 у обоих кандидатов одна, но оракулы разные. Пока сигнатура
+  // кандидата равнялась сигнатуре симптома, второй кандидат помечался дублем, триаж переиспользовал
+  // известный баг, и экспорт падал на EXPORT_FILE_EXISTS.
+  const collisionRun = await createRun('sweep', undefined, {
+    config: state.config,
+    projectRoot: state.stateDir,
+    stateDir: state.stateDir,
+  });
+  const swept = await runSweep({ runId: collisionRun.id, stateDir: state.stateDir });
+  assert.equal(swept.done, true);
+
+  const handle = await openNodeSession({
+    runId: collisionRun.id,
+    target: 'POST /payments',
+    persona: 'ревизор',
+    stateDir: state.stateDir,
+  });
+  const reported: string[] = [];
+  try {
+    const { signals } = await performRequest(
+      handle,
+      { method: 'POST', path: '/payments', body: { orderId: 'ord-1', amountCents: 1000, idempotencyKey: 'bh_collision' } },
+      state.config,
+    );
+    const symptom = signals.find((signal) => signal.kind === 'status');
+    assert.ok(symptom, '502 от платёжного шлюза обязан дать симптом статуса');
+
+    const first = await reportNodeCandidate(handle, {
+      title: 'Сбой шлюза вместо успешного платежа',
+      expected: '200 на успешный платёж',
+      actual: '502 с внутренностями',
+      signalIds: [symptom.id],
+      check: { kind: 'status', target: 'POST /payments', expected: 200 },
+    });
+    const second = await reportNodeCandidate(handle, {
+      title: 'Сбой шлюза оставляет баланс неизменным',
+      expected: 'баланс 9000 после списания 1000',
+      actual: '502, баланс не изменился',
+      signalIds: [symptom.id],
+      check: { kind: 'jsonPath', target: 'POST /payments', pointer: '$.balanceCents', expected: 9000 },
+    });
+    assert.equal(first.duplicateOf, undefined);
+    assert.equal(second.duplicateOf, undefined, 'общий симптом с другим оракулом — не дубль');
+    reported.push(first.candidateId, second.candidateId);
+
+    const signatures = await Promise.all(reported.map(async (candidateId) => JSON.parse(await readFile(
+      join(state.stateDir, 'runs', collisionRun.id, 'candidates', `${candidateId}.json`),
+      'utf8',
+    )) as { signature: string; signalSignature?: string }));
+    assert.equal(signatures[0]!.signalSignature, symptom.signature);
+    assert.equal(signatures[1]!.signalSignature, symptom.signature);
+    assert.notEqual(signatures[0]!.signature, signatures[1]!.signature);
+  } finally {
+    await handle.close();
+  }
+
+  for (const candidateId of reported) {
+    const reproduced = await reproduceCandidate({
+      runId: collisionRun.id,
+      candidateId,
+      attempts: 1,
+      stateDir: state.stateDir,
+      replay,
+    });
+    assert.equal(reproduced.reproduced, '1/1');
+    await triageCandidate({
+      runId: collisionRun.id,
+      candidateId,
+      verdict: 'confirmed',
+      reason: 'детерминированная приёмка коллизии сигнатур',
+      stateDir: state.stateDir,
+    });
+  }
+
+  const exportedFiles = await Promise.all(reported.map(async (bugId) =>
+    (await exportNodeTest({ runId: collisionRun.id, bugId, stateDir: state.stateDir })).file));
+  assert.notEqual(exportedFiles[0], exportedFiles[1], 'у разных багов разные файлы регрессий');
+  for (const file of exportedFiles) assert.match(await readFile(file, 'utf8'), /from 'vitest'/);
+
+  const finished = await finishRun(collisionRun.id, state.stateDir);
+  assert.match(finished.report, /report\.md$/);
 });
 
 test('the acceptance report lists the measured baseline', { skip }, async () => {

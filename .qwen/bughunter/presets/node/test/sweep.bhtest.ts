@@ -7,7 +7,7 @@ import { readFindings } from '@bughunter/core';
 import type { Candidate, Finding } from '@bughunter/core';
 
 import { nodeErrors } from '../src/errors.ts';
-import { nodeFindingKinds, scenarioWidget } from '../src/finding-kinds.ts';
+import { nodeFindingKinds, scenarioLabel } from '../src/finding-kinds.ts';
 import { targetOfRequest } from '../src/inventory.ts';
 import { NODE_PERSONAS, nodePersonas } from '../src/personas.ts';
 import { nodeProfile } from '../src/profile.ts';
@@ -55,31 +55,31 @@ test('sweep runs every declared scenario per endpoint and records findings', asy
   const profile = await nodeProfile.load(state.stateDir, state.config.profile) as NodeProfile;
   for (const scenario of state.config.scenarios) {
     const belongs = targetOfRequest(profile.endpoints, scenario.request.method, scenario.request.path);
-    assert.ok(belongs !== undefined, `сценарий вне инвентаря: ${scenarioWidget(scenario)}`);
-    assert.ok(result.visited.includes(belongs), `цель сценария не пройдена: ${scenarioWidget(scenario)}`);
+    assert.ok(belongs !== undefined, `сценарий вне инвентаря: ${scenarioLabel(scenario)}`);
+    assert.ok(result.visited.includes(belongs), `цель сценария не пройдена: ${scenarioLabel(scenario)}`);
   }
 
   const findings = await readFindings(runId, state.stateDir);
   assert.ok(findings.length >= 6, `находок всего ${findings.length}`);
   for (const finding of findings) {
     assert.ok(nodeFindingKinds.kinds.includes(finding.kind), `вид вне словаря: ${finding.kind}`);
-    assert.ok((finding.widget ?? '').length > 0, 'у находки обхода есть сценарий');
-    assert.ok(finding.responseHashes.length === 1);
+    assert.ok((finding.subject ?? '').length > 0, 'у находки обхода есть сценарий');
+    assert.ok(finding.evidenceHashes.length === 1);
   }
   // N3: неизвестный идентификатор отдаётся как 200 вместо 404.
   assert.ok(findings.some((finding) => finding.kind === 'status-unexpected'
-    && finding.widget === 'invalid GET /orders/ord-unknown'
+    && finding.subject === 'invalid GET /orders/ord-unknown'
     && finding.detail.includes('404')));
   // N1: нечисловое количество — 500 со стеком вместо 400.
   assert.ok(findings.some((finding) => finding.kind === 'status-unexpected'
-    && finding.widget === 'invalid POST /orders'
+    && finding.subject === 'invalid POST /orders'
     && finding.detail.includes('500')));
   assert.ok(findings.some((finding) => finding.kind === 'body-anomaly'
-    && finding.widget === 'invalid POST /orders'
+    && finding.subject === 'invalid POST /orders'
     && finding.detail.includes('unitPriceCents')));
   // N2: отрицательное количество принято (200 вместо 400).
   assert.ok(findings.some((finding) => finding.kind === 'status-unexpected'
-    && finding.widget === 'boundary POST /orders'));
+    && finding.subject === 'boundary POST /orders'));
   // N6: внутренности шлюза в теле ответа.
   assert.ok(findings.some((finding) => finding.kind === 'body-anomaly'
     && finding.targetRef === 'POST /payments'
@@ -174,7 +174,7 @@ test('promoting a finding creates a one-step journal and a candidate', async () 
   const runId = await newRun();
   await runSweep({ runId, stateDir: state.stateDir });
   const findings = await readFindings(runId, state.stateDir);
-  const finding = findings.find((entry) => entry.widget === 'invalid GET /orders/ord-unknown');
+  const finding = findings.find((entry) => entry.subject === 'invalid GET /orders/ord-unknown');
   assert.ok(finding, 'находка N3 не записана');
 
   const { candidateId } = await promoteFindingToCandidate({
@@ -241,10 +241,10 @@ test('personas, report format and error dictionary are wired', () => {
     id: 'finding-1',
     runId: 'run-report',
     targetRef: 'GET /orders/:id',
-    widget: 'invalid GET /orders/ord-unknown',
+    subject: 'invalid GET /orders/ord-unknown',
     kind: 'status-unexpected',
     detail: 'ожидался статус 404, получен 200',
-    responseHashes: ['hash-1'],
+    evidenceHashes: ['hash-1'],
     status: 'new',
     createdAt: '2026-11-15T00:00:00.000Z',
   };

@@ -37,7 +37,7 @@ function findingFixture(): Finding {
     targetRef: '/profile',
     kind: webPreset.findingKinds.kinds[0]!,
     detail: 'Ответ экрана изменился',
-    responseHashes: [],
+    evidenceHashes: [],
     status: 'new',
     createdAt: '2026-11-14T00:00:00.000Z',
   };

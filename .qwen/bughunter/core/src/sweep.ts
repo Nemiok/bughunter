@@ -113,7 +113,7 @@ export async function runSweep(options: SweepOptions): Promise<SweepResult> {
               targetRef: target,
               kind: 'reset-unsupported',
               detail: messageOf(error),
-              responseHashes: [],
+              evidenceHashes: [],
             });
           }
         }

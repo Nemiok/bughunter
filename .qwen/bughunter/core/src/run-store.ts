@@ -81,7 +81,7 @@ export async function createRun(
     projectRoot: string;
     stateDir: string;
     personas: readonly string[];
-    /** Инвентарь целей пресета: web передаёт список из своего конфига, node — список эндпоинтов. */
+    /** Инвентарь целей: его состав знает пресет, core получает только список. */
     targets: readonly string[];
   },
 ): Promise<Run> {
@@ -141,7 +141,7 @@ export type ExploreNextResult =
 const defaultStaleLeaseMs = 30 * 60 * 1000;
 
 function queueFor(run: Run, personas: readonly string[]): ExploreQueueItem[] {
-  // Прогоны, созданные до появления очереди, получают её лениво: уже завершённые маршруты не переисследуются.
+  // Прогоны, созданные до появления очереди, получают её лениво: уже завершённые цели не переисследуются.
   return run.exploreQueue ?? buildExploreQueue(run.targets.filter((target) => run.targetStages[target] !== 'done'), personas);
 }
 
@@ -657,8 +657,8 @@ export async function finishRun(runId: string, stateDir: string, format: ReportF
     throw new Error(`RUN_INCOMPLETE: ${pendingCandidates.map((candidate) => candidate.id).join(',')}`);
   }
   const run = await readRun(runId, stateDir);
-  // Завершённость проверяется по фактической области: у детерминированного обхода нет маршрутных
-  // стадий на весь список целей, но незакрытый sweep означал бы отчёт по неполному инвентарю.
+  // Завершённость проверяется по фактической области: у детерминированного обхода нет стадий
+  // исследования на весь список целей, но незакрытый sweep означал бы отчёт по неполному инвентарю.
   if (run.scope === 'sweep' && run.stages.sweep !== 'done') {
     throw new Error('RUN_INCOMPLETE: sweep');
   }

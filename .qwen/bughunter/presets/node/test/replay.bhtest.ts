@@ -131,11 +131,13 @@ test('replay of a signal-backed candidate matches by signature, not by check', a
     const matched = await replay.replay(steps, contextFor(candidate({
       target: 'POST /orders',
       signalIds: ['signal-one'],
-      signature,
+      // Композитная сигнатура кандидата включает оракул, поэтому повтор сверяется с сырой.
+      signature: 'composite-with-oracle',
+      signalSignature: signature,
       // Оракул не нарушен: статус и правда 500. Решает совпадение сигнатуры.
       check: { kind: 'status', target: 'POST /orders', expected: 500 },
     }), steps));
-    assert.equal(matched.matched, true, 'сигнатура симптома совпала');
+    assert.equal(matched.matched, true, 'сырая сигнатура симптома совпала');
 
     const missed = await replay.replay(steps, contextFor(candidate({
       target: 'POST /orders',

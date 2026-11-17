@@ -14,7 +14,7 @@ export const cliFindingKindsList = [
 ] as const;
 
 /** `widget` находки обхода — конкретная заявка сценария, а не шаблон цели. */
-export function scenarioWidget(scenario: CliScenario): string {
+export function scenarioLabel(scenario: CliScenario): string {
   return `${scenario.name}: ${scenario.argv.join(' ')}`;
 }
 
@@ -26,8 +26,8 @@ export const cliFindingKinds: FindingKinds = {
    */
   syntheticStep: async (finding: Finding, stateDir: string): Promise<SyntheticStep> => {
     const config = await loadCliConfig(stateDir);
-    const scenario = config.scenarios.find((candidate) => scenarioWidget(candidate) === finding.widget);
-    if (scenario === undefined) throw new Error(`SCENARIO_INVALID: ${finding.widget ?? '<без сценария>'}`);
+    const scenario = config.scenarios.find((candidate) => scenarioLabel(candidate) === finding.subject);
+    if (scenario === undefined) throw new Error(`SCENARIO_INVALID: ${finding.subject ?? '<без сценария>'}`);
     const step: CliStep = {
       id: randomUUID(),
       kind: 'command',

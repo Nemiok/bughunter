@@ -227,7 +227,8 @@ export const webTestRunner: TestRunner = {
     return { command: [detected.command, ...reporterArguments.map(shellArgument)].join(' ') };
   },
   parseReport(kind, raw, { testFile, exitCode }) {
-    return kind === playwrightKind ? playwrightSummary(raw, testFile, exitCode) : unitSummary(kind, raw, testFile);
+    const report = JSON.parse(raw) as unknown;
+    return kind === playwrightKind ? playwrightSummary(report, testFile, exitCode) : unitSummary(kind, report, testFile);
   },
   ownsProject: playwrightProject,
 };

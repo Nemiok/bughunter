@@ -108,7 +108,7 @@ export function classifyVerdict(summary: TestRunSummary | null, execution: Execu
   if (execution.timedOut) return verdict('broken', `Test run timed out\n${processDiagnostic}`);
   if (execution.error) return verdict('broken', `Test runner failed: ${execution.error.message}\n${processDiagnostic}`);
   if (summary === null) {
-    return verdict('broken', `No readable JSON test report (exit ${execution.code ?? execution.signal ?? 'unknown'})\n${processDiagnostic}`);
+    return verdict('broken', `No readable test report (exit ${execution.code ?? execution.signal ?? 'unknown'})\n${processDiagnostic}`);
   }
   const diagnostic = [summary.diagnostic, processDiagnostic].filter(Boolean).join('\n');
   if (!summary.singleFile) {
@@ -144,7 +144,7 @@ export async function verifyRed(
     const execution = await execute(launched.command, projectRoot, options.timeoutMs ?? defaultTimeoutMs, launched.env);
     let summary: TestRunSummary | null = null;
     try {
-      const raw = JSON.parse(await readFile(outputFile, 'utf8')) as unknown;
+      const raw = await readFile(outputFile, 'utf8');
       summary = options.runner.parseReport(kind, raw, { testFile: target, exitCode: execution.code });
     } catch {
       summary = null;

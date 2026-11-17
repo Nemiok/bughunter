@@ -328,7 +328,7 @@ test('sweep sees responses and projections on every screen', async () => {
     const captured = findings.find((finding) =>
       finding.targetRef === screen.template && finding.kind === 'response-captured');
     assert.ok(captured, `нет находки об ответах для ${screen.template}`);
-    assert.ok(captured.responseHashes.length >= 1, `пустой набор ответов у ${screen.template}`);
+    assert.ok(captured.evidenceHashes.length >= 1, `пустой набор ответов у ${screen.template}`);
     assert.match(captured.detail, /^Ответов: \d+, с телом: \d+$/);
   }
 
@@ -498,13 +498,13 @@ test('sweep records findings for a failing screen and keeps going', async () => 
 
   const degraded = findings.find((finding) => finding.targetRef === '/dashboard/:id');
   assert.equal(degraded?.kind, 'response-captured');
-  assert.ok((degraded?.responseHashes.length ?? 0) >= 1, 'ответ 500 тоже должен попасть в набор эталонов');
+  assert.ok((degraded?.evidenceHashes.length ?? 0) >= 1, 'ответ 500 тоже должен попасть в набор эталонов');
 
   // Тот же экран глазами сессии: ответ 500 даёт сигнал, а проекция виджета остаётся читаемой.
   const { manager, sessionId } = await openSession('/dashboard/1?bhScenario=error500');
   try {
     const state = await manager.state(sessionId, { screen: true });
-    const failed = state.signals.filter((signal) => signal.status === 500);
+    const failed = state.signals.filter((signal) => signal.details?.status === 500);
     // React StrictMode в dev-сборке вызывает эффекты дважды, поэтому запросов и сигналов два.
     // Фиксируем наличие и содержание сигнала, а не его количество.
     assert.ok(failed.length >= 1, `сигналы экрана: ${JSON.stringify(state.signals.map((signal) => signal.message))}`);

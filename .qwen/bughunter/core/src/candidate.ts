@@ -6,15 +6,32 @@ import type { TargetRef } from './preset.ts';
 import { candidatePath, writeJsonAtomic } from './run-store.ts';
 import type { Candidate, Check, StepBase } from './types.ts';
 
-/**
- * Сигнатура кандидата: у сигнала она уже есть, у нарушения инварианта считается из оракула и цели.
- * Числа в `check` не нормализуются — иначе разные поля и значения схлопнулись бы в одну сигнатуру.
- */
-export function candidateSignature(input: { signalSignature?: string; check?: Check; target: TargetRef }): string {
-  if (input.signalSignature !== undefined) return input.signalSignature;
-  if (input.check === undefined) throw new Error('CANDIDATE_ORACLE_REQUIRED');
-  const canonical = JSON.stringify([input.check.kind, input.check.target, input.check.expected ?? null, input.target]);
+function oracleSignature(check: Check, target: TargetRef): string {
+  const canonical = JSON.stringify([check.kind, check.target, check.expected ?? null, target]);
   return createHash('sha256').update(canonical).digest('hex');
+}
+
+/**
+ * Сигнатура кандидата: один источник — сырая сигнатура симптома или оракул; оба источника
+ * склеиваются, иначе два разных бага с общим симптомом схлопнулись бы в один.
+ * Числа в `check` не нормализуются — иначе разные значения схлопнулись бы в одну сигнатуру.
+ * `checkSignature` позволяет пресету учесть поля оракула, которых core не знает.
+ */
+export function candidateSignature(input: {
+  signalSignature?: string;
+  checkSignature?: string;
+  check?: Check;
+  target: TargetRef;
+}): string {
+  const oracle = input.checkSignature ?? (input.check === undefined ? undefined : oracleSignature(input.check, input.target));
+  if (input.signalSignature === undefined) {
+    if (oracle === undefined) throw new Error('CANDIDATE_ORACLE_REQUIRED');
+    return oracle;
+  }
+  if (oracle === undefined) return input.signalSignature;
+  return createHash('sha256')
+    .update(JSON.stringify(['signal+oracle', input.signalSignature, oracle, input.target]))
+    .digest('hex');
 }
 
 /**
@@ -50,6 +67,7 @@ export async function reportCandidate(input: {
   steps: StepBase[];
   signalIds: string[];
   signalSignature?: string;
+  checkSignature?: string;
   check?: Check;
   stateDir: string;
 }): Promise<{ candidateId: string; duplicateOf?: string }> {
@@ -66,6 +84,7 @@ export async function reportCandidate(input: {
     actual: input.actual,
     signalIds: [...input.signalIds],
     signature,
+    ...(input.signalSignature === undefined ? {} : { signalSignature: input.signalSignature }),
     steps: input.steps,
     artifacts: [],
     status: 'unprocessed',

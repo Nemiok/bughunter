@@ -155,7 +155,7 @@ export const nodeTestRunner: TestRunner = {
       : [selection, '--reporter=json', `--outputFile=${reportFile}`];
     return { command: [detected.command, ...reporterArguments.map(shellArgument)].join(' ') };
   },
-  parseReport: (_kind, raw, { testFile }) => unitSummary(raw, testFile),
+  parseReport: (_kind, raw, { testFile }) => unitSummary(JSON.parse(raw) as unknown, testFile),
   ownsProject: vitestProject,
 };
 

@@ -72,7 +72,7 @@ test('the report renders candidates and findings through the preset format', () 
     targetRef: '/a',
     kind: 'response-captured',
     detail: 'детали находки',
-    responseHashes: [],
+    evidenceHashes: [],
     status: 'new',
     createdAt,
   };

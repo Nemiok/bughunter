@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { Candidate, Check, Config, Finding, FindingDraft, Journal, Signal, StepBase } from './types.ts';
 
-/** Единица исследования: шаблон маршрута в web-пресете, эндпоинт в node-пресете. */
+/** Единица исследования: имя цели в инвентаре пресета. */
 export type TargetRef = string;
 
 /** Что существует в приложении и как это шаблонизируется. */
@@ -96,7 +96,8 @@ export type TestRunner = {
   kinds: string[];
   resolveKind(input: { projectRoot: string; testFile: string; requested?: string; unitCommand?: string | null }): Promise<string | null>;
   command(kind: string, input: { projectRoot: string; testFile: string; reportFile: string; unitCommand?: string | null }): Promise<{ command: string; env?: NodeJS.ProcessEnv }>;
-  parseReport(kind: string, raw: unknown, input: { testFile: string; exitCode: number | null }): TestRunSummary;
+  /** Отчёт передаётся сырым текстом: формат выбирает раннер, core его не разбирает. */
+  parseReport(kind: string, raw: string, input: { testFile: string; exitCode: number | null }): TestRunSummary;
   ownsProject(packageJson: unknown): boolean;
 };
 

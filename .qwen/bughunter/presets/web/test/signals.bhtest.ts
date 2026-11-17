@@ -103,10 +103,10 @@ test('scanSignals captures browser, network, text, and boundary signals and appl
     const signals = await scanSignals(page, config);
     assert.ok(signals.some((signal) => signal.kind === 'console' && signal.message === 'Order 123 failed'));
     assert.ok(signals.some((signal) => signal.kind === 'pageerror' && signal.message.includes('Profile 42 exploded')));
-    assert.ok(signals.some((signal) => signal.kind === 'response' && signal.status === 404));
-    assert.ok(signals.some((signal) => signal.kind === 'requestfailed' && signal.url?.includes('/failed')));
+    assert.ok(signals.some((signal) => signal.kind === 'response' && signal.details?.status === 404));
+    assert.ok(signals.some((signal) => signal.kind === 'requestfailed' && String(signal.details?.url).includes('/failed')));
     assert.ok(signals.some((signal) => signal.kind === 'errorBoundary' && signal.message.includes('Something went wrong')));
-    assert.ok(signals.every((signal) => !signal.message.includes('Ignore me') && !signal.url?.includes('/ignored')));
+    assert.ok(signals.every((signal) => !signal.message.includes('Ignore me') && !String(signal.details?.url).includes('/ignored')));
     assert.ok(signals.every((signal) => signal.signature.length === 64 && signal.target === '/'));
     assert.deepEqual(await scanSignals(page, config), []);
   } finally {

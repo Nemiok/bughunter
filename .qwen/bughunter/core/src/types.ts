@@ -3,7 +3,7 @@ export type Scope = 'diff' | 'full' | 'target' | 'sweep';
 
 /**
  * Общие поля `config.json`: их владеет core, а поля пресета объявляет его собственная схема,
- * расширяющая общую. Core не знает ни адреса стенда, ни того, что такое экран или эндпоинт.
+ * расширяющая общую. Core не знает ни адреса стенда, ни того, что означает цель.
  */
 export type Config = {
   baseBranch: string;
@@ -52,10 +52,12 @@ export type Finding = {
   id: string;
   runId: string;
   targetRef: string;
-  widget?: string;
+  /** Ярлык того, что сломано внутри цели; словарь ярлыков принадлежит пресету. */
+  subject?: string;
   kind: string;
   detail: string;
-  responseHashes: string[];
+  /** Отпечатки доказательств (ответов, снимков и т. п.); их смысл знает пресет. */
+  evidenceHashes: string[];
   status: 'new' | 'promoted' | 'dismissed';
   candidateId?: string;
   createdAt: string;
@@ -107,8 +109,8 @@ export type Signal = {
   target: string;
   timestamp: string;
   stack?: string;
-  url?: string;
-  status?: number;
+  /** Доменные подробности симптома; core их не читает. */
+  details?: Record<string, unknown>;
 };
 
 /**
@@ -118,7 +120,7 @@ export type Signal = {
  */
 export type StepBase = {
   id: string;
-  /** Вид шага — словарь пресета (web: `act`, `navigate`, `probe`). */
+  /** Вид шага — открытый словарь пресета; core его не интерпретирует. */
   kind: string;
   timestamp: string;
   targetRef: string;
@@ -146,7 +148,10 @@ export type Candidate = {
   expected: string;
   actual: string;
   signalIds: string[];
+  /** Полная сигнатура: у кандидата с сигналом и оракулом включает оба источника. */
   signature: string;
+  /** Сырая сигнатура симптома: по ней повтор находит тот же симптом, когда `signature` композитная. */
+  signalSignature?: string;
   steps: StepBase[];
   artifacts: string[];
   status: 'new' | 'unprocessed' | 'confirmed' | 'rejected' | 'duplicate';
