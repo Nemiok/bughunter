@@ -116,8 +116,9 @@ async function copyAuthoring(out) {
 
 async function copySetupLayer(server) {
   await mkdir(join(server, 'hosts'), { recursive: true });
-  await cp(join(pluginRoot, 'setup.mjs'), join(server, 'setup.mjs'));
-  await cp(join(pluginRoot, 'preflight.mjs'), join(server, 'preflight.mjs'));
+  for (const file of ['setup.mjs', 'setup-cli-core.mjs', 'setup-cli.mjs', 'preflight.mjs']) {
+    await cp(join(pluginRoot, file), join(server, file));
+  }
   await cp(join(pluginRoot, 'hosts', 'descriptor.mjs'), join(server, 'hosts', 'descriptor.mjs'));
 }
 
