@@ -22,7 +22,7 @@ test('full requires install, target and resume evidence on the same client', asy
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-'));
   await mkdir(join(evidenceDir, 'kimi'), { recursive: true });
   for (const gate of ['install', 'target', 'resume']) {
-    await writeFile(join(evidenceDir, 'kimi', `${gate}.json`), JSON.stringify({ ...base, gate }));
+    await writeFile(join(evidenceDir, 'kimi', `${gate}.json`), JSON.stringify({ ...base, gate, runId: 'run-1' }));
   }
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: 'a'.repeat(40), version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'full');
@@ -32,7 +32,7 @@ test('missing resume cannot be manually promoted to full', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-missing-'));
   await mkdir(join(evidenceDir, 'kimi'), { recursive: true });
   await writeFile(join(evidenceDir, 'kimi', 'install.json'), JSON.stringify({ ...base, gate: 'install' }));
-  await writeFile(join(evidenceDir, 'kimi', 'target.json'), JSON.stringify({ ...base, gate: 'target' }));
+  await writeFile(join(evidenceDir, 'kimi', 'target.json'), JSON.stringify({ ...base, gate: 'target', runId: 'run-1' }));
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: 'a'.repeat(40), version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'experimental');
 });
@@ -59,7 +59,7 @@ test('desktop requires its own desktop install and target evidence', async () =>
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-desktop-'));
   const commit = 'c'.repeat(40);
   for (const gate of ['install', 'target', 'resume']) {
-    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...base, gate, sourceCommit: commit });
+    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...base, gate, runId: 'run-1', sourceCommit: commit });
   }
   let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop').status, 'planned');
@@ -70,7 +70,7 @@ test('desktop requires its own desktop install and target evidence', async () =>
   const desktop = matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop');
   assert.equal(desktop.status, 'experimental');
   await writeEvidence(evidenceDir, 'kimi/desktop/target.json', {
-    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate: 'target', sourceCommit: commit,
+    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate: 'target', runId: 'run-1', sourceCommit: commit,
   });
   matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop').status, 'full');
@@ -81,7 +81,7 @@ test('a cli install does not substitute for a desktop install', async () => {
   const commit = 'd'.repeat(40);
   await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install', sourceCommit: commit });
   await writeEvidence(evidenceDir, 'kimi/desktop/target.json', {
-    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate: 'target', sourceCommit: commit,
+    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate: 'target', runId: 'run-1', sourceCommit: commit,
   });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop').status, 'experimental');
@@ -102,8 +102,8 @@ test('conflicting client versions across gates block the surface', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-version-'));
   const commit = 'a'.repeat(40);
   await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install', sourceCommit: commit });
-  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', sourceCommit: commit });
-  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', clientVersion: '2.5.4', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', runId: 'run-1', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', clientVersion: '2.5.4', runId: 'run-1', sourceCommit: commit });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   const entry = matrix.entries.find((item) => item.host === 'kimi' && item.surface === 'cli');
   assert.equal(entry.status, 'blocked');
@@ -118,6 +118,24 @@ test('target and resume gates require a non-empty runId', async () => {
   await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', sourceCommit: commit, runId: '' });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'experimental');
+});
+
+test('target and resume gates without a runId are not accepted', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-runid-omitted-'));
+  const commit = 'a'.repeat(40);
+  await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', runId: 'run-9', sourceCommit: commit });
+  let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  let entry = matrix.entries.find((item) => item.host === 'kimi' && item.surface === 'cli');
+  assert.deepEqual([...entry.evidence].sort(), ['install', 'resume']);
+  assert.equal(entry.status, 'experimental');
+  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', runId: 'run-9', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', sourceCommit: commit });
+  matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  entry = matrix.entries.find((item) => item.host === 'kimi' && item.surface === 'cli');
+  assert.deepEqual([...entry.evidence].sort(), ['install', 'target']);
+  assert.equal(entry.status, 'experimental');
 });
 
 test('qwen cli full requires marketplace install source and a post-refactor target run', async () => {
@@ -205,8 +223,8 @@ test('failed gates are ignored and cannot make a surface full', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-failed-'));
   const commit = 'a'.repeat(40);
   await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install', status: 'failed', sourceCommit: commit });
-  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', sourceCommit: commit });
-  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', runId: 'run-1', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', runId: 'run-1', sourceCommit: commit });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'experimental');
 });
@@ -216,7 +234,7 @@ test('evidence from another host or surface is not accepted', async () => {
   const commit = 'a'.repeat(40);
   await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install', host: 'claude', sourceCommit: commit });
   await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target', surface: 'desktop', sourceCommit: commit });
-  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', sourceCommit: commit });
+  await writeEvidence(evidenceDir, 'kimi/resume.json', { ...base, gate: 'resume', runId: 'run-1', sourceCommit: commit });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'experimental');
 });
@@ -239,7 +257,7 @@ test('matrix serialization stays stable for identical inputs', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-stable-'));
   const commit = 'a'.repeat(40);
   for (const gate of ['install', 'target', 'resume']) {
-    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...base, gate, sourceCommit: commit });
+    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...base, gate, runId: 'run-1', sourceCommit: commit });
   }
   const first = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   const second = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });

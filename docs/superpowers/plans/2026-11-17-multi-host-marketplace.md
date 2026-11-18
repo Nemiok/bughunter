@@ -1719,7 +1719,7 @@ test('full requires install, target and resume evidence on the same client', asy
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-'));
   await mkdir(join(evidenceDir, 'kimi'), { recursive: true });
   for (const gate of ['install', 'target', 'resume']) {
-    await writeFile(join(evidenceDir, 'kimi', `${gate}.json`), JSON.stringify({ ...base, gate }));
+    await writeFile(join(evidenceDir, 'kimi', `${gate}.json`), JSON.stringify({ ...base, gate, runId: 'run-1' }));
   }
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: 'a'.repeat(40), version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'full');
@@ -1729,7 +1729,7 @@ test('missing resume cannot be manually promoted to full', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-missing-'));
   await mkdir(join(evidenceDir, 'kimi'), { recursive: true });
   await writeFile(join(evidenceDir, 'kimi', 'install.json'), JSON.stringify({ ...base, gate: 'install' }));
-  await writeFile(join(evidenceDir, 'kimi', 'target.json'), JSON.stringify({ ...base, gate: 'target' }));
+  await writeFile(join(evidenceDir, 'kimi', 'target.json'), JSON.stringify({ ...base, gate: 'target', runId: 'run-1' }));
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: 'a'.repeat(40), version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'experimental');
 });

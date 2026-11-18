@@ -50,7 +50,8 @@ function acceptsGate(surface, gate, evidence) {
   if (evidence.host !== host || evidence.surface !== surface.split('/')[1]) return false;
   if (surface === 'qwen/cli' && gate === 'install' && evidence.source !== 'marketplace') return false;
   if (surface === 'qwen/cli' && gate === 'target' && evidence.afterHostRefactor !== true) return false;
-  if ((gate === 'target' || gate === 'resume') && typeof evidence.runId === 'string' && evidence.runId.trim() === '') {
+  if ((gate === 'target' || gate === 'resume')
+    && (typeof evidence.runId !== 'string' || evidence.runId.trim() === '')) {
     return false;
   }
   return true;
