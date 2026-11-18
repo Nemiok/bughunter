@@ -22,11 +22,11 @@ async function writeEvidence(evidenceDir, relPath, data) {
 
 async function makeKimiFullEvidence(evidenceDir) {
   for (const gate of ['install', 'target', 'resume']) {
-    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...kimiBase, gate });
+    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...kimiBase, gate, runId: 'run-1' });
   }
   for (const gate of ['install', 'target']) {
     await writeEvidence(evidenceDir, `kimi/desktop/${gate}.json`, {
-      host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate, sourceCommit: COMMIT,
+      host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate, runId: 'run-1', sourceCommit: COMMIT,
     });
   }
 }
