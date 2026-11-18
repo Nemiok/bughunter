@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promi
 import { join, relative, resolve, sep } from 'node:path';
 
 import { claudeHost, claudeManifest } from './hosts/claude.mjs';
+import { extensionHostFromCapabilities, extensionManifest } from './hosts/extension.mjs';
 import { kimiHost, kimiManifest } from './hosts/kimi.mjs';
 import { qwenHost } from './hosts/qwen.mjs';
 import { buildClaudeMarketplace, buildQwenMarketplace } from './marketplace.mjs';
@@ -19,12 +20,40 @@ const version = JSON.parse(await readFile(join(pluginRoot, 'package.json'), 'utf
 
 const args = process.argv.slice(2);
 const requested = args.includes('--host') ? args[args.indexOf('--host') + 1] : 'qwen';
-if (!['qwen', 'kimi', 'claude', 'all'].includes(requested)) throw new Error(`HOST_INVALID: ${requested}`);
+const EXTENSION_HOSTS = ['qwen-extension', 'gigacode'];
+if (!['qwen', 'kimi', 'claude', 'all', ...EXTENSION_HOSTS].includes(requested)) {
+  throw new Error(`HOST_INVALID: ${requested}`);
+}
+const reportPath = args.includes('--capability-report') ? args[args.indexOf('--capability-report') + 1] : undefined;
+if (EXTENSION_HOSTS.includes(requested) && reportPath === undefined) {
+  throw new Error('CAPABILITY_REPORT_REQUIRED');
+}
+let extensionHost;
+if (reportPath !== undefined) {
+  if (!EXTENSION_HOSTS.includes(requested)) throw new Error(`CAPABILITY_REPORT_UNEXPECTED: ${requested}`);
+  const report = JSON.parse(await readFile(reportPath, 'utf8'));
+  extensionHost = extensionHostFromCapabilities(report);
+  const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim();
+  if (extensionHost.runtimeSourceCommit !== head) throw new Error('STALE_CAPABILITY_REPORT');
+  if (extensionHost.id !== requested) {
+    throw new Error(`CAPABILITY_REPORT_HOST_MISMATCH: ${requested} <- ${extensionHost.id}`);
+  }
+}
 const hosts = requested === 'all'
   ? [qwenHost, kimiHost, claudeHost]
-  : [requested === 'qwen' ? qwenHost : requested === 'kimi' ? kimiHost : claudeHost];
+  : EXTENSION_HOSTS.includes(requested)
+    ? [extensionHost]
+    : [requested === 'qwen' ? qwenHost : requested === 'kimi' ? kimiHost : claudeHost];
 
 async function writeManifest(host, out) {
+  if (host.channel === 'extensions') {
+    await writeFile(
+      join(out, host.manifestName),
+      `${JSON.stringify(extensionManifest({ ...host, version }), null, 2)}\n`,
+      'utf8',
+    );
+    return;
+  }
   if (host.id === 'kimi') {
     await writeFile(join(out, 'kimi.plugin.json'), `${JSON.stringify(kimiManifest(version), null, 2)}\n`, 'utf8');
     return;
@@ -152,11 +181,13 @@ async function main() {
       await renderPromptLayer({ host, source, workspace, out });
       await writeManifest(host, out);
       await copyAuthoring(out);
-      const readme = host.id === 'kimi'
-        ? join(pluginRoot, 'hosts', 'kimi.README.md')
-        : host.id === 'claude'
-          ? join(pluginRoot, 'hosts', 'claude.README.md')
-          : join(pluginRoot, 'README.md');
+      const readme = host.channel === 'extensions'
+        ? join(pluginRoot, 'hosts', 'extension.README.md')
+        : host.id === 'kimi'
+          ? join(pluginRoot, 'hosts', 'kimi.README.md')
+          : host.id === 'claude'
+            ? join(pluginRoot, 'hosts', 'claude.README.md')
+            : join(pluginRoot, 'README.md');
       const readmeText = await readFile(readme, 'utf8');
       await writeFile(
         join(out, 'README.md'),
@@ -187,7 +218,7 @@ async function main() {
           marketplaceRoot: join(pluginRoot, 'dist', 'claude-marketplace'),
           version,
         });
-      } else {
+      } else if (host.id === 'kimi') {
         await cp(join(pluginRoot, 'hooks'), join(out, 'hooks'), { recursive: true });
         await writeKimiMarketplace();
       }

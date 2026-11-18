@@ -40,7 +40,7 @@ test('missing resume cannot be manually promoted to full', async () => {
 test('no evidence leaves the surface planned', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-planned-'));
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: 'a'.repeat(40), version: '0.2.0' });
-  assert.equal(matrix.entries.length, 6);
+  assert.equal(matrix.entries.length, 8);
   for (const entry of matrix.entries) {
     assert.equal(entry.status, 'planned');
     assert.equal(entry.clientVersion, undefined);
@@ -263,4 +263,35 @@ test('matrix serialization stays stable for identical inputs', async () => {
   const second = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(JSON.stringify(first), JSON.stringify(second));
   assert.deepEqual(Object.keys(first).sort(), ['entries', 'sourceCommit', 'version']);
+});
+
+test('native extension surfaces require install, workspace and model gates', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-extension-'));
+  const commit = 'a'.repeat(40);
+  const baseExt = {
+    host: 'qwen', surface: 'extension', clientVersion: 'fixture', status: 'passed', sourceCommit: commit,
+  };
+  await writeEvidence(evidenceDir, 'qwen/extension/install.json', { ...baseExt, gate: 'install' });
+  let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  let entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'extension');
+  assert.equal(entry.artifact, 'qwen-extension/bughunter.zip');
+  assert.equal(entry.status, 'experimental');
+  assert.deepEqual(entry.evidence, ['install']);
+
+  await writeEvidence(evidenceDir, 'qwen/extension/workspace.json', {
+    ...baseExt, gate: 'workspace', workspaceResolved: false, filesWritten: 1,
+  });
+  matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'extension');
+  assert.deepEqual(entry.evidence, ['install']);
+
+  await writeEvidence(evidenceDir, 'qwen/extension/workspace.json', {
+    ...baseExt, gate: 'workspace', workspaceResolved: true, filesWritten: 0,
+  });
+  await writeEvidence(evidenceDir, 'qwen/extension/target.json', { ...baseExt, gate: 'target', runId: 'run-1' });
+  await writeEvidence(evidenceDir, 'qwen/extension/resume.json', { ...baseExt, gate: 'resume', runId: 'run-1' });
+  matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'extension');
+  assert.deepEqual([...entry.evidence].sort(), ['install', 'resume', 'target', 'workspace']);
+  assert.equal(entry.status, 'full');
 });

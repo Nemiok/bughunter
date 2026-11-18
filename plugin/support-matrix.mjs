@@ -8,6 +8,8 @@ export const SURFACES = [
   'claude/cli',
   'claude/desktop',
   'qwen/mcp-only',
+  'qwen/extension',
+  'gigacode/extension',
 ];
 
 export const requirements = {
@@ -17,6 +19,8 @@ export const requirements = {
   'kimi/desktop': ['install', 'target'],
   'claude/desktop': ['install', 'target'],
   'qwen/mcp-only': ['install', 'safety', 'workspace'],
+  'qwen/extension': ['install', 'workspace', 'target', 'resume'],
+  'gigacode/extension': ['install', 'workspace', 'target', 'resume'],
 };
 
 export const STATUS_LEVELS = {
@@ -35,12 +39,15 @@ const ARTIFACTS = {
   'claude/cli': 'claude/bughunter.zip',
   'claude/desktop': 'claude/bughunter.zip',
   'qwen/mcp-only': 'qwen-mcp-only/bughunter-mcp.zip',
+  'qwen/extension': 'qwen-extension/bughunter.zip',
+  'gigacode/extension': 'gigacode/bughunter.zip',
 };
 
 function evidencePathFor(evidenceDir, surface, gate) {
   const [host, kind] = surface.split('/');
   if (kind === 'desktop') return join(evidenceDir, host, 'desktop', `${gate}.json`);
   if (kind === 'mcp-only') return join(evidenceDir, host, 'mcp-only', `${gate}.json`);
+  if (kind === 'extension') return join(evidenceDir, host, 'extension', `${gate}.json`);
   return join(evidenceDir, host, `${gate}.json`);
 }
 
@@ -50,6 +57,8 @@ function acceptsGate(surface, gate, evidence) {
   if (evidence.host !== host || evidence.surface !== surface.split('/')[1]) return false;
   if (surface === 'qwen/cli' && gate === 'install' && evidence.source !== 'marketplace') return false;
   if (surface === 'qwen/cli' && gate === 'target' && evidence.afterHostRefactor !== true) return false;
+  if (gate === 'workspace' && surface.split('/')[1] === 'extension'
+    && (evidence.workspaceResolved !== true || evidence.filesWritten !== 0)) return false;
   if ((gate === 'target' || gate === 'resume')
     && (typeof evidence.runId !== 'string' || evidence.runId.trim() === '')) {
     return false;

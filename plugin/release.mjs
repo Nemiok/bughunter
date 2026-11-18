@@ -12,7 +12,16 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const COMMIT_HEX = /^[0-9a-f]{40}$/;
 
 const ALL_HOSTS = ['qwen', 'kimi', 'claude', 'qwen-mcp-only'];
-const ZIP_NAMES = { qwen: 'bughunter.zip', kimi: 'bughunter.zip', claude: 'bughunter.zip', 'qwen-mcp-only': 'bughunter-mcp.zip' };
+const OPTIONAL_HOSTS = ['qwen-extension', 'gigacode'];
+const KNOWN_HOSTS = [...ALL_HOSTS, ...OPTIONAL_HOSTS];
+const ZIP_NAMES = {
+  qwen: 'bughunter.zip',
+  kimi: 'bughunter.zip',
+  claude: 'bughunter.zip',
+  'qwen-mcp-only': 'bughunter-mcp.zip',
+  'qwen-extension': 'bughunter.zip',
+  gigacode: 'bughunter.zip',
+};
 const EXPERIMENTAL_NOTE = 'experimental; full workflow not certified';
 const RELEASE_ROOT = resolve(import.meta.dirname);
 const REPO_ROOT = resolve(RELEASE_ROOT, '..');
@@ -22,6 +31,8 @@ const MANIFEST_FILES = {
   kimi: 'kimi.plugin.json',
   claude: join('.claude-plugin', 'plugin.json'),
   'qwen-mcp-only': 'plugin.json',
+  'qwen-extension': 'qwen-extension.json',
+  gigacode: 'gigacode-extension.json',
 };
 
 export function defaultArtifactDirs() {
@@ -30,6 +41,8 @@ export function defaultArtifactDirs() {
     kimi: join(RELEASE_ROOT, 'dist', 'kimi', 'bughunter'),
     claude: join(RELEASE_ROOT, 'dist', 'claude', 'bughunter'),
     'qwen-mcp-only': join(RELEASE_ROOT, 'dist', 'qwen', 'bughunter-mcp'),
+    'qwen-extension': join(RELEASE_ROOT, 'dist', 'qwen-extension', 'bughunter'),
+    gigacode: join(RELEASE_ROOT, 'dist', 'gigacode', 'bughunter'),
   };
 }
 
@@ -53,7 +66,7 @@ function resolveHosts(requested) {
     ? ALL_HOSTS
     : Array.isArray(requested) ? requested : [requested];
   for (const host of hosts) {
-    if (!ALL_HOSTS.includes(host)) throw new Error(`HOST_INVALID: ${host}`);
+    if (!KNOWN_HOSTS.includes(host)) throw new Error(`HOST_INVALID: ${host}`);
   }
   return hosts;
 }
@@ -62,6 +75,8 @@ function surfacesFor(host) {
   if (host === 'qwen') return ['qwen/cli'];
   if (host === 'kimi') return ['kimi/cli', 'kimi/desktop'];
   if (host === 'claude') return ['claude/cli', 'claude/desktop'];
+  if (host === 'qwen-extension') return ['qwen/extension'];
+  if (host === 'gigacode') return ['gigacode/extension'];
   return ['qwen/mcp-only'];
 }
 

@@ -14,7 +14,7 @@ function assertNoUnknownTokens(text, where) {
 }
 
 function hostText(text, host) {
-  const rendered = text
+  let rendered = text
     .replaceAll('<optIn>', host.optInPath)
     .replaceAll('<setupTool>', `${host.mcpToolPrefix}bh_setup`)
     .replaceAll('<reload>', host.reloadInstruction)
@@ -26,6 +26,9 @@ function hostText(text, host) {
     .replaceAll('.qwen/bughunter/presets/node/state/', `${host.stateRoot}/node/`)
     .replaceAll('.qwen/bughunter/state/', `${host.stateRoot}/`)
     .replaceAll('/plugins reload', host.reloadInstruction);
+  for (const [canonical, observed] of Object.entries(host.toolNames ?? {})) {
+    rendered = rendered.replaceAll(new RegExp(`\\b${canonical}\\b`, 'g'), observed);
+  }
   assertNoUnknownTokens(rendered, host.id);
   return rendered;
 }

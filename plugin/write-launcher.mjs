@@ -7,5 +7,9 @@ export async function writeLauncher({ pluginRoot, server, host, version }) {
   await writeFile(join(server, 'mcp.mjs'), launcher.replaceAll('__PLUGIN_VERSION__', version));
   await cp(join(pluginRoot, 'hosts', 'descriptor.mjs'), join(server, 'descriptor.mjs'));
   await cp(join(pluginRoot, 'hosts', 'descriptor.mjs'), join(server, 'hosts', 'descriptor.mjs'));
-  await cp(join(pluginRoot, 'hosts', `${host.id}.mjs`), join(server, 'host.mjs'));
+  await writeFile(
+    join(server, 'host.mjs'),
+    `export const host = Object.freeze(${JSON.stringify(host, null, 2)});\n`,
+    'utf8',
+  );
 }
