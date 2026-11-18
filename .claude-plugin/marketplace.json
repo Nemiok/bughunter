@@ -1,0 +1,27 @@
+{
+  "name": "bughunter-market",
+  "description": "Bughunter releases: evidence-based bug hunting for Qwen Code",
+  "owner": {
+    "name": "Bughunter"
+  },
+  "plugins": [
+    {
+      "name": "bughunter",
+      "description": "Evidence-based bug hunting with reproduction and red regression tests. (experimental; full workflow not certified)",
+      "version": "0.2.0",
+      "source": {
+        "source": "archive",
+        "url": "https://github.com/Nemiok/bughunter/releases/download/0.2.0/bughunter-qwen.zip",
+        "sha256": "5fa7fdc816b0e8c034fbac79d0546d1663874d8d3f03866a573353ed59a425ba"
+      },
+      "repository": "https://github.com/Nemiok/bughunter",
+      "homepage": "https://github.com/Nemiok/bughunter",
+      "author": {
+        "name": "Bughunter"
+      },
+      "metadata": {
+        "payloadCommit": "3f85ac750129cf0cedb16f8f95c20796fb298192"
+      }
+    }
+  ]
+}
