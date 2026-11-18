@@ -19,6 +19,7 @@ const project = join(root, 'project');
 const nodeProject = join(root, 'node-project');
 const marketplaceRoot = join(root, 'marketplace');
 const evidencePath = join(pluginRoot, 'evidence', 'claude', 'install.json');
+const pluginVersion = JSON.parse(await readFile(join(pluginRoot, 'package.json'), 'utf8')).version;
 
 function claudeEnv() {
   return { ...process.env, CLAUDE_CONFIG_DIR: configDir, HOME: home };
@@ -81,7 +82,7 @@ try {
 
   const installed = installedEntry(JSON.parse(run(claude, ['plugin', 'list', '--json'], { env: claudeEnv() }).stdout));
   assert.ok(installed, 'bughunter@bughunter-market must be installed');
-  assert.equal(installed.version, '0.1.0');
+  assert.equal(installed.version, pluginVersion);
   assert.equal(installed.enabled, true);
   const serverRoot = (entry) => join(entry.installPath, 'server');
 
