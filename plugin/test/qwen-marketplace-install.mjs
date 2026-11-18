@@ -5,7 +5,6 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { withMcpClient } from './mcp-client.mjs';
 import { qwenInit, summarize } from './qwen-harness.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
@@ -63,15 +62,52 @@ try {
   assert.deepEqual(dormant.mcp, ['bughunter:connected']);
   assert.deepEqual(dormant.bhTools, ['mcp__bughunter__bh_setup']);
 
-  const setup = await withMcpClient(join(marketplaceRoot, 'plugins', 'bughunter', 'server'), project, (client) =>
-    client.callTool({ name: 'bh_setup', arguments: { preset: 'web' } }));
-  assert.equal(setup.isError, undefined);
-  const configPath = JSON.parse(setup.content[0].text).configPath;
+  const installPath = installed.find((plugin) => plugin.id === 'bughunter@bughunter-market').installPath;
+  run(process.execPath, [
+    join(installPath, 'server', 'setup-cli.mjs'),
+    '--action', 'create', '--project-root', project, '--preset', 'web',
+  ]);
+  run(process.execPath, [
+    join(installPath, 'server', 'setup-cli.mjs'),
+    '--action', 'validate', '--project-root', project, '--preset', 'web',
+  ]);
+  const active = summarize(await qwenInit({ qwen, configDir, project }));
+  assert.equal(active.bhTools.length, 19);
+  assert.equal(active.skills.length, 7);
+  assert.equal(active.agents.length, 6);
+  assert.equal(active.bhTools.includes('mcp__bughunter__bh_setup'), false);
+
+  const configPath = join(project, '.qwen', 'bughunter', 'state', 'web', 'config.json');
   await writeFile(configPath, '{"sentinel":"preserve-me"}\n');
   await mkdir(join(project, '.qwen', 'bughunter', 'state', 'web', 'runs'), { recursive: true });
   await writeFile(join(project, '.qwen', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), '{}\n');
   await mkdir(join(project, '.qwen', 'bughunter', 'state', 'web', 'auth'), { recursive: true });
   await writeFile(join(project, '.qwen', 'bughunter', 'state', 'web', 'auth', 'README'), 'not-a-credential\n');
+
+  const nodeProject = join(root, 'node-project');
+  await mkdir(join(nodeProject, '.qwen'), { recursive: true });
+  await writeFile(join(nodeProject, '.qwen', 'settings.json'), JSON.stringify({
+    permissions: { allow: ['mcp__bughunter__*', 'Read'] },
+  }));
+  const configSettingsPath = join(configDir, 'settings.json');
+  const configSettings = JSON.parse(await readFile(configSettingsPath, 'utf8'));
+  configSettings.permissions.trustDirectories = [project, nodeProject];
+  await writeFile(configSettingsPath, JSON.stringify(configSettings, null, 2));
+  run(process.execPath, [
+    join(installPath, 'server', 'setup-cli.mjs'),
+    '--action', 'create', '--project-root', nodeProject, '--preset', 'node',
+  ]);
+  const nodeProfileDir = join(nodeProject, '.qwen', 'bughunter', 'state', 'node', 'profiles', 'node-api-app');
+  await mkdir(nodeProfileDir, { recursive: true });
+  await writeFile(join(nodeProfileDir, 'index.ts'), `export default {
+    endpoints: [{ template: '/health', method: 'GET', samplePath: '/health' }],
+  };\n`);
+  run(process.execPath, [
+    join(installPath, 'server', 'setup-cli.mjs'),
+    '--action', 'validate', '--project-root', nodeProject, '--preset', 'node',
+  ]);
+  const nodeActive = summarize(await qwenInit({ qwen, configDir, project: nodeProject }));
+  assert.equal(nodeActive.bhTools.length, 16);
 
   const pluginManifestPath = join(marketplaceRoot, 'plugins', 'bughunter', '.claude-plugin', 'plugin.json');
   const pluginManifest = JSON.parse(await readFile(pluginManifestPath, 'utf8'));

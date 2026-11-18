@@ -25,6 +25,7 @@ function run(command, args, options = {}) {
 
 try {
   run(process.execPath, [join(pluginRoot, 'build.mjs')], { cwd: pluginRoot });
+  assert.ok(existsSync(join(dist, 'server', 'setup-cli.mjs')), 'installed artifact must ship the setup CLI');
   const entry = await readFile(join(dist, 'skills', 'bughunter', 'SKILL.md'), 'utf8');
   assert.match(entry, /<card>=bughunter:bughunter-preset-card-web/);
   assert.match(entry, /<explorer>=bughunter:bh-explorer-node/);
