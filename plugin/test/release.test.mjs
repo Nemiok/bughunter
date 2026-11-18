@@ -1,18 +1,30 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
 import { buildSupportMatrix } from '../support-matrix.mjs';
-import { createRelease, renderReleaseSummary } from '../release.mjs';
+import { createRelease, defaultArtifactDirs, renderReleaseSummary } from '../release.mjs';
+
+const pluginRoot = resolve(import.meta.dirname, '..');
 
 const COMMIT = 'a'.repeat(40);
 
 const kimiBase = {
   host: 'kimi', surface: 'cli', clientVersion: '2.5.3', status: 'passed', sourceCommit: COMMIT,
 };
+
+const MANIFEST_FILES = {
+  qwen: '.claude-plugin/plugin.json',
+  kimi: 'kimi.plugin.json',
+  claude: '.claude-plugin/plugin.json',
+  'qwen-mcp-only': 'plugin.json',
+};
+
+const ZIP_NAMES = { qwen: 'bughunter.zip', kimi: 'bughunter.zip', claude: 'bughunter.zip', 'qwen-mcp-only': 'bughunter-mcp.zip' };
 
 async function writeEvidence(evidenceDir, relPath, data) {
   const path = join(evidenceDir, ...relPath.split('/'));
@@ -31,10 +43,11 @@ async function makeKimiFullEvidence(evidenceDir) {
   }
 }
 
-async function makeArtifact(root, name, file = 'plugin.json') {
+async function makeArtifact(root, name, host, version = '0.2.0') {
   const dir = join(root, name);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, file), '{"name":"bughunter"}\n');
+  const manifestPath = join(dir, ...MANIFEST_FILES[host].split('/'));
+  await mkdir(join(manifestPath, '..'), { recursive: true });
+  await writeFile(manifestPath, `${JSON.stringify({ name: 'bughunter', version })}\n`);
   return dir;
 }
 
@@ -46,10 +59,10 @@ async function baseReleaseOptions() {
   const outDir = join(root, 'release-out');
   await makeKimiFullEvidence(evidenceDir);
   const artifacts = {
-    qwen: await makeArtifact(root, 'qwen-artifact'),
-    kimi: await makeArtifact(root, 'kimi-artifact'),
-    claude: await makeArtifact(root, 'claude-artifact'),
-    'qwen-mcp-only': await makeArtifact(root, 'mcp-artifact'),
+    qwen: await makeArtifact(root, 'qwen-artifact', 'qwen'),
+    kimi: await makeArtifact(root, 'kimi-artifact', 'kimi'),
+    claude: await makeArtifact(root, 'claude-artifact', 'claude'),
+    'qwen-mcp-only': await makeArtifact(root, 'mcp-artifact', 'qwen-mcp-only'),
   };
   await writeFile(join(root, 'LICENSE'), 'MIT\n');
   await writeFile(join(root, 'THIRD_PARTY_NOTICES.md'), '# Notices\n');
@@ -97,9 +110,10 @@ test('sha256 sidecar matches a recomputation over the zip bytes', async () => {
 });
 
 test('version and source must match across matrix, summary and compatibility', async () => {
-  const { evidenceDir, outDir, artifacts, licenseFiles } = await baseReleaseOptions();
+  const { root, evidenceDir, outDir, artifacts, licenseFiles } = await baseReleaseOptions();
+  const versioned = { ...artifacts, kimi: await makeArtifact(root, 'kimi-artifact-030', 'kimi', '0.3.0') };
   const result = await createRelease({
-    version: '0.3.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    version: '0.3.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts: versioned,
     hosts: ['kimi'], git: cleanGit(), licenseFiles,
   });
   const summary = JSON.parse(await readFile(join(outDir, 'release-summary.json'), 'utf8'));
@@ -173,7 +187,7 @@ test('missing Claude evidence does not block a qwen-only local bundle', async ()
   };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
-  const artifacts = { qwen: await makeArtifact(root, 'qwen-artifact') };
+  const artifacts = { qwen: await makeArtifact(root, 'qwen-artifact', 'qwen') };
   const result = await createRelease({
     version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
     hosts: ['qwen'], git: cleanGit(),
@@ -206,7 +220,7 @@ test('experimental marketplaces carry the experimental disclaimer', async () => 
   };
   await writeEvidence(evidenceDir, 'claude/install.json', { ...claudeBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'claude/target.json', { ...claudeBase, gate: 'target', runId: 'run-1' });
-  const artifacts = { claude: await makeArtifact(root, 'claude-artifact') };
+  const artifacts = { claude: await makeArtifact(root, 'claude-artifact', 'claude') };
   const result = await createRelease({
     version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
     hosts: ['claude'], git: cleanGit(),
@@ -236,4 +250,59 @@ test('support matrix import stays shared between the two modules', async () => {
   const { evidenceDir } = await baseReleaseOptions();
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: COMMIT, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'full');
+});
+
+test('default artifact mapping matches the layout build.mjs writes', async () => {
+  const dirs = defaultArtifactDirs();
+  assert.equal(dirs.qwen, join(pluginRoot, 'dist', 'bughunter'));
+  assert.equal(dirs.kimi, join(pluginRoot, 'dist', 'kimi', 'bughunter'));
+  assert.equal(dirs.claude, join(pluginRoot, 'dist', 'claude', 'bughunter'));
+  assert.equal(
+    dirs['qwen-mcp-only'],
+    join(pluginRoot, 'dist', 'qwen', 'bughunter-mcp'),
+    'release default must point at the portable artifact build.mjs produces',
+  );
+  const buildSource = await readFile(join(pluginRoot, 'build.mjs'), 'utf8');
+  assert.ok(
+    buildSource.includes("out: join(pluginRoot, 'dist', 'qwen', 'bughunter-mcp')"),
+    'regression guard: build.mjs must keep writing the MCP-only artifact where release.mjs reads it',
+  );
+});
+
+test('a manifest version different from the release version fails before zipping', async () => {
+  for (const host of ['qwen', 'kimi', 'claude', 'qwen-mcp-only']) {
+    const root = await mkdtemp(join(tmpdir(), `bh-release-mismatch-${host}-`));
+    const evidenceDir = join(root, 'evidence');
+    const outDir = join(root, 'release-out');
+    const artifact = await makeArtifact(root, `${host}-artifact`, host, '0.1.0');
+    await assert.rejects(
+      createRelease({
+        version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir,
+        artifacts: { [host]: artifact }, hosts: [host], git: cleanGit(),
+        licenseFiles: { license: join(outDir, 'LICENSE'), notices: join(outDir, 'THIRD_PARTY_NOTICES.md') },
+      }),
+      /VERSION_MISMATCH/,
+    );
+    assert.equal(
+      existsSync(join(outDir, host, ZIP_NAMES[host])),
+      false,
+      `${host}: zip must not be written before the manifest version check`,
+    );
+  }
+});
+
+test('an artifact without its host manifest is refused', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'bh-release-nomanifest-'));
+  const evidenceDir = join(root, 'evidence');
+  const outDir = join(root, 'release-out');
+  const bare = join(root, 'kimi-artifact');
+  await mkdir(bare, { recursive: true });
+  await assert.rejects(
+    createRelease({
+      version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir,
+      artifacts: { kimi: bare }, hosts: ['kimi'], git: cleanGit(),
+      licenseFiles: { license: join(outDir, 'LICENSE'), notices: join(outDir, 'THIRD_PARTY_NOTICES.md') },
+    }),
+    /MANIFEST_MISSING/,
+  );
 });

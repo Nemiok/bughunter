@@ -16,6 +16,22 @@ const EXPERIMENTAL_NOTE = 'experimental; full workflow not certified';
 const RELEASE_ROOT = resolve(import.meta.dirname);
 const REPO_ROOT = resolve(RELEASE_ROOT, '..');
 
+const MANIFEST_FILES = {
+  qwen: join('.claude-plugin', 'plugin.json'),
+  kimi: 'kimi.plugin.json',
+  claude: join('.claude-plugin', 'plugin.json'),
+  'qwen-mcp-only': 'plugin.json',
+};
+
+export function defaultArtifactDirs() {
+  return {
+    qwen: join(RELEASE_ROOT, 'dist', 'bughunter'),
+    kimi: join(RELEASE_ROOT, 'dist', 'kimi', 'bughunter'),
+    claude: join(RELEASE_ROOT, 'dist', 'claude', 'bughunter'),
+    'qwen-mcp-only': join(RELEASE_ROOT, 'dist', 'qwen', 'bughunter-mcp'),
+  };
+}
+
 function defaultGit() {
   return {
     revParseHead: () => {
@@ -62,6 +78,26 @@ async function exists(path) {
   } catch {
     return false;
   }
+}
+
+async function readManifestVersion(artifactDir, host) {
+  const manifestPath = join(artifactDir, MANIFEST_FILES[host]);
+  let raw;
+  try {
+    raw = await readFile(manifestPath, 'utf8');
+  } catch {
+    throw new Error(`MANIFEST_MISSING: ${host} -> ${manifestPath}`);
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(raw);
+  } catch {
+    throw new Error(`MANIFEST_INVALID: ${host} -> ${manifestPath}`);
+  }
+  if (typeof manifest.version !== 'string' || manifest.version.trim() === '') {
+    throw new Error(`MANIFEST_INVALID: ${host} has no usable version`);
+  }
+  return manifest.version;
 }
 
 async function zipDirectory(artifactDir, zipPath) {
@@ -172,12 +208,6 @@ export async function createRelease({
   const configured = (releaseBaseUrl !== undefined && releaseBaseUrl !== '') || (marketplaceRepo !== undefined && marketplaceRepo !== '');
   const publication = licenseError !== undefined ? 'blocked' : configured ? 'configured' : 'not-configured';
 
-  const artifactDirs = {
-    qwen: join(RELEASE_ROOT, 'dist', 'bughunter'),
-    kimi: join(RELEASE_ROOT, 'dist', 'kimi', 'bughunter'),
-    claude: join(RELEASE_ROOT, 'dist', 'claude', 'bughunter'),
-    'qwen-mcp-only': join(RELEASE_ROOT, 'dist', 'qwen-mcp-only'),
-  };
   const hostStatus = {};
   const bySurface = Object.fromEntries(matrix.entries.map((entry) => [`${entry.host}/${entry.surface}`, entry]));
   for (const host of requestedHosts) {
@@ -187,10 +217,22 @@ export async function createRelease({
       : states.every((state) => state === 'full' || state === 'mcp-only') ? 'ready' : 'experimental';
   }
 
+  const resolvedArtifacts = {};
+  for (const host of requestedHosts) {
+    const artifactDir = artifacts[host] ?? defaultArtifactDirs()[host];
+    if (!(await exists(artifactDir))) throw new Error(`ARTIFACT_MISSING: ${host} -> ${artifactDir}`);
+    resolvedArtifacts[host] = artifactDir;
+  }
+  for (const host of requestedHosts) {
+    const manifestVersion = await readManifestVersion(resolvedArtifacts[host], host);
+    if (manifestVersion !== version) {
+      throw new Error(`VERSION_MISMATCH: ${host} manifest ${manifestVersion} != release ${version}`);
+    }
+  }
+
   const built = {};
   for (const host of requestedHosts) {
-    const artifactDir = artifacts[host] ?? artifactDirs[host];
-    if (!(await exists(artifactDir))) throw new Error(`ARTIFACT_MISSING: ${host} -> ${artifactDir}`);
+    const artifactDir = resolvedArtifacts[host];
     const hostOut = join(outDir, host);
     await mkdir(hostOut, { recursive: true });
     const zipPath = join(hostOut, ZIP_NAMES[host]);
