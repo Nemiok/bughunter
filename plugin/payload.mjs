@@ -50,15 +50,22 @@ async function rewriteCoreImports(server) {
   }
 }
 
+export async function copyPresets(presetsDir, target) {
+  await cp(presetsDir, target, {
+    recursive: true,
+    filter: (path) => {
+      const rel = relative(presetsDir, path);
+      if (rel === '') return true;
+      return !rel.split(/[\\/]/).some((part) => ['node_modules', 'test', 'state'].includes(part));
+    },
+  });
+}
+
 export async function buildServerPayload({ workspace, server }) {
   await rm(server, { recursive: true, force: true });
   await mkdir(server, { recursive: true });
   await copyTree(join(workspace, 'core'), join(server, 'core'));
-  await cp(join(workspace, 'presets'), join(server, 'presets'), {
-    recursive: true,
-    filter: (path) => !path.split(/[\\/]/).some((part) =>
-      ['node_modules', 'test', 'state'].includes(part)),
-  });
+  await copyPresets(join(workspace, 'presets'), join(server, 'presets'));
   await cp(join(workspace, 'package.json'), join(server, 'package.json'));
   await cp(join(workspace, 'package-lock.json'), join(server, 'package-lock.json'));
   const install = spawnSync('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], {
