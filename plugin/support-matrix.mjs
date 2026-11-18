@@ -13,7 +13,7 @@ export const SURFACES = [
 ];
 
 export const requirements = {
-  'qwen/cli': ['install', 'target'],
+  'qwen/cli': ['install', 'public-install', 'target', 'node-target', 'resume'],
   'kimi/cli': ['install', 'target', 'resume'],
   'claude/cli': ['install', 'target', 'resume'],
   'kimi/desktop': ['install', 'target'],
@@ -56,10 +56,17 @@ function acceptsGate(surface, gate, evidence) {
   const [host] = surface.split('/');
   if (evidence.host !== host || evidence.surface !== surface.split('/')[1]) return false;
   if (surface === 'qwen/cli' && gate === 'install' && evidence.source !== 'marketplace') return false;
-  if (surface === 'qwen/cli' && gate === 'target' && evidence.afterHostRefactor !== true) return false;
+  if (surface === 'qwen/cli' && gate === 'public-install'
+    && (evidence.source !== 'github-marketplace' || evidence.public !== true || evidence.sha256Verified !== true)) {
+    return false;
+  }
+  if (surface === 'qwen/cli' && ['target', 'node-target', 'resume'].includes(gate)
+    && evidence.afterHostRefactor !== true) {
+    return false;
+  }
   if (gate === 'workspace' && surface.split('/')[1] === 'extension'
     && (evidence.workspaceResolved !== true || evidence.filesWritten !== 0)) return false;
-  if ((gate === 'target' || gate === 'resume')
+  if ((gate === 'target' || gate === 'resume' || gate === 'node-target')
     && (typeof evidence.runId !== 'string' || evidence.runId.trim() === '')) {
     return false;
   }

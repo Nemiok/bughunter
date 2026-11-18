@@ -186,7 +186,17 @@ test('missing Claude evidence does not block a qwen-only local bundle', async ()
     host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: COMMIT, source: 'marketplace',
   };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
+  await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace',
+    public: true, sha256Verified: true,
+  });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+    ...qwenBase, gate: 'node-target', runId: 'run-node', afterHostRefactor: true,
+  });
+  await writeEvidence(evidenceDir, 'qwen/resume.json', {
+    ...qwenBase, gate: 'resume', runId: 'run-resume', afterHostRefactor: true,
+  });
   const artifacts = { qwen: await makeArtifact(root, 'qwen-artifact', 'qwen') };
   const result = await createRelease({
     version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
@@ -326,4 +336,29 @@ test('qwen public release uses a flat GitHub asset with its real digest', async 
   });
   assert.equal(catalog.plugins[0].metadata.payloadCommit, COMMIT);
   assert.equal(existsSync(join(marketplaceRoot, 'plugins')), false);
+});
+
+test('metadataOnly accepts a catalog-only HEAD without changing zip bytes', async () => {
+  const CATALOG_COMMIT = 'c'.repeat(40);
+  const { evidenceDir, outDir, artifacts, licenseFiles } = await baseReleaseOptions();
+  await createRelease({
+    version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    hosts: ['qwen'], git: cleanGit(), licenseFiles,
+  });
+  const zipPath = join(outDir, 'qwen', 'bughunter.zip');
+  const originalZipBytes = await readFile(zipPath);
+  await createRelease({
+    version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    hosts: ['qwen'], metadataOnly: true, licenseFiles,
+    git: {
+      revParseHead: () => CATALOG_COMMIT,
+      isDirty: () => false,
+      isCatalogOnlyCommit: (payload) => payload === COMMIT,
+    },
+  });
+  const summary = JSON.parse(await readFile(join(outDir, 'release-summary.json'), 'utf8'));
+  assert.equal(summary.payloadCommit, COMMIT);
+  assert.equal(summary.catalogCommit, CATALOG_COMMIT);
+  assert.equal(summary.sourceCommit, COMMIT);
+  assert.equal((await readFile(zipPath)).equals(originalZipBytes), true);
 });

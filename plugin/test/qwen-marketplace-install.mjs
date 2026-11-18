@@ -93,7 +93,8 @@ try {
   assert.equal(statePreserved, true, 'marketplace update must preserve project state');
 
   const clientVersion = run(qwen, ['--version']).stdout.trim();
-  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
+  const sourceCommit = process.env.BUGHUNTER_PAYLOAD_COMMIT
+    ?? run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
   const installEvidence = {
     host: 'qwen',
     surface: 'cli',

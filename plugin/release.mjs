@@ -58,6 +58,14 @@ function defaultGit() {
       const staged = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: REPO_ROOT });
       return unstaged.status !== 0 || staged.status !== 0;
     },
+    isCatalogOnlyCommit: (payloadCommit) => {
+      const diff = spawnSync('git', ['diff', '--name-only', `${payloadCommit}..HEAD`], {
+        cwd: REPO_ROOT, encoding: 'utf8',
+      });
+      if (diff.status !== 0) return false;
+      const files = diff.stdout.split('\n').filter(Boolean);
+      return files.length === 1 && files[0] === '.claude-plugin/marketplace.json';
+    },
   };
 }
 
@@ -157,17 +165,20 @@ function withNote(description, ready) {
   return ready ? description : `${description} (${EXPERIMENTAL_NOTE})`;
 }
 
-function renderCompatibility({ version, sourceCommit, publication, licenseError, matrix }) {
+function renderCompatibility({ version, sourceCommit, catalogCommit, publication, licenseError, matrix }) {
   const lines = [
     '# Bughunter compatibility',
     '',
     `Version: ${version}`,
     `Source: ${sourceCommit}`,
+  ];
+  if (catalogCommit !== undefined) lines.push(`Catalog: ${catalogCommit}`);
+  lines.push(
     `Publication: ${publication}`,
     '',
     '| Host | Surface | Client | Status | Level | Evidence | Blocker | Artifact |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
-  ];
+  );
   for (const entry of matrix.entries) {
     const client = entry.clientVersion ?? '—';
     const evidence = entry.evidence.length > 0 ? entry.evidence.join(', ') : '—';
@@ -205,6 +216,7 @@ export async function createRelease({
   artifacts = {},
   releaseBaseUrl,
   marketplaceRepo,
+  metadataOnly = false,
   git = defaultGit(),
   licenseFiles = {
     license: join(REPO_ROOT, 'LICENSE'),
@@ -213,7 +225,11 @@ export async function createRelease({
 }) {
   if (!SEMVER.test(version)) throw new Error(`VERSION_INVALID: ${version}`);
   if (!COMMIT_HEX.test(sourceCommit)) throw new Error(`SOURCE_INVALID: ${sourceCommit}`);
-  if (git.revParseHead() !== sourceCommit) throw new Error(`SOURCE_NOT_HEAD: ${sourceCommit}`);
+  const head = git.revParseHead();
+  if (head !== sourceCommit
+    && !(metadataOnly && git.isCatalogOnlyCommit?.(sourceCommit) === true)) {
+    throw new Error(`SOURCE_NOT_HEAD: ${sourceCommit}`);
+  }
   if (git.isDirty()) throw new Error('DIRTY_TREE: commit or stash tracked changes before release');
 
   const requestedHosts = resolveHosts(hosts);
@@ -250,8 +266,18 @@ export async function createRelease({
   for (const host of requestedHosts) {
     const artifactDir = resolvedArtifacts[host];
     const hostOut = join(outDir, host);
-    await mkdir(hostOut, { recursive: true });
     const zipPath = join(hostOut, ZIP_NAMES[host]);
+    if (metadataOnly) {
+      let declared;
+      try {
+        declared = (await readFile(`${zipPath}.sha256`, 'utf8')).trim().split(/\s+/)[0];
+      } catch {
+        throw new Error(`ARTIFACT_MISSING: ${host} -> ${zipPath}`);
+      }
+      built[host] = { zip: zipPath, sha256: await verifyArchive(zipPath, declared) };
+      continue;
+    }
+    await mkdir(hostOut, { recursive: true });
     await zipDirectory(artifactDir, zipPath);
     const sha256 = await writeChecksum(zipPath);
     built[host] = { zip: zipPath, sha256 };
@@ -292,8 +318,18 @@ export async function createRelease({
     }
   }
 
-  const summary = { version, sourceCommit, publication, hosts: hostStatus };
-  const compatibility = renderCompatibility({ version, sourceCommit, publication, licenseError, matrix });
+  const summary = {
+    version,
+    sourceCommit,
+    payloadCommit: sourceCommit,
+    ...(metadataOnly ? { catalogCommit: head } : {}),
+    publication,
+    hosts: hostStatus,
+  };
+  const compatibility = renderCompatibility({
+    version, sourceCommit, publication, licenseError, matrix,
+    ...(metadataOnly ? { catalogCommit: head } : {}),
+  });
   await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, 'support-matrix.json'), `${JSON.stringify(matrix, null, 2)}\n`, 'utf8');
   await writeFile(join(outDir, 'COMPATIBILITY.md'), compatibility, 'utf8');
@@ -323,6 +359,7 @@ function parseArgs(argv) {
     else if (arg === '--out-dir') options.outDir = argv[index + 1];
     else if (arg === '--release-base-url') options.releaseBaseUrl = argv[index + 1];
     else if (arg === '--marketplace-repo') options.marketplaceRepo = argv[index + 1];
+    else if (arg === '--metadata-only') options.metadataOnly = true;
     index += 1;
   }
   return options;

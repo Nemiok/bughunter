@@ -138,12 +138,45 @@ test('target and resume gates without a runId are not accepted', async () => {
   assert.equal(entry.status, 'experimental');
 });
 
+test('qwen full requires public checksum install and resume', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-qwen-public-matrix-'));
+  const COMMIT = 'a'.repeat(40);
+  const base = {
+    host: 'qwen', surface: 'cli', clientVersion: '1.0.0-preview.1',
+    status: 'passed', sourceCommit: COMMIT,
+  };
+  await writeEvidence(evidenceDir, 'qwen/install.json', { ...base, gate: 'install', source: 'marketplace' });
+  await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+    ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+  });
+  await writeEvidence(evidenceDir, 'qwen/target.json', {
+    ...base, gate: 'target', runId: 'run-target', afterHostRefactor: true,
+  });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+    ...base, gate: 'node-target', runId: 'run-node-target', afterHostRefactor: true,
+  });
+  let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: COMMIT, version: '0.2.0' });
+  let entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'cli');
+  assert.equal(entry.status, 'experimental');
+  await writeEvidence(evidenceDir, 'qwen/resume.json', {
+    ...base, gate: 'resume', runId: 'run-resume', afterHostRefactor: true,
+  });
+  matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: COMMIT, version: '0.2.0' });
+  entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'cli');
+  assert.equal(entry.status, 'full');
+});
+
 test('qwen cli full requires marketplace install source and a post-refactor target run', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-qwen-'));
   const commit = 'a'.repeat(40);
   const qwenBase = { host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
+  await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+  });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/resume.json', { ...qwenBase, gate: 'resume', runId: 'run-3', afterHostRefactor: true });
   let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.notEqual(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status, 'full');
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install', source: 'marketplace' });
@@ -214,7 +247,12 @@ test('mcp-only status is not awarded to cli surfaces', async () => {
   const commit = 'a'.repeat(40);
   const qwenBase = { host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit, source: 'marketplace' };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
+  await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+  });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/resume.json', { ...qwenBase, gate: 'resume', runId: 'run-3', afterHostRefactor: true });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status, 'full');
 });
