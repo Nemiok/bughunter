@@ -73,9 +73,11 @@ function namespacedSkillRefs(text) {
   );
 }
 
-async function renderEntry(source) {
+async function renderEntry(source, host) {
   let text = await readFile(join(source, 'skills', 'bughunter', 'SKILL.md'), 'utf8');
-  const setup = await readFile(join(pluginRoot, 'prompts', 'setup.md'), 'utf8');
+  text = text.replace(/^disable-model-invocation:\s*true\s*$/m, 'disable-model-invocation: false');
+  const setupName = host.setupMode === 'cli' ? 'setup-cli.md' : 'setup.md';
+  const setup = await readFile(join(pluginRoot, 'prompts', setupName), 'utf8');
   text = text
     .replaceAll('bughunter-preset-card', '<card>')
     .replaceAll('bh-test-writer', '<writer>')
@@ -85,13 +87,19 @@ async function renderEntry(source) {
       '`Read` для `run.json` и файла инвентаря пресета при resume',
       '`Read` для `run.json`, файла инвентаря пресета и `.qwen/bughunter.json`',
     );
+  const presetInstruction = host.setupMode === 'cli'
+    ? 'Сначала определи пресет проекта: прочитай `.qwen/bughunter.json` в корне проекта (`Read`). Поле `preset` — `web` или `node`. Если файла нет, выполни setup-инструкцию ниже; не останавливайся и не проси ручной installer.'
+    : 'Сначала определи пресет проекта: прочитай `.qwen/bughunter.json` в корне проекта (`Read`). Поле `preset` — `web` или `node`; по умолчанию `web`. Если файла нет или в нём нет `preset`, остановись и скажи оператору выполнить установку Bughunter для этого проекта.';
+  const stateInstruction = host.setupMode === 'cli'
+    ? 'Состояние прогона: `.qwen/bughunter/state/<preset>/`. При `CONFIG_CREATED` от setup CLI заполни config по инструкции ниже и продолжи validate; не останавливайся.'
+    : 'Состояние прогона: `.qwen/bughunter/state/<preset>/`. Если инструмент вернул `CONFIG_CREATED`, покажи путь оператору и остановись.';
   const preamble = [
     '',
-    'Сначала определи пресет проекта: прочитай `.qwen/bughunter.json` в корне проекта (`Read`). Поле `preset` — `web` или `node`; по умолчанию `web`. Если файла нет или в нём нет `preset`, остановись и скажи оператору выполнить установку Bughunter для этого проекта.',
+    presetInstruction,
     '',
     'Подстановки для вызовов ниже: для web — `<card>=bughunter:bughunter-preset-card-web`, `<explorer>=bughunter:bh-explorer`, `<reviewer>=bughunter:bh-reviewer`, `<writer>=bughunter:bh-test-writer`; для node — `<card>=bughunter:bughunter-preset-card-node`, `<explorer>=bughunter:bh-explorer-node`, `<reviewer>=bughunter:bh-reviewer-node`, `<writer>=bughunter:bh-test-writer-node`. Подставляй эти значения вместо угловых скобок.',
     '',
-    'Состояние прогона: `.qwen/bughunter/state/<preset>/`. Если инструмент вернул `CONFIG_CREATED`, покажи путь оператору и остановись.',
+    stateInstruction,
     '',
     setup.trim(),
     '',
@@ -132,7 +140,7 @@ export async function renderPromptLayer({ host, source, workspace, out }) {
     await writeFile(join(out, 'skills', name, 'SKILL.md'), await renderAuthoringSkill(sourcePath, preamble), 'utf8');
   }
   await mkdir(join(out, 'skills', 'bughunter'), { recursive: true });
-  await writeFile(join(out, 'skills', 'bughunter', 'SKILL.md'), hostText(await renderEntry(source), host));
+  await writeFile(join(out, 'skills', 'bughunter', 'SKILL.md'), hostText(await renderEntry(source, host), host));
   for (const [suffix, preset] of [['web', 'web'], ['node', 'node']]) {
     const name = `bughunter-preset-card-${suffix}`;
     const from = preset === 'web'

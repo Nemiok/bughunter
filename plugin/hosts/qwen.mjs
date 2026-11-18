@@ -10,6 +10,7 @@ export const qwenHost = defineHostDescriptor({
   mcpToolPrefix: 'mcp__bughunter__',
   skillNamespace: 'bughunter:',
   agentNamespace: 'bughunter:',
+  setupMode: 'cli',
   reloadInstruction: '/plugins reload',
   refreshInstruction: '`/plugins reload` (или открой новую сессию)',
   entryInvocation: '/bughunter:bughunter',

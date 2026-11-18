@@ -20,10 +20,13 @@ Bughunter ставится нативным плагином в три хост�
 | Kimi | `/skill:bughunter:bughunter` | `.kimi-code/bughunter/state/<preset>/` |
 | Claude | `/bughunter:bughunter` | `.claude/bughunter/state/<preset>/` |
 
-- **Qwen Code CLI.** Из корня целевого проекта: `node /путь/к/bughunter/plugin/install.mjs --preset web`.
-  Добавьте `mcp__bughunter__*` в `permissions.allow`, перезапустите `qwen` и запустите
-  `/bughunter:bughunter`. Плагин сам регистрирует MCP-сервер; `.mcp.json` и копирование дерева не
-  нужны. Детали, пресеты и ограничения — [`plugin/README.md`](plugin/README.md).
+- **Qwen Code CLI.** Автономная установка агентом по GitHub owner/repo, настройка до одного
+  `/plugins reload` и первый запуск — [`INSTALL.md`](INSTALL.md). Локальная установка из этого
+  репозитория остаётся developer fallback: из корня целевого проекта
+  `node /путь/к/bughunter/plugin/install.mjs --preset web`. Добавьте `mcp__bughunter__*` в
+  `permissions.allow`, перезапустите `qwen` и запустите `/bughunter:bughunter`. Плагин сам
+  регистрирует MCP-сервер; `.mcp.json` и копирование дерева не нужны. Детали, пресеты и
+  ограничения — [`plugin/README.md`](plugin/README.md).
 - **Kimi Code CLI/Desktop.** Custom marketplace добавляется один раз (Settings → Plugins → добавить
   custom marketplace JSON), затем нативная установка плагина и обязательный `/reload`. Детали,
   префикс инструментов и мост SessionStart — [`plugin/hosts/kimi.README.md`](plugin/hosts/kimi.README.md).
