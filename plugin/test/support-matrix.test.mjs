@@ -178,6 +178,20 @@ test('evidence from another host or surface is not accepted', async () => {
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'cli').status, 'experimental');
 });
 
+test('evidence without sourceCommit is stale and cannot become full', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-nocommit-'));
+  const commit = 'a'.repeat(40);
+  await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install' });
+  await writeEvidence(evidenceDir, 'kimi/target.json', { ...base, gate: 'target' });
+  const { sourceCommit, ...resume } = { ...base, gate: 'resume', sourceCommit: commit };
+  await writeEvidence(evidenceDir, 'kimi/resume.json', resume);
+  const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  const entry = matrix.entries.find((item) => item.host === 'kimi' && item.surface === 'cli');
+  assert.notEqual(entry.status, 'full');
+  assert.equal(entry.status, 'blocked');
+  assert.equal(entry.blocker, 'STALE_EVIDENCE');
+});
+
 test('matrix serialization stays stable for identical inputs', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-stable-'));
   const commit = 'a'.repeat(40);

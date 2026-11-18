@@ -83,7 +83,7 @@ async function buildEntry({ evidenceDir, surface, sourceCommit }) {
   for (const gate of gates) {
     const evidence = await readJson(evidencePathFor(evidenceDir, surface, gate));
     if (evidence === undefined) continue;
-    if (evidence.sourceCommit !== undefined && evidence.sourceCommit !== sourceCommit) {
+    if (evidence.sourceCommit !== sourceCommit) {
       stale = true;
       continue;
     }
