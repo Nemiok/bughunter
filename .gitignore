@@ -10,6 +10,10 @@
 .qwen/bughunter/state/auth/
 .kimi-code/bughunter/state/runs/
 .kimi-code/bughunter/state/auth/
+.gigacode/bughunter/state/runs/
+.gigacode/bughunter/state/auth/
+.claude/bughunter/state/runs/
+.claude/bughunter/state/auth/
 
 # Disposable model-gate copies (must live outside .qwen: CLI treats those paths as sensitive)
 bughunter-gate/

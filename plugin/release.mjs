@@ -192,8 +192,8 @@ export async function createRelease({
   marketplaceRepo,
   git = defaultGit(),
   licenseFiles = {
-    license: join(RELEASE_ROOT, 'LICENSE'),
-    notices: join(RELEASE_ROOT, 'THIRD_PARTY_NOTICES.md'),
+    license: join(REPO_ROOT, 'LICENSE'),
+    notices: join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'),
   },
 }) {
   if (!SEMVER.test(version)) throw new Error(`VERSION_INVALID: ${version}`);

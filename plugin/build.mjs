@@ -163,6 +163,9 @@ async function main() {
         readmeText.replaceAll('<entryInvocation>', host.entryInvocation),
         'utf8',
       );
+      for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+        await cp(join(repoRoot, file), join(out, file));
+      }
       if (host.id === 'qwen') {
         await rm(join(pluginRoot, 'dist', 'qwen-marketplace'), { recursive: true, force: true });
         await buildQwenMcpOnly({
