@@ -122,9 +122,14 @@ qwen plugins uninstall bughunter@local           # удалить
 node plugin/build.mjs        # собрать и провалидировать плагин
 node plugin/test-install.mjs # изолированный --config-dir: install/enable + dormant/web/node init
 npm --prefix plugin run test:qwen-marketplace # нативный marketplace: add/install/update через qwen CLI
+npm --prefix plugin run test:qwen-mcp-only  # portable Agent Plugins v1 пакет через qwen extensions
 ```
 
 `test-install.mjs` не вызывает модель: он читает `system/init` и проверяет, что плагин поднял MCP-сервер, отдал 19 web- или 16 node-инструментов, семь скиллов и шесть агентов, а в dormant-режиме не создал состояние.
+
+`build.mjs` дополнительно собирает `dist/qwen/bughunter-mcp` — MCP-only пакет в формате Agent Plugins v1 (root `plugin.json` + `mcp.json` с `${PLUGIN_ROOT}`, один setup-скилл, без `agents/` и full entry). README пакета несёт пометку `MCP-only; full workflow not certified`; канал установки — `qwen extensions install`, это не marketplace-листинг.
+
+`test/qwen-mcp-only-install.mjs` ставит пакет нативно через `qwen extensions install` (портативный Qwen Code CLI 0.28.0, изолированный `QWEN_HOME`; путь к бинарю — `QWEN_PORTABLE_BIN`), проверяет dormant init (`mcp__bughunter__bh_setup` и скилл `bughunter-mcp:bughunter-setup` без состояния проекта), затем через прямой MCP-клиент: setup web → 19 инструментов, node в отдельном проекте → 16, и lease-гейт: `bh_open` без lease возвращает `LEASE_REQUIRED` до открытия браузера. Модель не вызывается; qwen init обрывается сразу после `init`.
 
 `test/qwen-marketplace-install.mjs` поднимает сборку как custom marketplace (`dist/qwen-marketplace` с `.claude-plugin/marketplace.json` и `plugins/bughunter/`), ставит плагин нативно через `qwen plugins marketplace add` + `qwen plugins install bughunter@bughunter-market`, проверяет dormant init (`mcp__bughunter__bh_setup`), затем обновляет marketplace и плагин (`qwen plugins marketplace update`, `qwen plugins update`) и проверяет, что config, `runs/` и `auth/` в проекте сохранились. Модель не вызывается; qwen init обрывается сразу после `system/init`.
 

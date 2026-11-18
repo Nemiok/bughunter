@@ -6,6 +6,7 @@ import { claudeHost, claudeManifest } from './hosts/claude.mjs';
 import { kimiHost, kimiManifest } from './hosts/kimi.mjs';
 import { qwenHost } from './hosts/qwen.mjs';
 import { buildClaudeMarketplace, buildQwenMarketplace } from './marketplace.mjs';
+import { buildQwenMcpOnly } from './mcp-only.mjs';
 import { buildServerPayload } from './payload.mjs';
 import { renderPromptLayer } from './prompts.mjs';
 import { writeLauncher } from './write-launcher.mjs';
@@ -163,6 +164,12 @@ async function main() {
       );
       if (host.id === 'qwen') {
         await rm(join(pluginRoot, 'dist', 'qwen-marketplace'), { recursive: true, force: true });
+        await buildQwenMcpOnly({
+          pluginRoot,
+          sharedServer: shared,
+          out: join(pluginRoot, 'dist', 'qwen', 'bughunter-mcp'),
+          version,
+        });
         validateQwen(out);
         await buildQwenMarketplace({
           pluginDir: out,
