@@ -306,3 +306,24 @@ test('an artifact without its host manifest is refused', async () => {
     /MANIFEST_MISSING/,
   );
 });
+
+test('qwen public release uses a flat GitHub asset with its real digest', async () => {
+  const { evidenceDir, outDir, artifacts, licenseFiles } = await baseReleaseOptions();
+  await createRelease({
+    version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    hosts: ['qwen'], git: cleanGit(), licenseFiles,
+    releaseBaseUrl: 'https://github.com/acme/bughunter/releases/download',
+    marketplaceRepo: 'acme/bughunter',
+  });
+  const marketplaceRoot = join(outDir, 'qwen', 'marketplace');
+  const catalog = JSON.parse(await readFile(join(marketplaceRoot, '.claude-plugin', 'marketplace.json'), 'utf8'));
+  const zipPath = join(outDir, 'qwen', 'bughunter.zip');
+  const digest = createHash('sha256').update(await readFile(zipPath)).digest('hex');
+  assert.deepEqual(catalog.plugins[0].source, {
+    source: 'archive',
+    url: 'https://github.com/acme/bughunter/releases/download/0.2.0/bughunter-qwen.zip',
+    sha256: digest,
+  });
+  assert.equal(catalog.plugins[0].metadata.payloadCommit, COMMIT);
+  assert.equal(existsSync(join(marketplaceRoot, 'plugins')), false);
+});

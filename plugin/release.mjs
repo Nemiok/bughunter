@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import { verifyArchive } from './archive.mjs';
 import { buildSupportMatrix } from './support-matrix.mjs';
-import { buildClaudeMarketplace, buildQwenMarketplace } from './marketplace.mjs';
+import { buildClaudeMarketplace, buildQwenArchiveMarketplace, buildQwenMarketplace } from './marketplace.mjs';
 import { kimiHost } from './hosts/kimi.mjs';
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
@@ -247,7 +248,19 @@ export async function createRelease({
     if (host === 'qwen') {
       if (ready || hostStatus[host] === 'experimental') {
         const marketplaceRoot = join(hostOut, 'marketplace');
-        await buildQwenMarketplace({ pluginDir: artifactDir, marketplaceRoot, version });
+        if (releaseBaseUrl !== undefined || marketplaceRepo !== undefined) {
+          if (!releaseBaseUrl || !marketplaceRepo) throw new Error('PUBLICATION_CONFIG_INCOMPLETE');
+          await buildQwenArchiveMarketplace({
+            marketplaceRoot,
+            version,
+            archiveUrl: `${releaseBaseUrl.replace(/\/$/, '')}/${version}/bughunter-qwen.zip`,
+            sha256: built[host].sha256,
+            payloadCommit: sourceCommit,
+            repository: marketplaceRepo,
+          });
+        } else {
+          await buildQwenMarketplace({ pluginDir: artifactDir, marketplaceRoot, version });
+        }
         if (!ready) await applyMarketplaceNote(marketplaceRoot, EXPERIMENTAL_NOTE);
       }
     } else if (host === 'claude') {

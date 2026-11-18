@@ -23,7 +23,7 @@ qwen plugins list --json
 
 6. Не запускать повторный install той же версии и не вызывать enable для уже enabled plugin без проверки list. Не удалять старый `.mcp.json` без подтверждения; при конфликте попросить оставить один Bughunter server.
 7. Точечно добавить `mcp__bughunter__*` в `permissions.allow`, сохранив существующие settings.
-8. До `/plugins reload` получить `installPath`, задать только недостающие вопросы и выполнить setup CLI create+validate. Не просить пользователя редактировать JSON.
+8. До `/plugins reload` получить `installPath`, задать только недостающие вопросы и выполнить setup CLI create+validate. Не просить пользователя редактировать JSON. Если клиент не проверяет catalog `sha256` сам, скачать именно catalog URL, вычислить SHA256 средствами Node, сравнить с catalog и только затем распаковать и установить локальный каталог. Игнорировать mismatch нельзя.
 9. Попросить один `/plugins reload`, затем «продолжай». После refresh проверить `/mcp`, project root и components, затем вызвать `/bughunter:bughunter target /orders` либо фактическую цель пользователя.
 10. Для auth открыть bundled headed Chrome flow; не спрашивать пароль в чате. Для прерванного run использовать `resume` с фактическим runId.
 
