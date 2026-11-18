@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
 import { buildSupportMatrix } from '../support-matrix.mjs';
-import { createRelease, defaultArtifactDirs, renderReleaseSummary } from '../release.mjs';
+import { createRelease, defaultArtifactDirs, parseArgs, renderReleaseSummary } from '../release.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
 
@@ -361,4 +361,15 @@ test('metadataOnly accepts a catalog-only HEAD without changing zip bytes', asyn
   assert.equal(summary.catalogCommit, CATALOG_COMMIT);
   assert.equal(summary.sourceCommit, COMMIT);
   assert.equal((await readFile(zipPath)).equals(originalZipBytes), true);
+});
+
+test('metadata-only flag does not consume the following option', () => {
+  const options = parseArgs([
+    '--version', '0.2.1', '--source', COMMIT, '--metadata-only',
+    '--release-base-url', 'https://example.invalid/releases',
+    '--marketplace-repo', 'acme/bughunter',
+  ]);
+  assert.equal(options.metadataOnly, true);
+  assert.equal(options.releaseBaseUrl, 'https://example.invalid/releases');
+  assert.equal(options.marketplaceRepo, 'acme/bughunter');
 });

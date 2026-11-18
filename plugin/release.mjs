@@ -348,10 +348,14 @@ export async function createRelease({
   };
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === '--metadata-only') {
+      options.metadataOnly = true;
+      continue;
+    }
     if (arg === '--version') options.version = argv[index + 1];
     else if (arg === '--source') options.sourceCommit = argv[index + 1];
     else if (arg === '--host') options.hosts = argv[index + 1];
@@ -359,7 +363,6 @@ function parseArgs(argv) {
     else if (arg === '--out-dir') options.outDir = argv[index + 1];
     else if (arg === '--release-base-url') options.releaseBaseUrl = argv[index + 1];
     else if (arg === '--marketplace-repo') options.marketplaceRepo = argv[index + 1];
-    else if (arg === '--metadata-only') options.metadataOnly = true;
     index += 1;
   }
   return options;
