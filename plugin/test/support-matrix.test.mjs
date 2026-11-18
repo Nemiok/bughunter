@@ -136,7 +136,7 @@ test('qwen cli full requires marketplace install source and a post-refactor targ
   assert.equal(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status, 'experimental');
 });
 
-test('qwen mcp-only surface certifies only install plus safety', async () => {
+test('qwen mcp-only requires workspace evidence and a blocked workspace blocks the surface', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-mcp-'));
   const commit = 'a'.repeat(40);
   const mcpBase = { host: 'qwen', surface: 'mcp-only', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit };
@@ -145,7 +145,50 @@ test('qwen mcp-only surface certifies only install plus safety', async () => {
   assert.equal(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'mcp-only').status, 'experimental');
   await writeEvidence(evidenceDir, 'qwen/mcp-only/safety.json', { ...mcpBase, gate: 'safety' });
   matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  assert.equal(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'mcp-only').status, 'experimental');
+  await writeEvidence(evidenceDir, 'qwen/mcp-only/workspace.json', {
+    host: 'qwen', surface: 'mcp-only', clientVersion: '1.0.0', gate: 'workspace', status: 'blocked',
+    blocker: 'BUGHUNTER_PROJECT_UNKNOWN', sourceCommit: commit,
+  });
+  matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  const blocked = matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'mcp-only');
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.blocker, 'BUGHUNTER_PROJECT_UNKNOWN');
+  await writeEvidence(evidenceDir, 'qwen/mcp-only/workspace.json', { ...mcpBase, gate: 'workspace' });
+  matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'mcp-only').status, 'mcp-only');
+});
+
+test('a current blocked gate takes precedence over stale evidence from other gates', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-blocked-precedence-'));
+  const commit = 'a'.repeat(40);
+  await writeEvidence(evidenceDir, 'qwen/mcp-only/install.json', {
+    host: 'qwen', surface: 'mcp-only', clientVersion: '1.0.0', gate: 'install', status: 'passed', sourceCommit: 'b'.repeat(40),
+  });
+  await writeEvidence(evidenceDir, 'qwen/mcp-only/safety.json', {
+    host: 'qwen', surface: 'mcp-only', clientVersion: '1.0.0', gate: 'safety', status: 'passed', sourceCommit: commit,
+  });
+  await writeEvidence(evidenceDir, 'qwen/mcp-only/workspace.json', {
+    host: 'qwen', surface: 'mcp-only', clientVersion: '1.0.0', gate: 'workspace', status: 'blocked',
+    blocker: 'BUGHUNTER_PROJECT_UNKNOWN', sourceCommit: commit,
+  });
+  const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  const entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'mcp-only');
+  assert.equal(entry.status, 'blocked');
+  assert.equal(entry.blocker, 'BUGHUNTER_PROJECT_UNKNOWN');
+});
+
+test('stale blocked evidence falls back to the stale blocker', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-stale-blocked-'));
+  const commit = 'a'.repeat(40);
+  await writeEvidence(evidenceDir, 'qwen/mcp-only/workspace.json', {
+    host: 'qwen', surface: 'mcp-only', clientVersion: '1.0.0', gate: 'workspace', status: 'blocked',
+    blocker: 'BUGHUNTER_PROJECT_UNKNOWN', sourceCommit: 'c'.repeat(40),
+  });
+  const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
+  const entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'mcp-only');
+  assert.equal(entry.status, 'blocked');
+  assert.equal(entry.blocker, 'STALE_EVIDENCE');
 });
 
 test('mcp-only status is not awarded to cli surfaces', async () => {

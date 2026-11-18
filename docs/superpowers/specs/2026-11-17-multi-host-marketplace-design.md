@@ -149,6 +149,18 @@ MCP-only означает только доступность инструмен
 install/MCP/safety gate. Он выпускается как `bughunter-mcp` через поддерживаемые Qwen extension
 sources; спецификация сама по себе не даёт marketplace listing.
 
+Верифицированное ограничение хоста (2026-11-18, Qwen Code CLI 0.28.0): extension MCP-сервер стартует
+с `cwd` = корень установки расширения, env `PLUGIN_ROOT` указывает на тот же каталог, а
+`QWEN_CODE_PROJECT_DIR` адресует внутреннее per-project хранилище CLI, а не рабочий каталог. Рабочий
+проект сервер неотличим от установки, поэтому launcher обязан fail closed: при совпадении cwd с
+`PLUGIN_ROOT` (KIMI_PLUGIN_ROOT для Kimi) setup возвращает `BUGHUNTER_PROJECT_UNKNOWN` до любой записи
+и не пишет opt-in/config в установку. Skill и README пакета явно останавливаются на этой ошибке и не
+сертифицируют настройку проекта на таком хосте. MCP-only gate обязан включать проверку workspace
+(CLI-identical spawn), а не только direct-client probes; direct-client вызовы с cwd = проект остаются
+диагностикой payload, а не доказательством host setup. Support matrix для `qwen/mcp-only` требует
+gates `install`, `safety`, `workspace`; пока workspace gate заблокирован, статус поверхности —
+`blocked` с blocker'ом `BUGHUNTER_PROJECT_UNKNOWN`, а не `mcp-only`.
+
 Для Claude Cowork MCP-only артефакт рассматривается только после проверки локального stdio MCP в
 реальном Cowork и поддержки выбранных компонентов. Обычный Claude chat и claude.ai не получают
 локальный Bughunter MCP. Для MCPB/собственного Desktop runtime не обещается автоматическая
@@ -304,7 +316,11 @@ cache package, а не к project state. Документация прямо г�
 8. Проверка entry invocation и фактического пула инструментов главного агента и каждого custom agent.
 
 Для каждого MCP-only package выполняются пункты 1–6 в применимой части и server safety checks, но
-нет заявки full model gate. Support matrix записывает `mcp-only`, а не `full`.
+нет заявки full model gate. Дополнительно выполняется workspace gate: CLI-identical spawn сервера
+(`cwd` = plugin root, host env выставлен) обязан вернуть `BUGHUNTER_PROJECT_UNKNOWN` до любой записи
+в установку; нулевое число новых файлов в дереве расширения фиксируется снимком. Support matrix
+записывает `mcp-only`, а не `full`, только когда все обязательные gates — включая workspace —
+пройдены; заблокированный workspace даёт `blocked` с конкретным blocker'ом, а не `mcp-only`.
 
 ### Живые модельные гейты полного уровня
 
@@ -338,8 +354,9 @@ trust/install/setup/reload, native agents, finished run и независима�
 - `planned` — артефакт предусмотрен, проверки не выполнены;
 - `experimental` — install/MCP gates прошли, full model gates ещё нет;
 - `full` — все обязательные full gates прошли на указанной client version;
-- `mcp-only` — заявлены и проверены только MCP capabilities;
-- `blocked` — назван конкретный blocker;
+- `mcp-only` — заявлены и проверены только MCP capabilities, включая workspace gate;
+- `blocked` — назван конкретный blocker; evidence со `status: "blocked"` и непустым `blocker` на
+  текущем sourceCommit блокирует поверхность этим blocker'ом (приоритет над STALE_EVIDENCE);
 - `unsupported` — surface не получает артефакт.
 
 Нельзя вручную выставить `full` без ссылок на результаты target/resume и Desktop gate там, где он

@@ -72,7 +72,7 @@ export async function startDormantServer({ host, version, serverRoot, projectRoo
   }, async ({ preset }) => {
     try {
       if (projectUnknown) {
-        throw new Error('BUGHUNTER_PROJECT_UNKNOWN: start a Kimi session in the project before bh_setup');
+        throw new Error('BUGHUNTER_PROJECT_UNKNOWN: the server cannot resolve the workspace project (host spawned it with cwd = plugin root); start a session in the project or set BUGHUNTER_PROJECT_ROOT before bh_setup');
       }
       const value = await setupProject({ host, projectRoot, preset, serverRoot });
       return { content: [{ type: 'text', text: JSON.stringify(value) }] };

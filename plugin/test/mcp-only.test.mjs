@@ -22,4 +22,8 @@ test('Agent Plugins v1 MCP-only artifact has only portable fields', async () => 
   assert.equal(existsSync(`${out}/skills/bughunter`), false);
   const readme = await readFile(`${out}/README.md`, 'utf8');
   assert.ok(readme.includes('MCP-only; full workflow not certified'));
+  assert.ok(readme.includes('BUGHUNTER_PROJECT_UNKNOWN'), 'README must stop on BUGHUNTER_PROJECT_UNKNOWN');
+  const skill = await readFile(`${out}/skills/bughunter-setup/SKILL.md`, 'utf8');
+  assert.ok(skill.includes('BUGHUNTER_PROJECT_UNKNOWN'), 'setup skill must stop on BUGHUNTER_PROJECT_UNKNOWN');
+  assert.ok(skill.includes('не сертифицирована'), 'skill must not certify host project setup');
 });

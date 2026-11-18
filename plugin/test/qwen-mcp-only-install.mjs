@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
 import { withMcpClient } from './mcp-client.mjs';
 
@@ -67,6 +67,17 @@ function qwenInit({ project }) {
   });
 }
 
+async function listFiles(root) {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) files.push(...await listFiles(path));
+    else files.push(relative(root, path).split('\\').join('/'));
+  }
+  return files.sort();
+}
+
 try {
   run(process.execPath, [join(pluginRoot, 'build.mjs')], { cwd: pluginRoot });
   assert.ok(existsSync(join(dist, 'plugin.json')), 'build must produce the MCP-only manifest');
@@ -110,8 +121,23 @@ try {
     'dormant extension must not create project state',
   );
 
-  // Setup web through the installed server, then the full web toolset (19).
+  // Workspace gate, CLI-identical spawn: Qwen Code 0.28.0 spawns extension
+  // MCP servers with cwd = PLUGIN_ROOT and no workspace signal. bh_setup must
+  // fail closed with BUGHUNTER_PROJECT_UNKNOWN before any write into the
+  // extension installation.
   const serverRoot = join(installedRoot, 'server');
+  const before = await listFiles(installedRoot);
+  const workspace = await withMcpClient(serverRoot, installedRoot, (client) =>
+    client.callTool({ name: 'bh_setup', arguments: { preset: 'web' } }), { PLUGIN_ROOT: installedRoot });
+  assert.equal(workspace.isError, true);
+  assert.ok(
+    workspace.content[0].text.includes('BUGHUNTER_PROJECT_UNKNOWN'),
+    `workspace setup must fail closed, got: ${workspace.content[0].text}`,
+  );
+  assert.deepEqual(await listFiles(installedRoot), before, 'no file may appear in the extension installation');
+
+  // Server diagnostics through a project-cwd client: setup and tool counts.
+  // These probe the payload only; they are not proof of host workspace support.
   const web = await withMcpClient(serverRoot, webProject, async (client) => {
     const dormantList = await client.listTools();
     assert.deepEqual(dormantList.tools.map((tool) => tool.name), ['bh_setup']);
@@ -147,33 +173,53 @@ try {
   assert.equal(safety.code, 'LEASE_REQUIRED');
   assert.match(safety.message, /^LEASE_REQUIRED: /);
 
+  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
   const installEvidence = {
     host: 'qwen',
+    surface: 'mcp-only',
     channel: 'extensions',
     clientVersion,
     initVersion: dormant.qwen_code_version,
+    sourceCommit,
     package: 'bughunter-mcp',
     dormantTools: dormantTools.length,
     skill: 'bughunter-mcp:bughunter-setup',
     stateCreated: false,
-    webTools: webTools.tools.length,
-    nodeTools: nodeTools.tools.length,
     status: 'passed',
   };
   const safetyEvidence = {
     host: 'qwen',
+    surface: 'mcp-only',
     channel: 'extensions',
     clientVersion,
+    sourceCommit,
     gate: 'bh_open-without-lease',
     scope: 'full',
     code: safety.code,
     status: 'passed',
   };
+  const workspaceEvidence = {
+    host: 'qwen',
+    surface: 'mcp-only',
+    channel: 'extensions',
+    clientVersion,
+    sourceCommit,
+    gate: 'workspace',
+    status: 'blocked',
+    blocker: 'BUGHUNTER_PROJECT_UNKNOWN',
+    spawn: 'cwd=PLUGIN_ROOT',
+    filesWritten: 0,
+    serverDiagnostics: {
+      webTools: webTools.tools.length,
+      nodeTools: nodeTools.tools.length,
+    },
+  };
   await mkdir(evidenceDir, { recursive: true });
   await writeFile(join(evidenceDir, 'install.json'), `${JSON.stringify(installEvidence, null, 2)}\n`);
   await writeFile(join(evidenceDir, 'safety.json'), `${JSON.stringify(safetyEvidence, null, 2)}\n`);
+  await writeFile(join(evidenceDir, 'workspace.json'), `${JSON.stringify(workspaceEvidence, null, 2)}\n`);
 
-  console.log(JSON.stringify({ install: installEvidence, safety: safetyEvidence }));
+  console.log(JSON.stringify({ install: installEvidence, safety: safetyEvidence, workspace: workspaceEvidence }));
 } finally {
   await rm(root, { recursive: true, force: true });
 }

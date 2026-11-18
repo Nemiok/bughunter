@@ -16,7 +16,7 @@ export const requirements = {
   'claude/cli': ['install', 'target', 'resume'],
   'kimi/desktop': ['install', 'target'],
   'claude/desktop': ['install', 'target'],
-  'qwen/mcp-only': ['install', 'safety'],
+  'qwen/mcp-only': ['install', 'safety', 'workspace'],
 };
 
 export const STATUS_LEVELS = {
@@ -80,11 +80,16 @@ async function buildEntry({ evidenceDir, surface, sourceCommit }) {
   const accepted = [];
   let stale = false;
   let versionConflict = false;
+  let blockedBy;
   for (const gate of gates) {
     const evidence = await readJson(evidencePathFor(evidenceDir, surface, gate));
     if (evidence === undefined) continue;
     if (evidence.sourceCommit !== sourceCommit) {
       stale = true;
+      continue;
+    }
+    if (evidence.status === 'blocked' && typeof evidence.blocker === 'string' && evidence.blocker.length > 0) {
+      blockedBy ??= evidence.blocker;
       continue;
     }
     if (!acceptsGate(surface, gate, evidence)) continue;
@@ -94,7 +99,10 @@ async function buildEntry({ evidenceDir, surface, sourceCommit }) {
   if (versions.length > 1) versionConflict = true;
   entry.clientVersion = versions.length === 1 ? versions[0] : undefined;
   entry.evidence = accepted.map((item) => item.gate);
-  if (stale) {
+  if (blockedBy !== undefined) {
+    entry.status = 'blocked';
+    entry.blocker = blockedBy;
+  } else if (stale) {
     entry.status = 'blocked';
     entry.blocker = 'STALE_EVIDENCE';
   } else if (versionConflict) {

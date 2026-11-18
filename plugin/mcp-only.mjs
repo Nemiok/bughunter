@@ -1,10 +1,11 @@
-import { cp, mkdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { qwenHost } from './hosts/qwen.mjs';
 import { writeLauncher } from './write-launcher.mjs';
 
 export async function buildQwenMcpOnly({ pluginRoot, sharedServer, out, version }) {
+  await rm(out, { recursive: true, force: true });
   await mkdir(join(out, 'skills', 'bughunter-setup'), { recursive: true });
   const server = join(out, 'server');
   await cp(sharedServer, server, { recursive: true });
@@ -26,5 +27,5 @@ export async function buildQwenMcpOnly({ pluginRoot, sharedServer, out, version 
   };
   await writeFile(join(out, 'plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(join(out, 'mcp.json'), `${JSON.stringify(mcp, null, 2)}\n`);
-  await writeFile(join(out, 'README.md'), '# Bughunter MCP-only\n\nMCP-only; full workflow not certified.\n\nInstall through `qwen extensions install <published-source>`; this is an extension channel, not a marketplace listing.\n');
+  await writeFile(join(out, 'README.md'), '# Bughunter MCP-only\n\nMCP-only; full workflow not certified.\n\nInstall through `qwen extensions install <published-source>`; this is an extension channel, not a marketplace listing.\n\nProject setup requires the server to resolve your workspace. Hosts that spawn extension MCP servers with cwd = plugin root and no workspace signal (verified for Qwen Code 0.28.0) cannot run project setup: `bh_setup` fails closed with `BUGHUNTER_PROJECT_UNKNOWN` and writes nothing into the installation. On that error stop; project setup through such a host is not certified — use a workspace-capable host or set `BUGHUNTER_PROJECT_ROOT` explicitly.\n');
 }

@@ -1656,6 +1656,32 @@ git add plugin
 git commit -m "feat: add portable MCP-only package"
 ```
 
+- [ ] **Step 5 (review fix, 2026-11-18): fail-closed workspace gate для portable хоста**
+
+Critical review finding: Qwen Code CLI 0.28.0 поднимает extension MCP-сервер с `cwd` = корень
+установки и env `PLUGIN_ROOT`; старый launcher проверял только Kimi roots, поэтому `bh_setup` писал
+opt-in/config в установку. Исправление:
+
+- `launcher.mjs`: `hostPluginRoot()` = `KIMI_PLUGIN_ROOT ?? PLUGIN_ROOT`; сравнение cwd с plugin
+  root / Kimi home по realpath (macOS `/var` → `/private/var`); при совпадении проект считается
+  unknown. `setup.mjs`: сообщение `BUGHUNTER_PROJECT_UNKNOWN` без привязки к Kimi. Поведение Kimi
+  bridge, Qwen preview и Claude не меняется.
+- `test/qwen-mcp-only-install.mjs`: добавлен workspace gate — CLI-identical spawn
+  (`cwd` = installedRoot, `PLUGIN_ROOT` установлен), `bh_setup` обязан вернуть
+  `BUGHUNTER_PROJECT_UNKNOWN`, снимок дерева расширения до/после доказывает ноль новых файлов.
+  Direct-client probes (web 19 / node 16 / safety) сохранены как server diagnostics, не как
+  доказательство host setup. Evidence: добавлен `workspace.json` со `status: "blocked"`,
+  `blocker: "BUGHUNTER_PROJECT_UNKNOWN"` и `sourceCommit`; install/safety evidence тоже несут
+  `sourceCommit` и `surface`.
+- `support-matrix.mjs`: requirements `'qwen/mcp-only': ['install', 'safety', 'workspace']`; evidence
+  со `status: "blocked"` и непустым `blocker` на текущем commit блокирует поверхность этим blocker'ом
+  (приоритет над STALE_EVIDENCE). Реальный статус `qwen/mcp-only` — `blocked`, не `mcp-only`.
+- `mcp-only.mjs`: `rm(out, { recursive: true, force: true })` перед сборкой (stale-артефакты);
+  portable manifest не меняется. README/SKILL пакета явно останавливаются на
+  `BUGHUNTER_PROJECT_UNKNOWN` и не сертифицируют настройку проекта на таком хосте.
+- Дизайн-спека и план обновлены этим ограничением; регрессия: mcp-only unit, portable gate,
+  support-matrix/release tests, `npm test`, preview `test:install`.
+
 ---
 
 ### Task 10: Evidence-Bound Support Matrix and Release Bundles
@@ -1734,9 +1760,13 @@ const requirements = {
   'claude/cli': ['install', 'target', 'resume'],
   'kimi/desktop': ['install', 'target'],
   'claude/desktop': ['install', 'target'],
-  'qwen/mcp-only': ['install', 'safety'],
+  'qwen/mcp-only': ['install', 'safety', 'workspace'],
 };
 ```
+
+(Amendment 2026-11-18: `qwen/mcp-only` дополнительно требует `workspace` gate — CLI-identical spawn с
+`cwd` = plugin root. Evidence со `status: "blocked"` и непустым `blocker` на текущем sourceCommit
+блокирует поверхность этим blocker'ом, приоритет над STALE_EVIDENCE; см. Task 9 Step 5.)
 
 Функция читает CLI evidence из `<evidenceDir>/<host>/<gate>.json`, Desktop — `<evidenceDir>/<host>/desktop/<gate>.json`, MCP-only — `<evidenceDir>/<host>/mcp-only/<gate>.json`. Desktop требует отдельные `install.json` и `target.json` с `surface:'desktop'`; CLI install не подменяет Desktop install. Evidence принимается только при `status:'passed'`, совпадающих `sourceCommit`, host/surface/clientVersion и непустом `runId` для target/resume. `full` присваивается только если все required gates есть. `mcp-only` доступен только для `qwen/mcp-only`. Несовпадение sourceCommit даёт `STALE_EVIDENCE`, clientVersion — `CLIENT_VERSION_MISMATCH`; оба статуса blocked.
 

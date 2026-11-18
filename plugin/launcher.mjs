@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -8,25 +8,45 @@ import { startDormantServer } from './setup.mjs';
 
 const version = '__PLUGIN_VERSION__';
 
-function kimiPluginRoot() {
-  return process.env.KIMI_PLUGIN_ROOT;
+// Agent Plugins v1 hosts (Qwen Code 0.28.0 extensions) set PLUGIN_ROOT and
+// spawn stdio servers with cwd = plugin root, so the workspace project is
+// indistinguishable from the installation directory without a workspace
+// signal. Kimi Desktop signals the same via KIMI_PLUGIN_ROOT.
+function hostPluginRoot() {
+  return process.env.KIMI_PLUGIN_ROOT ?? process.env.PLUGIN_ROOT;
 }
 
 function kimiHome() {
   return process.env.KIMI_CODE_HOME;
 }
 
+// Hosts may hand us symlinked paths (macOS /var → /private/var) while the
+// spawned process cwd is already resolved, so equality is checked on realpaths.
+function samePath(a, b) {
+  if (b === undefined) return false;
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return a === b;
+  }
+}
+
 // Kimi/Desktop spawn plugin MCP servers with cwd = plugin root and expose no
 // workspace path (verified against the 2.5.3 runtime: initialize capabilities
-// are empty). Resolution order:
+// are empty); Qwen Code 0.28.0 extension spawns behave the same way (verified:
+// cwd = $QWEN_HOME/extensions/<name>, PLUGIN_ROOT set, QWEN_CODE_PROJECT_DIR
+// points at CLI-internal per-project storage, not the workspace). Resolution
+// order:
 //   1. BUGHUNTER_PROJECT_ROOT override (harnesses, tests)
-//   2. cwd when it is neither the plugin root nor the Kimi home (Qwen spawn)
+//   2. cwd when it is neither the plugin root nor the Kimi home (Qwen preview
+//      spawn — the session cwd)
 //   3. the latest SessionStart hook cwd recorded under KIMI_CODE_HOME
-//   4. cwd as a last resort
+//   4. cwd as a last resort; projectUnknown() then refuses bh_setup before
+//      any write, because the resolved root is the installation directory
 function resolveProjectRoot() {
   if (process.env.BUGHUNTER_PROJECT_ROOT !== undefined) return process.env.BUGHUNTER_PROJECT_ROOT;
   const cwd = process.cwd();
-  if (cwd !== kimiPluginRoot() && cwd !== kimiHome()) return cwd;
+  if (!samePath(cwd, hostPluginRoot()) && !samePath(cwd, kimiHome())) return cwd;
   const bridge = kimiHome() === undefined ? undefined : join(kimiHome(), 'bughunter', 'session-cwd');
   if (bridge !== undefined && existsSync(bridge)) {
     try {
@@ -40,9 +60,7 @@ function resolveProjectRoot() {
 const projectRoot = resolveProjectRoot();
 
 function projectUnknown() {
-  const managedRoot = kimiPluginRoot();
-  return (managedRoot !== undefined && projectRoot === managedRoot)
-    || (kimiHome() !== undefined && projectRoot === kimiHome());
+  return samePath(projectRoot, hostPluginRoot()) || samePath(projectRoot, kimiHome());
 }
 
 function selectedPreset() {
