@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 import { withMcpClient } from './mcp-client.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
+const repoRoot = resolve(pluginRoot, '..');
 const claude = process.env.CLAUDE_BIN ?? 'claude';
 const root = await mkdtemp(join(tmpdir(), 'bh-claude-market-install-'));
 const home = join(root, 'home');
@@ -60,7 +61,7 @@ try {
   const version = spawnSync(claude, ['--version'], { encoding: 'utf8', env: claudeEnv() });
   if (version.error?.code === 'ENOENT') {
     await writeEvidence({
-      surface: 'cli', gate: 'install', status: 'blocked', blocker: 'CLAUDE_CLI_MISSING',
+      host: 'claude', surface: 'cli', gate: 'install', status: 'blocked', blocker: 'CLAUDE_CLI_MISSING',
     });
     throw new Error('CLAUDE_CLI_MISSING: install Claude Code, authenticate it in the isolated gate config, then rerun');
   }
@@ -135,9 +136,10 @@ try {
   assert.match(listAfter.stdout, /bughunter@bughunter-market/);
   assert.match(listAfter.stdout, /loaded|enabled/i);
 
-  assert.equal(await readFile(configPath, 'utf8'), '{"sentinel":"preserve-me"}\n');
-  assert.equal(await readFile(join(project, '.claude', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), 'utf8'), '{}\n');
-  assert.equal(await readFile(join(project, '.claude', 'bughunter', 'state', 'web', 'auth', 'README'), 'utf8'), 'not-a-credential\n');
+  const statePreserved = (await readFile(configPath, 'utf8')) === '{"sentinel":"preserve-me"}\n'
+    && (await readFile(join(project, '.claude', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), 'utf8')) === '{}\n'
+    && (await readFile(join(project, '.claude', 'bughunter', 'state', 'web', 'auth', 'README'), 'utf8')) === 'not-a-credential\n';
+  assert.equal(statePreserved, true, 'marketplace update must preserve project state');
   assert.ok(!existsSync(join(installed.installPath, '.claude', 'bughunter.json')), 'opt-in must never be written into the managed plugin root');
   assert.ok(!existsSync(join(updated.installPath, '.claude', 'bughunter.json')), 'opt-in must never be written into the updated managed root');
 
@@ -147,15 +149,18 @@ try {
   const nodeAfter = await withMcpClient(serverRoot(updated), nodeProject, (client) => client.listTools());
   assert.equal(nodeAfter.tools.length, 16);
 
+  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
   const evidence = {
+    host: 'claude',
     clientVersion,
     surface: 'cli',
     gate: 'install',
     status: 'passed',
+    sourceCommit,
     dormantTools: dormant.tools.length,
     webTools: web.tools.length,
     nodeTools: node.tools.length,
-    statePreserved: true,
+    statePreserved,
   };
   await writeEvidence(evidence);
 

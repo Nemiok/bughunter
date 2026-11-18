@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 
 import { withMcpClient } from './mcp-client.mjs';
+import { makeInitLineProbe } from './qwen-harness.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
 const repoRoot = resolve(pluginRoot, '..');
@@ -41,8 +42,8 @@ function qwenInit({ project }) {
     const child = spawn(qwen, [
       'hi', '--output-format', 'stream-json', '--max-wall-time', '20s', '--auth-type', 'openai',
     ], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...qwenEnv } });
-    let stdout = '';
     let stderr = '';
+    let stdoutTail = '';
     let settled = false;
     const finish = (error, value) => {
       if (settled) return;
@@ -54,15 +55,15 @@ function qwenInit({ project }) {
     const timer = setTimeout(() => finish(new Error(`qwen init timed out\n${stderr}`)), 60_000);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
+    const probe = makeInitLineProbe((event) => finish(undefined, event));
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-      const line = stdout.split('\n').find((value) => value.includes('"subtype":"init"'));
-      if (line !== undefined) finish(undefined, JSON.parse(line));
+      stdoutTail = (stdoutTail + chunk).slice(-2000);
+      probe(chunk);
     });
     child.once('error', (error) => finish(error));
     child.once('exit', (code) => {
-      if (!settled) finish(new Error(`qwen exited before init (${code})\n${stderr}\n${stdout}`));
+      if (!settled) finish(new Error(`qwen exited before init (${code})\n${stderr}\n${stdoutTail}`));
     });
   });
 }

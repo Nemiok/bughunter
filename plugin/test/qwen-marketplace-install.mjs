@@ -9,6 +9,7 @@ import { withMcpClient } from './mcp-client.mjs';
 import { qwenInit, summarize } from './qwen-harness.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
+const repoRoot = resolve(pluginRoot, '..');
 const dist = join(pluginRoot, 'dist', 'bughunter');
 const qwen = process.env.QWEN_BIN ?? 'qwen';
 const root = await mkdtemp(join(tmpdir(), 'bh-qwen-market-install-'));
@@ -85,15 +86,40 @@ try {
   run(qwen, qwenArgs('plugins', 'update', 'bughunter@bughunter-market'));
   const updated = JSON.parse(run(qwen, qwenArgs('plugins', 'list', '--json')).stdout);
   assert.equal(updated.find((plugin) => plugin.id === 'bughunter@bughunter-market').version, '0.1.1-test.1');
-  assert.equal(await readFile(configPath, 'utf8'), '{"sentinel":"preserve-me"}\n');
-  assert.equal(await readFile(join(project, '.qwen', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), 'utf8'), '{}\n');
-  assert.equal(await readFile(join(project, '.qwen', 'bughunter', 'state', 'web', 'auth', 'README'), 'utf8'), 'not-a-credential\n');
+  assert.equal(updated.find((plugin) => plugin.id === 'bughunter@bughunter-market').enabled, true);
+  const statePreserved = (await readFile(configPath, 'utf8')) === '{"sentinel":"preserve-me"}\n'
+    && (await readFile(join(project, '.qwen', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), 'utf8')) === '{}\n'
+    && (await readFile(join(project, '.qwen', 'bughunter', 'state', 'web', 'auth', 'README'), 'utf8')) === 'not-a-credential\n';
+  assert.equal(statePreserved, true, 'marketplace update must preserve project state');
+
+  const clientVersion = run(qwen, ['--version']).stdout.trim();
+  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
+  const installEvidence = {
+    host: 'qwen',
+    surface: 'cli',
+    gate: 'install',
+    status: 'passed',
+    source: 'marketplace',
+    sourceCommit,
+    clientVersion,
+    dormantTools: dormant.bhTools.length,
+    skills: dormant.skills.length,
+    agents: dormant.agents.length,
+    updatedTo: updated.find((plugin) => plugin.id === 'bughunter@bughunter-market').version,
+    statePreserved,
+  };
+  await mkdir(join(pluginRoot, 'evidence', 'qwen'), { recursive: true });
+  await writeFile(
+    join(pluginRoot, 'evidence', 'qwen', 'install.json'),
+    `${JSON.stringify(installEvidence, null, 2)}\n`,
+  );
 
   console.log(JSON.stringify({
     installed: installed.find((plugin) => plugin.id === 'bughunter@bughunter-market').id,
     dormant: { tools: dormant.bhTools.length },
     updatedTo: updated.find((plugin) => plugin.id === 'bughunter@bughunter-market').version,
     sentinels: ['config', 'runs', 'auth'],
+    evidence: installEvidence,
   }));
 } finally {
   await rm(root, { recursive: true, force: true });

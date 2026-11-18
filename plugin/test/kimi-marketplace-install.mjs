@@ -12,6 +12,7 @@ import {
 } from './kimi-server.mjs';
 
 const pluginRoot = resolve(import.meta.dirname, '..');
+const repoRoot = resolve(pluginRoot, '..');
 const kimi = process.env.KIMI_BIN ?? 'kimi';
 const root = await makeTempRoot('bh-kimi-market-install-');
 const home = join(root, 'home');
@@ -219,9 +220,10 @@ try {
     assert.equal(updated.enabled, true);
     const afterUpdate = await kimiRequest(baseUrl, token, 'GET', '/api/v1/plugins/bughunter');
     assert.equal(afterUpdate.version, '0.1.1-test.1');
-    assert.equal(await readFile(configPath, 'utf8'), '{"sentinel":"preserve-me"}\n');
-    assert.equal(await readFile(join(project, '.kimi-code', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), 'utf8'), '{}\n');
-    assert.equal(await readFile(join(project, '.kimi-code', 'bughunter', 'state', 'web', 'auth', 'README'), 'utf8'), 'not-a-credential\n');
+    const statePreserved = (await readFile(configPath, 'utf8')) === '{"sentinel":"preserve-me"}\n'
+      && (await readFile(join(project, '.kimi-code', 'bughunter', 'state', 'web', 'runs', 'sentinel.json'), 'utf8')) === '{}\n'
+      && (await readFile(join(project, '.kimi-code', 'bughunter', 'state', 'web', 'auth', 'README'), 'utf8')) === 'not-a-credential\n';
+    assert.equal(statePreserved, true, 'marketplace update must preserve project state');
 
     // Node preset in a separate temp project: 16 tools, no run started.
     const freshDetails = await kimiRequest(baseUrl, token, 'GET', '/api/v1/plugins/bughunter');
@@ -251,7 +253,7 @@ try {
       nodeTools: nodeTools.length,
       webToolsReasserted: webToolsAgain.length,
       skills: skills.skills.filter((skill) => skill.name.startsWith('bughunter:')).length,
-      statePreserved: true,
+      statePreserved,
     };
   });
 
@@ -259,12 +261,14 @@ try {
   assert.equal(clientVersion, '2.5.3');
   assertExcludes(result, serverToken, 'gate result must not contain the server token value');
   assertExcludes(result, home, 'gate result must not contain the temp home path');
+  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
   const evidence = {
     host: 'kimi',
     clientVersion,
     surface: 'cli',
     gate: 'install',
     status: 'passed',
+    sourceCommit,
     webTools: result.webTools,
     nodeTools: result.nodeTools,
     skills: result.skills,
