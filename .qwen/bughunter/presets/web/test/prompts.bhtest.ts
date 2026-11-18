@@ -222,6 +222,32 @@ test('explorer defines the behaviour of every server-side persona', async () => 
   }
 });
 
+test('entry skill carries no host-specific branches; host names render only into plugin artifacts', async () => {
+  // Хост-специфика (имена инструментов, инвокации, пути состояния) подставляется сборкой плагина
+  // из plugin/hosts/ и проверяется artifact-тестами; канонический entry-скилл остаётся хост-нейтральным.
+  const files: string[] = [];
+  for (const directory of ['.qwen/skills', '.qwen/agents']) {
+    for (const entry of await readdir(join(projectRoot, directory), { withFileTypes: true, recursive: true })) {
+      if (entry.isFile() && entry.name.endsWith('.md')) files.push(join(entry.parentPath, entry.name));
+    }
+  }
+  assert.ok(files.length >= 4, `промпты не найдены: ${files.length} файл(ов)`);
+  for (const file of files) {
+    const body = await readFile(file, 'utf8');
+    for (const token of ['kimi', 'claude', 'mcp__plugin-', '.kimi-code', '.claude/', 'plugins marketplace']) {
+      assert.ok(
+        !body.toLowerCase().includes(token.toLowerCase()),
+        `хост-специфичный токен «${token}» в каноническом промпте ${file}`,
+      );
+    }
+  }
+
+  const entry = (await readPrompt('.qwen/skills/bughunter/SKILL.md')).body;
+  // Инвокация канонического скилла — Qwen-нейтральная (`/bughunter`); Kimi-инвокация рождается в артефакте.
+  assert.ok(!entry.includes('/skill:bughunter:bughunter'), 'Kimi-инвокация просочилась в канонический entry-скилл');
+  assert.ok(!entry.includes('mcp__plugin-'), 'плагинный MCP-префикс просочился в канонический entry-скилл');
+});
+
 test('prompts do not mention the retired tool name', async () => {
   const files: string[] = [];
   for (const directory of ['.qwen/skills', '.qwen/agents']) {

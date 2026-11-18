@@ -11,16 +11,45 @@ Bughunter работает как MCP-сервер внутри агентско
 
 ## Установка
 
-Рекомендуемый путь — Qwen-плагин. Из корня целевого проекта:
+Bughunter ставится нативным плагином в три хоста; артефакт на хост собирается из одного дерева
+(`plugin/build.mjs`, описания хостов — `plugin/hosts/`):
 
-```sh
-node /путь/к/bughunter/plugin/install.mjs --preset web
-```
+| Host | Full entry | Project state |
+| --- | --- | --- |
+| Qwen | `/bughunter:bughunter` | `.qwen/bughunter/state/<preset>/` |
+| Kimi | `/skill:bughunter:bughunter` | `.kimi-code/bughunter/state/<preset>/` |
+| Claude | `/bughunter:bughunter` | `.claude/bughunter/state/<preset>/` |
 
-Добавьте `mcp__bughunter__*` в `permissions.allow`, перезапустите `qwen` и запустите
-`/bughunter:bughunter`. Плагин сам регистрирует MCP-сервер; `.mcp.json` и копирование дерева не
-нужны. Детали, пресеты и ограничения — [`plugin/README.md`](plugin/README.md). Ручная установка —
-[`.qwen/bughunter/README.md`](.qwen/bughunter/README.md) §3.
+- **Qwen Code CLI.** Из корня целевого проекта: `node /путь/к/bughunter/plugin/install.mjs --preset web`.
+  Добавьте `mcp__bughunter__*` в `permissions.allow`, перезапустите `qwen` и запустите
+  `/bughunter:bughunter`. Плагин сам регистрирует MCP-сервер; `.mcp.json` и копирование дерева не
+  нужны. Детали, пресеты и ограничения — [`plugin/README.md`](plugin/README.md).
+- **Kimi Code CLI/Desktop.** Custom marketplace добавляется один раз (Settings → Plugins → добавить
+  custom marketplace JSON), затем нативная установка плагина и обязательный `/reload`. Детали,
+  префикс инструментов и мост SessionStart — [`plugin/hosts/kimi.README.md`](plugin/hosts/kimi.README.md).
+- **Claude Code CLI/Desktop Code.** Custom marketplace добавляется один раз (`/plugin marketplace add`),
+  затем `/plugin install bughunter@bughunter-market`. Детали —
+  [`plugin/hosts/claude.README.md`](plugin/hosts/claude.README.md).
+
+Три оговорки, чтобы таблица не читалась шире фактов:
+
+1. Custom marketplace — self-hosted каталог, который оператор добавляет себе вручную. Записи в
+   официальном/центральном каталоге маркетплейса нет, и её приёмка там не предполагается.
+2. «Full entry» — точка входа скилла, а не уровень поддержки. Полный workflow сертифицируется
+   только по evidence-гейтам (`install` + модельные `target` и `resume` на том же клиенте);
+   артефакт `bughunter-mcp` — MCP-only поверхность и не означает полный workflow.
+3. Текущий статус по хостам и поверхностям берётся из генерируемого `COMPATIBILITY.md` релиза
+   (`plugin/release.mjs` собирает его из `plugin/evidence/`); README фиксирует устройство
+   установки, а не дневную сводку.
+
+Что проверено на сегодня (нативные гейты без модельных прогонов): Qwen — установка и обновление
+плагина из custom marketplace; Kimi Code CLI 2.5.3 — установка, setup и обновление (инструменты
+`mcp__plugin-bughunter_bughunter__*`, мост SessionStart, `/reload` обязателен); Claude Code CLI
+2.1.327 — strict-валидация, установка и обновление. Модельные гейты `target`/`resume` и Desktop-гейты
+на Kimi и Claude не прогонялись, поэтому полный workflow для них здесь не объявлен (задачи 13–14);
+нативная установка Agent Plugins v1 на Qwen заблокирована, MCP-only сертификации нет. Публикация
+релиза заблокирована отсутствием license/notices и URL publisher'а — они не выдумываются.
+Ручная установка (Qwen, копирование дерева) — [`.qwen/bughunter/README.md`](.qwen/bughunter/README.md) §3.
 
 ## Статус
 
@@ -189,5 +218,9 @@ Run `20261114T053038.281Z-4c4e72df3973`, `/bughunter target /orders/new` в од
 
 - Операторский README веб-пресета (установка, конфиг, запуск, ограничения):
   [`.qwen/bughunter/README.md`](.qwen/bughunter/README.md)
+- README хост-артефактов: Qwen — [`plugin/README.md`](plugin/README.md), Kimi —
+  [`plugin/hosts/kimi.README.md`](plugin/hosts/kimi.README.md), Claude —
+  [`plugin/hosts/claude.README.md`](plugin/hosts/claude.README.md); текущий статус по хостам —
+  генерируемый `COMPATIBILITY.md` релиза
 - История интеграции с Kimi Code CLI: git-тег `kimi-cli-mvp` (`git show kimi-cli-mvp`)
 - Дизайн-документ разреза core/пресеты: `docs/superpowers/specs/2026-11-13-bughunter-core-and-presets-design.md`

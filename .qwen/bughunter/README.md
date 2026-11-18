@@ -110,6 +110,17 @@
 
 ## 3. Установка в проект
 
+> **Три пути установки и три корня состояния.** Этот файл — операторская документация ручной
+> (репозиторной) установки для Qwen Code CLI: сервер и промпты копируются в `.qwen/` проекта, и
+> состояние лежит рядом с пресетами — `.qwen/bughunter/presets/<preset>/state/`. Нативный
+> Qwen-плагин держит состояние отдельно — в `.qwen/bughunter/state/<preset>/` (см.
+> [`plugin/README.md`](../../plugin/README.md)): прогоны ручной установки плагин не видит и наоборот.
+> Нативные установки для других хостов описаны в их README: Kimi Code CLI/Desktop —
+> [`plugin/hosts/kimi.README.md`](../../plugin/hosts/kimi.README.md), Claude Code CLI/Desktop Code —
+> [`plugin/hosts/claude.README.md`](../../plugin/hosts/claude.README.md); там же их корни состояния
+> (`.kimi-code/bughunter/state/<preset>/`, `.claude/bughunter/state/<preset>/`) и ограничения хостов.
+> Общая матрица установки по хостам — в корневом [`README.md`](../../README.md).
+
 > **Быстрый путь — Qwen-плагин.** Из корня целевого проекта выполните
 > `node /путь/к/bughunter/plugin/install.mjs --preset web`: плагин соберёт и зарегистрирует
 > MCP-сервер сам, поэтому копировать дерево и писать `.mcp.json` не нужно. Подробности и

@@ -8,6 +8,8 @@ const projectRoot = join(import.meta.dirname, '../../../..');
 const docs = {
   root: 'README.md',
   preset: '.qwen/bughunter/README.md',
+  pluginReadme: 'plugin/README.md',
+  authoring: 'plugin/AUTHORING.md',
   nodePreset: '.qwen/bughunter/presets/node/README.md',
   contractSkill: '.qwen/skills/bughunter-core-contract/SKILL.md',
   invariants: 'docs/concept/invariants.md',
@@ -69,6 +71,57 @@ test('the readme does not claim unverified gates', async () => {
       );
     }
   }
+});
+
+test('active docs distinguish native hosts and support levels', async () => {
+  const readme = await read(docs.root);
+  for (const token of ['Kimi', 'Claude', 'Qwen', 'bughunter-mcp', 'custom marketplace']) {
+    assert.ok(readme.includes(token), token);
+  }
+  assert.ok(readme.includes('Полный workflow') || readme.includes('full workflow'));
+  assert.ok(!readme.includes('Поддержка плагинных MCP-серверов и агентов проверена') || readme.includes('Qwen'));
+});
+
+test('the root readme names native install entries and per-host state paths', async () => {
+  const body = await read(docs.root);
+  for (const row of [
+    '| Qwen | `/bughunter:bughunter` | `.qwen/bughunter/state/<preset>/` |',
+    '| Kimi | `/skill:bughunter:bughunter` | `.kimi-code/bughunter/state/<preset>/` |',
+    '| Claude | `/bughunter:bughunter` | `.claude/bughunter/state/<preset>/` |',
+  ]) {
+    assert.ok(body.includes(row), `root readme missing install row: ${row}`);
+  }
+  // Текущий статус по хостам живёт в генерируемом COMPATIBILITY.md, а не в таблице README.
+  assert.ok(body.includes('COMPATIBILITY.md'), 'root readme must point at the generated support status');
+  // Custom marketplace оператор добавляет один раз; приёмки в официальный каталог не заявлено.
+  assert.match(body, /custom marketplace добавляется один раз/i);
+  assert.match(body, /официальн|центральн|curated|official/i);
+  // MCP-only артефакт не выдаётся за полный workflow.
+  assert.match(body, /bughunter-mcp не (?:означает|даёт|сертифицирует)|bughunter-mcp[^\n]*не[^\n]*полн/i);
+});
+
+test('operator, artifact and authoring docs keep their scopes', async () => {
+  const operator = await read(docs.preset);
+  // Ручная установка держит состояние в репозиторных пресетах, плагин — в .qwen/bughunter/state/.
+  assert.ok(operator.includes('presets/web/state/'), 'operator readme must name the repo state path');
+  assert.ok(operator.includes('.qwen/bughunter/state/<preset>/'), 'operator readme must name the plugin state path');
+  for (const hostReadme of ['plugin/hosts/kimi.README.md', 'plugin/hosts/claude.README.md']) {
+    assert.ok(operator.includes(hostReadme), `operator readme does not link the host-specific readme: ${hostReadme}`);
+  }
+
+  const artifact = await read(docs.pluginReadme);
+  // plugin/README — это README Qwen-артефакта: он ссылается на общую матрицу установки в корне.
+  assert.ok(artifact.includes('../../README.md'), 'plugin readme must link the root install matrix');
+  assert.ok(artifact.includes('Qwen Code CLI'), 'plugin readme must stay Qwen-specific');
+  assert.ok(!artifact.includes('.kimi-code/bughunter/state'), 'plugin readme leaks Kimi state paths');
+  assert.ok(!artifact.includes('.claude/bughunter/state'), 'plugin readme leaks Claude state paths');
+
+  const authoring = await read(docs.authoring);
+  // Авторство пресета общее; новый хост — это descriptor и гейты, а не правки core.
+  assert.match(authoring, /host|хост/i);
+  assert.match(authoring, /descriptor/i);
+  assert.match(authoring, /гейт|gate/i);
+  assert.match(authoring, /core не (?:правится|меняется)|ноль правок core/i);
 });
 
 test('the concept docs restate the invariants and the preset guide', async () => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
@@ -35,6 +35,31 @@ test('the entry skill states the orchestration contract without naming preset to
 
   for (const tool of presetInteractionTools) {
     assert.ok(!body.includes(tool), `entry skill names a preset tool: ${tool}`);
+  }
+});
+
+test('canonical prompt sources carry no host-specific branches', async () => {
+  // Хост-специфика живёт в plugin/hosts/ и рендерится в артефакты (это проверяют plugin-тесты).
+  // Канонические промпты .qwen/ остаются хост-нейтральными: Kimi/Claude-веток в них быть не должно.
+  const hostTokens = [
+    'kimi', 'claude', 'mcp__plugin-', '.kimi-code', '.claude/',
+    'KIMI_PLUGIN_ROOT', 'CLAUDE_PLUGIN_ROOT', '/reload-plugins', 'plugins marketplace',
+  ];
+  const files: string[] = [];
+  for (const directory of ['.qwen/skills', '.qwen/agents']) {
+    for (const entry of await readdir(join(projectRoot, directory), { withFileTypes: true, recursive: true })) {
+      if (entry.isFile() && entry.name.endsWith('.md')) files.push(join(entry.parentPath, entry.name));
+    }
+  }
+  assert.ok(files.length >= 4, `canonical prompts not found: ${files.length} files`);
+  for (const file of files) {
+    const body = await readFile(file, 'utf8');
+    for (const token of hostTokens) {
+      assert.ok(
+        !body.toLowerCase().includes(token.toLowerCase()),
+        `host-specific token «${token}» in canonical prompt ${file}`,
+      );
+    }
   }
 });
 
