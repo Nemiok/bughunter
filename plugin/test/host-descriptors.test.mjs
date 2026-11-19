@@ -17,6 +17,13 @@ test('qwen descriptor preserves the installed layout', () => {
   assert.equal(paths.configPath, join(paths.stateDir, 'config.json'));
 });
 
+test('qwen descriptor requires a explicit restart in the same project/config', () => {
+  assert.ok(qwenHost.refreshInstruction.includes('перезапуск qwen'));
+  assert.ok(qwenHost.refreshInstruction.includes('project/config'));
+  assert.equal(qwenHost.refreshInstruction.includes('/plugins reload'), false);
+  assert.equal(qwenHost.reloadInstruction, '/plugins reload');
+});
+
 test('descriptor rejects absolute and escaping project paths', () => {
   for (const [field, value] of [['optInPath', '/tmp/x'], ['stateRoot', '../x']]) {
     assert.throws(

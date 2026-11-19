@@ -7,7 +7,7 @@ Claude) — в корневом [`README.md`](../../README.md); Kimi- и Claude-
 дерева и имеют собственные README — [`hosts/kimi.README.md`](hosts/kimi.README.md) и
 [`hosts/claude.README.md`](hosts/claude.README.md).
 
-Проверено на Qwen Code CLI `1.0.0-preview.1`. Нужны Node.js ≥ 22.18 и Git в целевом проекте; для веб-пресета — установленный Google Chrome.
+Проверено на Qwen Code CLI `1.0.0-preview.2`. Нужны Node.js ≥ 22.18 и Git в целевом проекте; для веб-пресета — установленный Google Chrome.
 
 ## Установка
 
@@ -38,9 +38,9 @@ node plugin/install.mjs --preset web
 { "permissions": { "allow": ["mcp__bughunter__*"] } }
 ```
 
-2. Перезапустите `qwen` (или выполните `/plugins reload`).
-3. В корне проекта запустите `<entryInvocation>`. Это имя плагинного скилла; старый `/bughunter` относится к ручной установке и здесь не действует.
-4. Первый запуск вернёт `CONFIG_CREATED` с путём к `config.json`; заполните его и запустите снова.
+2. Выполните setup и validate. Если плагин уже загружен, `<entryInvocation>` на первом запуске вернёт `CONFIG_CREATED` с путём к `config.json`; заполните его и повторите validate. Это имя плагинного скилла; старый `/bughunter` относится к ручной установке и здесь не действует.
+3. Полностью перезапустите `qwen` в том же project/config, отправьте «продолжай» и проверьте 19 web или 16 node tools. На Qwen `1.0.0-preview.2` `/plugins reload` не обновляет MCP toolset; перезапуск обязателен.
+4. Только после успешной активации запустите target.
 
 Проверка подключения: `qwen plugins list`; в сессии — `/mcp`. `qwen mcp list` показывает только
 серверы из `.mcp.json` и plugin-серверы не перечисляет.

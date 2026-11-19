@@ -12,7 +12,7 @@ export const qwenHost = defineHostDescriptor({
   agentNamespace: 'bughunter:',
   setupMode: 'cli',
   reloadInstruction: '/plugins reload',
-  refreshInstruction: '`/plugins reload` (или открой новую сессию)',
+  refreshInstruction: 'перезапуск qwen в том же project/config',
   entryInvocation: '/bughunter:bughunter',
   clients: ['cli'],
 });
