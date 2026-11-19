@@ -44,6 +44,15 @@ for (const [name, mutate] of Object.entries({
   });
 }
 
+test('recorder accepts the node preset api test kind', async () => {
+  const input = await validFixture();
+  input.candidate.tests = { api: CANDIDATE_TEST };
+  await persistFixture(input);
+  const path = await recordModelGate(input);
+  const evidence = JSON.parse(await readFile(path, 'utf8'));
+  assert.equal(evidence.red.failedAssertions, 1);
+});
+
 test('recorder rejects malformed candidate json', async () => {
   const input = await validFixture();
   await writeFile(join(input.runDir, 'candidates', 'bug-1.json'), '{not json');

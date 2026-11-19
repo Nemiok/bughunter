@@ -80,7 +80,7 @@ export async function recordModelGate(input) {
   });
   const transcripts = await transcriptDigests(orchestration.transcriptPaths);
 
-  const candidateTest = confirmed[0].tests?.e2e ?? confirmed[0].tests?.unit;
+  const candidateTest = confirmed[0].tests?.e2e ?? confirmed[0].tests?.unit ?? confirmed[0].tests?.api;
   assert.ok(
     typeof candidateTest === 'string' && candidateTest.trim() !== '',
     'MODEL_EVIDENCE_TEST_PATH_REQUIRED',
