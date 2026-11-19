@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
+
+import { runIndependentRed } from './independent-red.mjs';
+import { inspectQwenTranscript } from './transcript-evidence.mjs';
 
 async function readCandidates(runDir) {
   const directory = join(runDir, 'candidates');
@@ -24,13 +28,22 @@ async function readCandidates(runDir) {
   return candidates;
 }
 
+async function transcriptDigests(transcriptPaths) {
+  const digests = [];
+  for (const path of transcriptPaths) {
+    digests.push({ sha256: createHash('sha256').update(await readFile(path)).digest('hex') });
+  }
+  return digests;
+}
+
 export async function recordModelGate(input) {
   const {
     host, surface, gate, clientVersion, sourceCommit, runId, runDir,
-    redCommand, redResult, orchestration, evidenceDir,
+    red, orchestration, evidenceDir,
   } = input;
   assert.match(sourceCommit, /^[a-f0-9]{40}$/);
   assert.ok(clientVersion);
+  if (host !== 'qwen') throw new Error('TRANSCRIPT_HOST_UNSUPPORTED');
   assert.equal(basename(runDir), runId);
   const run = JSON.parse(await readFile(join(runDir, 'run.json'), 'utf8'));
   assert.equal(run.id, runId);
@@ -60,17 +73,43 @@ export async function recordModelGate(input) {
     assert.ok(run.targets.includes('/orders/new'), 'MODEL_EVIDENCE_WEB_TARGET_REQUIRED');
   }
 
-  assert.ok(Number.isInteger(redResult.failedAssertions) && redResult.failedAssertions >= 1);
-  assert.equal(orchestration.nativeForegroundAgents, true);
-  assert.equal(orchestration.singleExplorer, true);
-  assert.equal(orchestration.mainRestrictedTools, 0);
-  await access(orchestration.transcriptPath);
+  const orchestrationResult = await inspectQwenTranscript({
+    transcriptPaths: orchestration?.transcriptPaths,
+    runId,
+    gate,
+  });
+  const transcripts = await transcriptDigests(orchestration.transcriptPaths);
+
+  const candidateTest = confirmed[0].tests?.e2e ?? confirmed[0].tests?.unit;
+  assert.ok(
+    typeof candidateTest === 'string' && candidateTest.trim() !== '',
+    'MODEL_EVIDENCE_TEST_PATH_REQUIRED',
+  );
+  if (red?.testPath !== undefined && resolve(red.cwd, red.testPath) !== resolve(red.cwd, candidateTest)) {
+    throw new Error('MODEL_EVIDENCE_TEST_PATH_MISMATCH');
+  }
+  const redResult = await runIndependentRed({
+    runner: red?.runner,
+    cwd: red?.cwd,
+    testPath: candidateTest,
+    reportPath: red?.reportPath,
+    spawn: red?.spawn,
+  });
+
   const evidence = {
     host, surface, gate, clientVersion, sourceCommit, runId,
     status: 'passed', afterHostRefactor: true,
     finished: run.status === 'finished', pending, confirmedFalse,
-    nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
-    red: { command: redCommand, failedAssertions: redResult.failedAssertions },
+    nativeForegroundAgents: orchestrationResult.nativeForegroundAgents,
+    singleExplorer: orchestrationResult.singleExplorer,
+    mainRestrictedTools: orchestrationResult.mainRestrictedTools,
+    reloadVerified: orchestrationResult.reloadVerified,
+    transcripts,
+    red: {
+      command: [redResult.command, ...redResult.args].join(' '),
+      failedAssertions: redResult.failedAssertions,
+      reportSha256: redResult.reportSha256,
+    },
   };
   const directory = surface === 'extension'
     ? join(evidenceDir, host, 'extension')
