@@ -7,9 +7,12 @@ async function addPackage(directory, packages) {
     manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
   } catch (error) {
     if (error.code === 'ENOENT') return;
-    throw error;
+    throw new Error(`THIRD_PARTY_MANIFEST_INVALID: ${directory}`);
   }
-  if (!manifest.name || !manifest.version) return;
+  if (typeof manifest.name !== 'string' || manifest.name === ''
+    || typeof manifest.version !== 'string' || manifest.version === '') {
+    throw new Error(`THIRD_PARTY_MANIFEST_INVALID: ${directory}`);
+  }
   const license = typeof manifest.license === 'string' ? manifest.license : JSON.stringify(manifest.license);
   let text;
   for (const name of ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE']) {
@@ -62,7 +65,10 @@ export async function generateNotices({ nodeModules, out }) {
       '',
       `License: ${item.license}`,
       '',
-      ...item.text.trim().split('\n').map((line) => `    ${line}`),
+      ...item.text.trim().split('\n').map((line) => {
+        const cleaned = line.replace(/[ \t]+$/, '');
+        return cleaned === '' ? '' : `    ${cleaned}`;
+      }),
     ].join('\n'));
   const content = ['# Third-party notices', '', 'Bundled production packages and their license texts.', '', ...sections, ''].join('\n');
   await writeFile(out, content, 'utf8');

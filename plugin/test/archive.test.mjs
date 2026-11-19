@@ -35,6 +35,10 @@ test('archive source rejects HTTP and malformed hashes', () => {
     () => archiveSource({ url: 'https://example.com/bughunter.zip', sha256: 'bad' }),
     /ARCHIVE_SHA256_INVALID/,
   );
+  assert.throws(
+    () => archiveSource({ url: 'not a url', sha256: 'a'.repeat(64) }),
+    /ARCHIVE_URL_INVALID/,
+  );
 });
 
 test('verifyArchive rejects a one-byte change', async () => {

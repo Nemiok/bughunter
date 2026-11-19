@@ -23,6 +23,7 @@ const ZIP_NAMES = {
   gigacode: 'bughunter.zip',
 };
 const EXPERIMENTAL_NOTE = 'experimental; full workflow not certified';
+export const USAGE = 'USAGE: node release.mjs --version <semver> --source <commit> [--host all] [--evidence-dir dir] [--out-dir dir] [--metadata-only] [--release-base-url url|--marketplace-repo repo]';
 const RELEASE_ROOT = resolve(import.meta.dirname);
 const REPO_ROOT = resolve(RELEASE_ROOT, '..');
 
@@ -274,7 +275,14 @@ export async function createRelease({
       } catch {
         throw new Error(`ARTIFACT_MISSING: ${host} -> ${zipPath}`);
       }
-      built[host] = { zip: zipPath, sha256: await verifyArchive(zipPath, declared) };
+      let verified;
+      try {
+        verified = await verifyArchive(zipPath, declared);
+      } catch (error) {
+        if (error.code === 'ENOENT') throw new Error(`ARTIFACT_MISSING: ${host} -> ${zipPath}`);
+        throw error;
+      }
+      built[host] = { zip: zipPath, sha256: verified };
       continue;
     }
     await mkdir(hostOut, { recursive: true });
@@ -289,6 +297,7 @@ export async function createRelease({
     if (host === 'qwen') {
       if (ready || hostStatus[host] === 'experimental') {
         const marketplaceRoot = join(hostOut, 'marketplace');
+        let catalogBuilt = false;
         if (releaseBaseUrl !== undefined || marketplaceRepo !== undefined) {
           if (!releaseBaseUrl || !marketplaceRepo) throw new Error('PUBLICATION_CONFIG_INCOMPLETE');
           if (licenseError === undefined) {
@@ -300,11 +309,13 @@ export async function createRelease({
               payloadCommit: sourceCommit,
               repository: marketplaceRepo,
             });
+            catalogBuilt = true;
           }
         } else {
           await buildQwenMarketplace({ pluginDir: artifactDir, marketplaceRoot, version });
+          catalogBuilt = true;
         }
-        if (!ready) await applyMarketplaceNote(marketplaceRoot, EXPERIMENTAL_NOTE);
+        if (!ready && catalogBuilt) await applyMarketplaceNote(marketplaceRoot, EXPERIMENTAL_NOTE);
       }
     } else if (host === 'claude') {
       if (ready || hostStatus[host] === 'experimental') {
@@ -373,7 +384,7 @@ export function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.version === undefined || args.sourceCommit === undefined) {
-    throw new Error('USAGE: node release.mjs --version <semver> --source <commit> [--host all] [--evidence-dir dir] [--out-dir dir] [--release-base-url url|--marketplace-repo repo]');
+    throw new Error(USAGE);
   }
   const outDir = args.outDir ?? join(RELEASE_ROOT, 'release', args.version);
   const evidenceDir = args.evidenceDir ?? join(RELEASE_ROOT, 'evidence');

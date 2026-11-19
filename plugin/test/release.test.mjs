@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, readFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, access, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -15,6 +15,12 @@ const COMMIT = 'a'.repeat(40);
 
 const kimiBase = {
   host: 'kimi', surface: 'cli', clientVersion: '2.5.3', status: 'passed', sourceCommit: COMMIT,
+};
+
+const modelStrict = {
+  finished: true, pending: 0, confirmedFalse: 0,
+  nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
+  reloadVerified: true, red: { failedAssertions: 1 },
 };
 
 const MANIFEST_FILES = {
@@ -34,11 +40,12 @@ async function writeEvidence(evidenceDir, relPath, data) {
 
 async function makeKimiFullEvidence(evidenceDir) {
   for (const gate of ['install', 'target', 'resume']) {
-    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...kimiBase, gate, runId: 'run-1' });
+    await writeEvidence(evidenceDir, `kimi/${gate}.json`, { ...kimiBase, ...modelStrict, gate, runId: 'run-1' });
   }
   for (const gate of ['install', 'target']) {
     await writeEvidence(evidenceDir, `kimi/desktop/${gate}.json`, {
-      host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate, runId: 'run-1', sourceCommit: COMMIT,
+      host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed',
+      gate, runId: 'run-1', sourceCommit: COMMIT, ...modelStrict,
     });
   }
 }
@@ -183,12 +190,13 @@ test('missing Claude evidence does not block a qwen-only local bundle', async ()
   const evidenceDir = join(root, 'evidence');
   const outDir = join(root, 'release-out');
   const qwenBase = {
-    host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: COMMIT, source: 'marketplace',
+    host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed',
+    sourceCommit: COMMIT, source: 'marketplace', ...modelStrict,
   };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
     ...qwenBase, gate: 'public-install', source: 'github-marketplace',
-    public: true, sha256Verified: true,
+    public: true, sha256Verified: true, statePreserved: true,
   });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', {
@@ -228,7 +236,8 @@ test('experimental marketplaces carry the experimental disclaimer', async () => 
   const evidenceDir = join(root, 'evidence');
   const outDir = join(root, 'release-out');
   const claudeBase = {
-    host: 'claude', surface: 'cli', clientVersion: '2.1.327 (Claude Code)', status: 'passed', sourceCommit: COMMIT,
+    host: 'claude', surface: 'cli', clientVersion: '2.1.327 (Claude Code)',
+    status: 'passed', sourceCommit: COMMIT, ...modelStrict,
   };
   await writeEvidence(evidenceDir, 'claude/install.json', { ...claudeBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'claude/target.json', { ...claudeBase, gate: 'target', runId: 'run-1' });
@@ -380,11 +389,12 @@ test('missing license materials cannot render PASS or build a public archive cat
   const { evidenceDir, outDir, artifacts } = await baseReleaseOptions();
   const qwenBase = {
     host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: COMMIT,
-    source: 'marketplace',
+    source: 'marketplace', ...modelStrict,
   };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
-    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true,
+    sha256Verified: true, statePreserved: true,
   });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
@@ -401,4 +411,39 @@ test('missing license materials cannot render PASS or build a public archive cat
   assert.match(renderReleaseSummary(result), /INCOMPLETE/);
   assert.doesNotMatch(renderReleaseSummary(result), /PASS/);
   assert.equal(existsSync(join(outDir, 'qwen', 'marketplace', '.claude-plugin', 'marketplace.json')), false);
+});
+
+test('missing legal files do not touch a non-existent public catalog', async () => {
+  const { root, evidenceDir, outDir, artifacts } = await baseReleaseOptions();
+  await writeEvidence(evidenceDir, 'qwen/install.json', {
+    host: 'qwen', surface: 'cli', gate: 'install', status: 'passed',
+    source: 'marketplace', sourceCommit: COMMIT, clientVersion: '1.0.0',
+  });
+  const result = await createRelease({
+    version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    hosts: ['qwen'], git: cleanGit(),
+    licenseFiles: { license: join(root, 'missing-LICENSE'), notices: join(root, 'missing-NOTICES') },
+    releaseBaseUrl: 'https://example.invalid/releases',
+    marketplaceRepo: 'acme/bughunter',
+  });
+  assert.equal(result.licenseError, 'LICENSE_MATERIALS_MISSING');
+  assert.equal(result.publication, 'blocked');
+  assert.equal(result.hosts.qwen, 'experimental');
+  assert.equal(existsSync(join(outDir, 'qwen', 'marketplace', '.claude-plugin', 'marketplace.json')), false);
+});
+
+test('metadataOnly reports ARTIFACT_MISSING when the zip disappeared', async () => {
+  const { evidenceDir, outDir, artifacts, licenseFiles } = await baseReleaseOptions();
+  const options = {
+    version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    hosts: ['kimi'], git: cleanGit(), licenseFiles,
+  };
+  await createRelease(options);
+  await rm(join(outDir, 'kimi', 'bughunter.zip'));
+  await assert.rejects(createRelease({ ...options, metadataOnly: true }), /ARTIFACT_MISSING/);
+});
+
+test('release usage documents metadata-only', async () => {
+  const { USAGE } = await import('../release.mjs');
+  assert.match(USAGE, /--metadata-only/);
 });

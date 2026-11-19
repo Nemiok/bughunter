@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { selectInstallCandidate, validateRuntimeCapabilities } from '../capabilities.mjs';
+import { probeClientCommands, selectInstallCandidate, validateRuntimeCapabilities } from '../capabilities.mjs';
 
 const commit = 'a'.repeat(40);
 const validQwen = {
@@ -61,4 +61,30 @@ test('valid runtime report is returned without losing observed names', () => {
   const result = validateRuntimeCapabilities(validQwen, 'qwen');
   assert.equal(result.tools.Read, 'read_file');
   assert.equal(result.mcpToolPrefix, 'mcp__bughunter__');
+});
+
+test('probe passes a bounded timeout and survives ETIMEDOUT', () => {
+  const calls = [];
+  const timedOut = () => ({ status: null, stdout: '', stderr: '', error: { code: 'ETIMEDOUT' } });
+  const result = probeClientCommands({
+    binary: 'qwen', family: 'qwen',
+    run: (command, args, options) => {
+      calls.push({ command, args, options });
+      return timedOut();
+    },
+  });
+  assert.deepEqual(result.commands, { plugins: false, extensions: false });
+  assert.equal(result.clientVersion, 'unknown');
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].options.timeout, 10_000);
+  assert.equal(calls[0].options.shell, false);
+});
+
+test('probe survives a throwing runner', () => {
+  const result = probeClientCommands({
+    binary: 'qwen', family: 'qwen',
+    run: () => { throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }); },
+  });
+  assert.deepEqual(result.commands, { plugins: false, extensions: false });
+  assert.equal(result.clientVersion, 'unknown');
 });

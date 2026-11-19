@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 export function archiveSource({ url, sha256 }) {
-  const parsed = new URL(url);
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('ARCHIVE_URL_INVALID');
+  }
   if (parsed.protocol !== 'https:') throw new Error('ARCHIVE_HTTPS_REQUIRED');
   if (!/^[a-f0-9]{64}$/i.test(sha256)) throw new Error('ARCHIVE_SHA256_INVALID');
   return { source: 'archive', url, sha256: sha256.toLowerCase() };

@@ -152,14 +152,14 @@ qwen plugins marketplace add owner/repo
 qwen plugins install bughunter@bughunter-market
 ```
 
-`owner/repo` заменяется на реально опубликованный репозиторий. Для локальной проверки marketplace добавляется абсолютным путём. Отсутствие опубликованного URL не выдавать за выполненную публикацию.
+Публичный канал этого проекта — `Nemiok/bughunter` (GitHub Releases + custom marketplace). Для локальной проверки marketplace добавляется абсолютным путём. Отсутствие опубликованного URL не выдавать за выполненную публикацию.
 
 Custom marketplace в этой инструкции — self-hosted каталог, который оператор добавляет себе вручную (`qwen plugins marketplace add`). Это не официальная публикация в маркетплейсе Qwen: записи в центральном каталоге нет, и её наличие не предполагается.
 
 ## Ограничения
 
-- Поддержка плагинных MCP-серверов и агентов проверена на Qwen Code CLI `1.0.0-preview.1`; на других версиях поведение может отличаться.
-- Нативные установка и обновление (custom marketplace, install/update) проверены гейтами без модельных прогонов; модельный `target`-гейт после хост-рефактора не прогонялся, поэтому полный workflow здесь не заявлен — текущий статус по хостам публикует генерируемый `COMPATIBILITY.md` релиза.
+- Поддержка плагинных MCP-серверов и агентов проверена на Qwen Code CLI `1.0.0-preview.2`; на других версиях поведение может отличаться.
+- Нативные install/update проверены на Qwen, Kimi и Claude. Модельные и публичные гейты привязаны к конкретному payload/client; уровень поддержки и evidence публикует `COMPATIBILITY.md` релиза. Без полного evidence поверхность остаётся experimental/planned/blocked.
 - Сервер стартует при каждой сессии `qwen` в любом проекте; в проектах без opt-in он dormant и не создаёт файлов.
 - Плагин — снимок дерева Bughunter. После изменений в core/пресетах пересоберите и переустановите его.
-- Центральной или npm-публикации нет. Поддерживаются установка из исходника, HTTPS release zip и self-hosted marketplace; конкретный remote/URL должен задать publisher. Без license/notices и URL publisher'а публикация релиза остаётся заблокированной.
+- Центральной или npm-публикации нет. Поддерживаются установка из исходника, HTTPS release zip и self-hosted marketplace. Публичный канал — GitHub Releases и custom marketplace; в релизе есть LICENSE и THIRD_PARTY_NOTICES. SHA256 подтверждает целостность архива, но не является подписью. URL, version и digest конкретного релиза — в его `COMPATIBILITY.md`/release-summary.

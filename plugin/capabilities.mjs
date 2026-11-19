@@ -1,21 +1,32 @@
 import { spawnSync } from 'node:child_process';
 
+const RUN_OPTIONS = { encoding: 'utf8', timeout: 10_000, shell: false };
+
+function invoke(run, binary, args, options) {
+  try {
+    return run(binary, args, options) ?? {};
+  } catch {
+    return {};
+  }
+}
+
 function runHelp(run, binary, command) {
-  return run(binary, [command, '--help']).status === 0;
+  return invoke(run, binary, [command, '--help'], RUN_OPTIONS).status === 0;
 }
 
 export function probeClientCommands({
   binary,
   family,
-  run = (command, args) => spawnSync(command, args, { encoding: 'utf8' }),
+  run = (command, args, options) => spawnSync(command, args, options),
 }) {
-  const version = run(binary, ['--version']);
+  const version = invoke(run, binary, ['--version'], RUN_OPTIONS);
   const plugins = runHelp(run, binary, 'plugins');
   const extensions = runHelp(run, binary, 'extensions');
+  const stdout = typeof version.stdout === 'string' ? version.stdout.trim() : '';
   return {
     family: family ?? 'unknown',
     binary,
-    clientVersion: version.status === 0 ? version.stdout.trim() : 'unknown',
+    clientVersion: version.status === 0 && stdout !== '' ? stdout : 'unknown',
     commands: { plugins, extensions },
   };
 }
