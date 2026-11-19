@@ -42,8 +42,7 @@ Bughunter ставится нативным плагином в три хост�
    официальном/центральном каталоге маркетплейса нет, и её приёмка там не предполагается.
 2. «Full entry» — точка входа скилла, а не уровень поддержки. Полный workflow сертифицируется
    только по evidence-гейтам (`install` + `public-install` + `activation` + `target` + `node-target`
-   + `resume` на одном payload/client); артефакт `bughunter-mcp` — MCP-only поверхность и не означает
-   полный workflow.
+   + `resume` на одном payload/client); артефакт `bughunter-mcp` — MCP-only поверхность и не означает полный workflow.
 3. Текущий статус по хостам и поверхностям берётся из генерируемого `COMPATIBILITY.md` релиза
    (`plugin/release.mjs` собирает его из `plugin/evidence/`); README фиксирует устройство
    установки, а не дневную сводку.
