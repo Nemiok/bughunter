@@ -75,6 +75,14 @@ function acceptsGate(surface, gate, evidence) {
     && (typeof evidence.runId !== 'string' || evidence.runId.trim() === '')) {
     return false;
   }
+  if (gate === 'public-install' && evidence.statePreserved !== true) return false;
+  if (['target', 'node-target', 'resume'].includes(gate)) {
+    if (evidence.finished !== true || evidence.pending !== 0 || evidence.confirmedFalse !== 0) return false;
+    if (evidence.nativeForegroundAgents !== true || evidence.singleExplorer !== true) return false;
+    if (evidence.mainRestrictedTools !== 0) return false;
+    if (!Number.isInteger(evidence.red?.failedAssertions) || evidence.red.failedAssertions < 1) return false;
+  }
+  if (surface === 'qwen/cli' && gate === 'target' && evidence.reloadVerified !== true) return false;
   return true;
 }
 

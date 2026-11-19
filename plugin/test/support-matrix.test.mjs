@@ -6,9 +6,16 @@ import { test } from 'node:test';
 
 import { buildSupportMatrix } from '../support-matrix.mjs';
 
+const modelStrict = {
+  finished: true, pending: 0, confirmedFalse: 0,
+  nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
+  reloadVerified: true, red: { failedAssertions: 1 },
+};
+
 const base = {
   host: 'kimi', surface: 'cli', clientVersion: '2.5.3', status: 'passed',
   sourceCommit: 'a'.repeat(40),
+  ...modelStrict,
 };
 
 async function writeEvidence(evidenceDir, relPath, data) {
@@ -70,7 +77,7 @@ test('desktop requires its own desktop install and target evidence', async () =>
   const desktop = matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop');
   assert.equal(desktop.status, 'experimental');
   await writeEvidence(evidenceDir, 'kimi/desktop/target.json', {
-    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate: 'target', runId: 'run-1', sourceCommit: commit,
+    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', ...modelStrict, gate: 'target', runId: 'run-1', sourceCommit: commit,
   });
   matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop').status, 'full');
@@ -81,7 +88,7 @@ test('a cli install does not substitute for a desktop install', async () => {
   const commit = 'd'.repeat(40);
   await writeEvidence(evidenceDir, 'kimi/install.json', { ...base, gate: 'install', sourceCommit: commit });
   await writeEvidence(evidenceDir, 'kimi/desktop/target.json', {
-    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', gate: 'target', runId: 'run-1', sourceCommit: commit,
+    host: 'kimi', surface: 'desktop', clientVersion: '2.5.3', status: 'passed', ...modelStrict, gate: 'target', runId: 'run-1', sourceCommit: commit,
   });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'kimi' && entry.surface === 'desktop').status, 'experimental');
@@ -143,11 +150,11 @@ test('qwen full requires public checksum install and resume', async () => {
   const COMMIT = 'a'.repeat(40);
   const base = {
     host: 'qwen', surface: 'cli', clientVersion: '1.0.0-preview.1',
-    status: 'passed', sourceCommit: COMMIT,
+    status: 'passed', sourceCommit: COMMIT, ...modelStrict,
   };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...base, gate: 'install', source: 'marketplace' });
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
-    ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+    ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
   });
   await writeEvidence(evidenceDir, 'qwen/target.json', {
     ...base, gate: 'target', runId: 'run-target', afterHostRefactor: true,
@@ -169,10 +176,10 @@ test('qwen full requires public checksum install and resume', async () => {
 test('qwen cli full requires marketplace install source and a post-refactor target run', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-qwen-'));
   const commit = 'a'.repeat(40);
-  const qwenBase = { host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit };
+  const qwenBase = { host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit, ...modelStrict };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
-    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
   });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
@@ -245,10 +252,10 @@ test('stale blocked evidence falls back to the stale blocker', async () => {
 test('mcp-only status is not awarded to cli surfaces', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-mcp-cli-'));
   const commit = 'a'.repeat(40);
-  const qwenBase = { host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit, source: 'marketplace' };
+  const qwenBase = { host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: commit, source: 'marketplace', ...modelStrict };
   await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
-    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
   });
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
@@ -307,7 +314,7 @@ test('native extension surfaces require install, workspace and model gates', asy
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-extension-'));
   const commit = 'a'.repeat(40);
   const baseExt = {
-    host: 'qwen', surface: 'extension', clientVersion: 'fixture', status: 'passed', sourceCommit: commit,
+    host: 'qwen', surface: 'extension', clientVersion: 'fixture', status: 'passed', sourceCommit: commit, ...modelStrict,
   };
   await writeEvidence(evidenceDir, 'qwen/extension/install.json', { ...baseExt, gate: 'install' });
   let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
@@ -339,12 +346,12 @@ test('required gates need a client version and a matching gate name', async () =
   const commit = 'a'.repeat(40);
   const base = {
     host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed',
-    sourceCommit: commit, source: 'marketplace',
+    sourceCommit: commit, source: 'marketplace', ...modelStrict,
   };
   const writeAll = async (overrides = {}) => {
     await writeEvidence(evidenceDir, 'qwen/install.json', { ...base, gate: 'install', ...(overrides.install ?? {}) });
     await writeEvidence(evidenceDir, 'qwen/public-install.json', {
-      ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+      ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
       ...(overrides.publicInstall ?? {}),
     });
     await writeEvidence(evidenceDir, 'qwen/target.json', {
@@ -368,4 +375,67 @@ test('required gates need a client version and a matching gate name', async () =
   assert.notEqual(await status(), 'full');
   await writeAll();
   assert.equal(await status(), 'full');
+});
+
+const QWEN_MODEL_COMMIT = 'a'.repeat(40);
+const qwenModelBase = {
+  host: 'qwen', surface: 'cli', clientVersion: '1.0.0-preview.2',
+  status: 'passed', sourceCommit: QWEN_MODEL_COMMIT,
+  afterHostRefactor: true, finished: true, pending: 0, confirmedFalse: 0,
+  nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
+  reloadVerified: true, red: { failedAssertions: 1 },
+};
+
+async function writeAllQwenGates(evidenceDir, overrides = {}) {
+  await writeEvidence(evidenceDir, 'qwen/install.json', {
+    ...qwenModelBase, gate: 'install', source: 'marketplace', ...(overrides.install ?? {}),
+  });
+  await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+    ...qwenModelBase, gate: 'public-install', source: 'github-marketplace', public: true,
+    sha256Verified: true, statePreserved: true, ...(overrides.publicInstall ?? {}),
+  });
+  await writeEvidence(evidenceDir, 'qwen/target.json', {
+    ...qwenModelBase, gate: 'target', runId: 'run-target', ...(overrides.target ?? {}),
+  });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+    ...qwenModelBase, gate: 'node-target', runId: 'run-node-target', ...(overrides.nodeTarget ?? {}),
+  });
+  await writeEvidence(evidenceDir, 'qwen/resume.json', {
+    ...qwenModelBase, gate: 'resume', runId: 'run-resume', ...(overrides.resume ?? {}),
+  });
+}
+
+async function qwenStatus(evidenceDir) {
+  const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: QWEN_MODEL_COMMIT, version: '0.2.2' });
+  return matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status;
+}
+
+test('qwen full accepts complete evidence', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-complete-'));
+  await writeAllQwenGates(evidenceDir);
+  assert.equal(await qwenStatus(evidenceDir), 'full');
+});
+
+for (const [name, invalid] of Object.entries({
+  unfinished: { finished: false },
+  pending: { pending: 2 },
+  confirmedFalse: { confirmedFalse: 7 },
+  backgroundAgents: { nativeForegroundAgents: false },
+  multipleExplorers: { singleExplorer: false },
+  mainTools: { mainRestrictedTools: 99 },
+  reloadNotProved: { reloadVerified: false },
+  noRedAssertions: { red: { failedAssertions: 0 } },
+  missingRed: { red: undefined },
+})) {
+  test(`qwen target rejects ${name}`, async () => {
+    const evidenceDir = await mkdtemp(join(tmpdir(), `bh-matrix-qwen-${name}-`));
+    await writeAllQwenGates(evidenceDir, { target: invalid });
+    assert.equal(await qwenStatus(evidenceDir), 'experimental');
+  });
+}
+
+test('qwen public install rejects missing state preservation', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-qwen-state-'));
+  await writeAllQwenGates(evidenceDir, { publicInstall: { statePreserved: false } });
+  assert.equal(await qwenStatus(evidenceDir), 'experimental');
 });
