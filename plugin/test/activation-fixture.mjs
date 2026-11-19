@@ -184,6 +184,49 @@ export async function validActivationFixture() {
   return persistActivationFixture(createActivationFixture(root));
 }
 
+export async function activationWriterFixture() {
+  const fixture = await validActivationFixture();
+  const configDir = fixture.root;
+  const installPath = fixture.pluginRoot;
+  const evidenceDir = join(fixture.root, 'evidence');
+  const publicInstallEvidencePath = join(fixture.root, 'public-install.json');
+  const publicEvidence = {
+    host: 'qwen',
+    surface: 'cli',
+    gate: 'public-install',
+    status: 'passed',
+    source: 'github-marketplace',
+    public: true,
+    sha256Verified: true,
+    statePreserved: true,
+    sourceCommit: 'a'.repeat(40),
+    clientVersion: '1.0.0-preview.2',
+    installedFrom: '0.2.3',
+    updatedTo: '0.2.4',
+    pluginId: 'bughunter@bughunter-market',
+    installPathWithinConfig: true,
+    archiveSha256: 'b'.repeat(64),
+    sentinels: ['auth', 'config', 'profiles', 'runs'],
+  };
+  await writeFile(publicInstallEvidencePath, `${JSON.stringify(publicEvidence, null, 2)}\n`, 'utf8');
+  return {
+    ...fixture,
+    configDir,
+    installPath,
+    evidenceDir,
+    publicInstallEvidencePath,
+    publicEvidence,
+    installList: [{
+      id: 'bughunter@bughunter-market',
+      name: 'bughunter',
+      version: '0.2.4',
+      enabled: true,
+      installPath,
+    }],
+    spawn: () => ({ status: 0, stdout: '1.0.0-preview.2\n', stderr: '' }),
+  };
+}
+
 export async function cleanupActivationFixture(fixture) {
   await rm(fixture.root, { recursive: true, force: true });
 }

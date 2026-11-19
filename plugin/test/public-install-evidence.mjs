@@ -77,7 +77,7 @@ function validateCatalog(plugin, expectedVersion, sourceCommit) {
   return source;
 }
 
-function installedPlugin(installList) {
+export function installedPlugin(installList) {
   const list = Array.isArray(installList) ? installList : installList?.plugins;
   if (!Array.isArray(list)) throw fail('PUBLIC_INSTALL_LIST_INVALID');
   const installed = list.find((item) =>
@@ -86,7 +86,7 @@ function installedPlugin(installList) {
   return installed;
 }
 
-function clientVersionFrom(spawn) {
+export function clientVersionFrom(spawn) {
   let result;
   try {
     result = spawn('qwen', ['--version'], { encoding: 'utf8', shell: false, timeout: 10_000 });
