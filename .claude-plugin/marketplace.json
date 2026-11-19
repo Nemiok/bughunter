@@ -8,11 +8,11 @@
     {
       "name": "bughunter",
       "description": "Evidence-based bug hunting with reproduction and red regression tests. (experimental; full workflow not certified)",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "source": {
         "source": "archive",
-        "url": "https://github.com/Nemiok/bughunter/releases/download/0.2.3/bughunter-qwen.zip",
-        "sha256": "f6f6fc08680b0014aec24a84856550c109f9088b73aa872902d8b22f9ac2b401"
+        "url": "https://github.com/Nemiok/bughunter/releases/download/0.2.4/bughunter-qwen.zip",
+        "sha256": "48f3cf6de56adc918449ae62625eb2cdf88856bd934254a73b04c79d806aa9c9"
       },
       "repository": "https://github.com/Nemiok/bughunter",
       "homepage": "https://github.com/Nemiok/bughunter",
@@ -20,7 +20,7 @@
         "name": "Bughunter"
       },
       "metadata": {
-        "payloadCommit": "242d8846ce266fb364f9d5b106489745cfe5eeb5"
+        "payloadCommit": "435fb384bf0d6847199b9ea88074996c63870226"
       }
     }
   ]
