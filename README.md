@@ -50,7 +50,7 @@ Bughunter ставится нативным плагином в три хост�
 Нативные установка и обновление проверены на Qwen Code CLI 1.0.0-preview.2, Kimi Code CLI 2.5.3
 и Claude Code CLI 2.1.327. Модельные и публичные гейты привязаны к конкретному payload и клиентской
 версии; уровень поддержки публикуется в `COMPATIBILITY.md` каждого релиза. `full` требует
-`install` + `public-install` + `target` + `node-target` + `resume` на одном payload/client; без любого
+`install` + `public-install` + `activation` + `target` + `node-target` + `resume` на одном payload/client; без любого
 evidence поверхность остаётся experimental/planned/blocked. Qwen extensions и GigaCode остаются
 planned до собственных runtime/model gates. Custom marketplace — не официальный листинг; SHA256
 подтверждает целостность архива, но не является подписью. Ручная установка (Qwen, копирование дерева) —

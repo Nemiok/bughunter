@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const EXPLORERS = new Set(['bughunter:bh-explorer', 'bughunter:bh-explorer-node']);
 const BUGHUNTER_AGENTS = new Set([
@@ -163,14 +163,18 @@ function samePath(first, second) {
   return resolve(first) === resolve(second);
 }
 
-function setupValidateTool(beforeUses) {
+function setupValidateTool(beforeUses, { projectRoot, pluginRoot }) {
+  const setupPath = join(pluginRoot, 'server', 'setup-cli.mjs');
   return beforeUses.find((tool) => {
     if (tool.name !== 'Bash') return false;
     const command = tool.input?.command;
-    return typeof command === 'string'
-      && /setup-cli\.mjs/.test(command)
-      && /--action\s+validate/.test(command)
-      && /--preset\s+web/.test(command);
+    if (typeof command !== 'string'
+      || !command.includes(setupPath)
+      || !/--action\s+validate/.test(command)
+      || !/--preset\s+web/.test(command)) return false;
+    const root = command.match(/--project-root\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+    if (root === null) return false;
+    return resolve(root[1] ?? root[2] ?? root[3]) === resolve(projectRoot);
   });
 }
 
@@ -209,7 +213,10 @@ export async function inspectQwenActivation({ beforeTranscriptPath, afterTranscr
     throw new Error('ACTIVATION_TARGET_TOO_EARLY');
   }
 
-  const validate = setupValidateTool(beforeUses);
+  const validate = setupValidateTool(beforeUses, {
+    projectRoot: beforeInit.cwd,
+    pluginRoot: beforePlugin.path,
+  });
   if (validate === undefined) throw new Error('ACTIVATION_SETUP_REQUIRED');
   const validateResult = toolResults(beforeEvents).get(validate.id);
   if (validateResult === undefined) throw new Error('ACTIVATION_SETUP_REQUIRED');

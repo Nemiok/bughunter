@@ -160,6 +160,35 @@ test('activation rejects a session without a successful setup validate', async (
   });
 });
 
+test('activation rejects setup validate for another project or install', async () => {
+  for (const makeReplacement of [
+    (fixture) => [fixture.projectRoot, `${fixture.projectRoot}-other`],
+    (fixture) => [join(fixture.pluginRoot, 'server', 'setup-cli.mjs'), join(`${fixture.pluginRoot}-other`, 'server', 'setup-cli.mjs')],
+  ]) {
+    await withFixture(async (fixture) => {
+      const [search, replacement] = makeReplacement(fixture);
+      fixture.beforeEvents = fixture.beforeEvents.map((event) => {
+        const blocks = contentBlocks(event);
+        if (!blocks.some((block) => block?.id === 'setup-validate')) return event;
+        return {
+          ...event,
+          message: {
+            ...event.message,
+            content: blocks.map((block) => block?.id === 'setup-validate'
+              ? { ...block, input: { ...block.input, command: block.input.command.replace(search, replacement) } }
+              : block),
+          },
+        };
+      });
+      await persistActivationFixture(fixture);
+      await assert.rejects(inspectQwenActivation({
+        beforeTranscriptPath: fixture.beforeTranscriptPath,
+        afterTranscriptPath: fixture.afterTranscriptPath,
+      }), /ACTIVATION_SETUP_REQUIRED/);
+    });
+  }
+});
+
 test('activation rejects a failed setup validate result', async () => {
   await withFixture(async (fixture) => {
     fixture.beforeEvents = fixture.beforeEvents.map((event) => {
@@ -472,6 +501,30 @@ test('activation writer rejects a different project snapshot', async () => {
   await assertWriterRejects((fixture, input) => {
     input.afterSnapshot.projectRoot = join(fixture.root, 'other-project');
   }, /ACTIVATION_CONTEXT_MISMATCH/);
+});
+
+test('activation writer rejects fabricated or malformed snapshots', async () => {
+  for (const hash of ['0'.repeat(64), 'not-a-sha256']) {
+    await assertWriterRejects((_, input) => {
+      input.beforeSnapshot.files[CONFIG_KEY] = hash;
+      input.afterSnapshot.files[CONFIG_KEY] = hash;
+    }, /ACTIVATION_CONFIG_CHANGED/);
+  }
+});
+
+test('activation writer re-hashes live config after the snapshots', async () => {
+  const fixture = await activationWriterFixture();
+  try {
+    const input = await writerInput(fixture);
+    const configPath = join(fixture.stateDir, 'config.json');
+    const config = JSON.parse(await readFile(configPath, 'utf8'));
+    config.baseUrl = 'http://127.0.0.1:49999/';
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    await assert.rejects(recordActivationGate(input), /ACTIVATION_CONFIG_CHANGED/);
+    await assert.rejects(access(join(fixture.evidenceDir, 'qwen', 'activation.json')), /ENOENT/);
+  } finally {
+    await cleanupActivationFixture(fixture);
+  }
 });
 
 test('activation writer rejects missing or malformed public install evidence', async () => {

@@ -123,6 +123,18 @@ function sameFiles(first, second) {
     && firstKeys.every((key, index) => key === secondKeys[index] && first[key] === second[key]);
 }
 
+function validateSnapshotFiles(files) {
+  if (files === null || typeof files !== 'object' || Array.isArray(files)) {
+    throw setupError('ACTIVATION_SETUP_FILES_REQUIRED');
+  }
+  for (const [key, hash] of Object.entries(files)) {
+    if (key === '' || key.startsWith('/') || key.split('/').includes('..')
+      || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) {
+      throw setupError('ACTIVATION_CONFIG_CHANGED', key);
+    }
+  }
+}
+
 async function transcriptDigest(path) {
   try {
     return createHash('sha256').update(await readFile(path)).digest('hex');
@@ -181,12 +193,16 @@ export async function recordActivationGate({
     || installRoot !== resolve(inspected.pluginRoot)) {
     throw setupError('ACTIVATION_CONTEXT_MISMATCH');
   }
+  validateSnapshotFiles(beforeSnapshot.files);
+  validateSnapshotFiles(afterSnapshot.files);
   for (const file of REQUIRED_SETUP_FILES) {
     if (!(file in beforeSnapshot.files) || !(file in afterSnapshot.files)) {
       throw setupError('ACTIVATION_SETUP_FILES_REQUIRED', file);
     }
   }
-  if (!sameFiles(beforeSnapshot.files, afterSnapshot.files)) {
+  const liveAfter = await createSetupSnapshot({ projectRoot: inspected.projectRoot, preset: 'web' });
+  if (!sameFiles(beforeSnapshot.files, afterSnapshot.files)
+    || !sameFiles(afterSnapshot.files, liveAfter.files)) {
     throw setupError('ACTIVATION_CONFIG_CHANGED');
   }
 

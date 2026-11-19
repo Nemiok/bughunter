@@ -110,7 +110,9 @@ export function createActivationFixture(root) {
   );
   const validate = toolUse(
     'Bash',
-    { command: `node ${join(pluginRoot, 'server', 'setup-cli.mjs')} --action validate --preset web` },
+    {
+      command: `node "${join(pluginRoot, 'server', 'setup-cli.mjs')}" --action validate --project-root "${projectRoot}" --preset web`,
+    },
     'setup-validate',
   );
   const inventory = toolUse(
