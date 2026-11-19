@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { readFindings, reproduceCandidate, triageCandidate } from '@bughunter/core';
+import { readFindings, recordCandidateTest, reproduceCandidate, triageCandidate } from '@bughunter/core';
 import type { Finding } from '@bughunter/core';
 
 import { exportNodeTest } from '../src/export-vitest.ts';
@@ -341,6 +341,7 @@ test('one symptom with two different oracles stays two bugs and two regression t
       await writeFile(destination, source, 'utf8');
       const verdict = await verifyNodeRed(destination, { kind: apiKind });
       verdicts.push(verdict.status);
+      await recordCandidateTest(collisionRun.id, reported[index]!, apiKind, file, state.stateDir, 'red');
     }
     assert.deepEqual(verdicts, ['red', 'red'], 'оба оракула обязаны давать красный тест');
   } finally {

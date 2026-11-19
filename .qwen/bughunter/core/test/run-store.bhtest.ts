@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import type { ReportFormat } from '../src/preset.ts';
 import {
   completeExplorationLease, createRun, finishRun, leaseNextExploration,
-  readFindings, recordCandidateTest, recordTargetExploration,
+  readFindings, recordCandidateTest, recordRunStage, recordTargetExploration,
 } from '../src/run-store.ts';
 import type { Candidate, Config, Finding } from '../src/types.ts';
 
@@ -21,6 +21,14 @@ async function withStateDir(run: (stateDir: string) => Promise<void>): Promise<v
   } finally {
     await rm(stateDir, { recursive: true, force: true });
   }
+}
+
+async function markStagesDone(
+  runId: string,
+  stateDir: string,
+  stages: readonly ('explore' | 'reproduce' | 'triage' | 'export')[] = ['explore', 'reproduce', 'triage', 'export'],
+): Promise<void> {
+  for (const stage of stages) await recordRunStage(runId, stage, 'done', stateDir);
 }
 
 async function writeConfirmedCandidate(runId: string, stateDir: string, id = 'cand-1'): Promise<void> {
@@ -105,6 +113,7 @@ test('the report renders candidates and findings through the preset format', () 
   if (leased.status !== 'task') throw new Error('не достигнуто');
   await recordTargetExploration(run.id, '/a', 'done', stateDir);
   await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  await markStagesDone(run.id, stateDir);
 
   const { report } = await finishRun(run.id, stateDir, format);
   const contents = await readFile(report, 'utf8');
@@ -125,6 +134,7 @@ test('finish refuses a run whose explore queue is not drained', () => withStateD
     config, projectRoot: stateDir, stateDir, personas: ['персона А', 'персона Б'], targets: ['/a'],
   });
   await recordTargetExploration(run.id, '/a', 'done', stateDir);
+  await markStagesDone(run.id, stateDir);
   await assert.rejects(() => finishRun(run.id, stateDir, format), /RUN_INCOMPLETE: queue/);
 }));
 
@@ -138,8 +148,25 @@ test('finish accepts a run whose explore queue is drained', () => withStateDir(a
   if (leased.status !== 'task') throw new Error('не достигнуто');
   await recordTargetExploration(run.id, leased.target, 'done', stateDir);
   await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  await markStagesDone(run.id, stateDir);
   const { report } = await finishRun(run.id, stateDir, format);
   assert.match(await readFile(report, 'utf8'), /## Pending\n\nNone\./);
+}));
+
+test('finish refuses a run with a failed stage', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('target', '/a', {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А'], targets: ['/a'],
+  });
+  const leased = await leaseNextExploration(run.id, { personas: ['персона А'] }, stateDir);
+  if (leased.status !== 'task') throw new Error('не достигнуто');
+  await recordTargetExploration(run.id, leased.target, 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  await recordRunStage(run.id, 'explore', 'done', stateDir);
+  await recordRunStage(run.id, 'reproduce', 'done', stateDir);
+  await recordRunStage(run.id, 'triage', 'failed', stateDir);
+  await recordRunStage(run.id, 'export', 'done', stateDir);
+  await assert.rejects(() => finishRun(run.id, stateDir, format), /RUN_INCOMPLETE: stages/);
 }));
 
 /**
@@ -160,6 +187,27 @@ test('a confirmed bug needs a red verdict, not just a recorded test', () => with
   if (leased.status !== 'task') throw new Error('не достигнуто');
   await recordTargetExploration(run.id, leased.target, 'done', stateDir);
   await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  await markStagesDone(run.id, stateDir);
+
+  await assert.rejects(() => finishRun(run.id, stateDir, format, 'api'), /RUN_INCOMPLETE: cand-1/);
+  await recordCandidateTest(
+    run.id, 'cand-1', 'api', join(stateDir, 'runs', run.id, 'api', 'x.test.ts'), stateDir, 'red',
+  );
+  await finishRun(run.id, stateDir, format, 'api');
+}));
+
+test('a confirmed bug needs an explicit red verdict', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('target', '/a', {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А'], targets: ['/a'],
+  });
+  await writeConfirmedCandidate(run.id, stateDir);
+  await recordCandidateTest(run.id, 'cand-1', 'api', join(stateDir, 'runs', run.id, 'api', 'x.test.ts'), stateDir);
+  const leased = await leaseNextExploration(run.id, { personas: ['персона А'] }, stateDir);
+  if (leased.status !== 'task') throw new Error('не достигнуто');
+  await recordTargetExploration(run.id, leased.target, 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  await markStagesDone(run.id, stateDir);
 
   await assert.rejects(() => finishRun(run.id, stateDir, format, 'api'), /RUN_INCOMPLETE: cand-1/);
   await recordCandidateTest(

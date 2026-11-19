@@ -85,6 +85,9 @@ async function drainExploreQueue(runId: string, stateDir: string): Promise<void>
 async function completeConfiguredRoutes(runId: string, stateDir: string): Promise<void> {
   for (const route of config().routes) await recordTargetExploration(runId, route, 'done', stateDir);
   await drainExploreQueue(runId, stateDir);
+  for (const stage of ['reproduce', 'triage', 'export'] as const) {
+    await recordRunStage(runId, stage, 'done', stateDir);
+  }
 }
 
 test('finish writes a deterministic escaped Markdown report with steps, artifacts, tests, and review reasons', async (t) => {
@@ -103,6 +106,7 @@ test('finish writes a deterministic escaped Markdown report with steps, artifact
     artifacts: [`runs/${runId}/artifacts/candidate-confirmed/trace.zip`],
     review: { status: 'confirmed', reason: 'Owned by the application' },
     tests: { e2e: 'e2e/confirmed.spec.ts', unit: 'unit/confirmed.test.ts' },
+    verdicts: { e2e: 'red' },
   });
   const rejected = candidate(runId, 'candidate-rejected', {
     status: 'rejected',
@@ -254,9 +258,9 @@ test('finish requires a test of the kind the preset exports, not just any test',
   // Гарантия «red-тест на каждый подтверждённый баг» держится на виде теста, который
   // экспортирует пресет: unit-тест его не заменяет.
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
-  assert.equal((await readRun(runId, stateDir)).status, 'exploring');
+  assert.equal((await readRun(runId, stateDir)).status, 'writing_tests');
 
-  await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir);
+  await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir, 'red');
   await finishRun(runId, stateDir);
   assert.equal((await readRun(runId, stateDir)).status, 'finished');
 });
@@ -291,12 +295,13 @@ test('finish requires actual resumed route completion after terminal candidate w
 
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE/);
   assert.equal((await readRun(runId, stateDir)).stages.explore, 'running');
-  await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir);
+  await recordCandidateTest(runId, confirmed.id, 'e2e', join(runRoot, 'e2e/done.spec.ts'), stateDir, 'red');
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE: queue/);
   await drainExploreQueue(runId, stateDir);
   await assert.rejects(finishRun(runId, stateDir), /RUN_INCOMPLETE: targets/);
   await recordTargetExploration(runId, '/', 'done', stateDir);
   await recordTargetExploration(runId, '/orders', 'done', stateDir);
+  await recordRunStage(runId, 'export', 'done', stateDir);
   await finishRun(runId, stateDir);
 
   const finished = await readRun(runId, stateDir);
@@ -323,7 +328,7 @@ test('a report write failure leaves the run unfinished and removes temporary fil
   await completeConfiguredRoutes(runId, stateDir);
   await mkdir(join(runRoot, 'report.md'), { recursive: true });
   await assert.rejects(finishRun(runId, stateDir));
-  assert.equal((await readRun(runId, stateDir)).status, 'exploring');
+  assert.equal((await readRun(runId, stateDir)).status, 'writing_tests');
   assert.deepEqual((await readdir(runRoot)).filter((file) => file.endsWith('.tmp')), []);
 });
 

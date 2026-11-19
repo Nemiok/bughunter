@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { TargetRef } from './preset.ts';
-import { candidatePath, writeJsonAtomic } from './run-store.ts';
+import { candidatePath, readRun, writeJsonAtomic } from './run-store.ts';
 import type { Candidate, Check, StepBase } from './types.ts';
 
 function oracleSignature(check: Check, target: TargetRef): string {
@@ -71,6 +71,11 @@ export async function reportCandidate(input: {
   check?: Check;
   stateDir: string;
 }): Promise<{ candidateId: string; duplicateOf?: string }> {
+  let run;
+  try {
+    run = await readRun(input.runId, input.stateDir);
+  } catch {}
+  if (run?.status === 'finished') throw new Error('RUN_FINISHED');
   const signature = candidateSignature(input);
   const candidateId = randomUUID();
   const duplicateOf = await findKnownSignature(signature, input.stateDir);

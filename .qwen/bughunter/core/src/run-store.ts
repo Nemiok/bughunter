@@ -443,14 +443,14 @@ async function readCandidates(runId: string, stateDir: string): Promise<Candidat
 function requiresWork(candidate: Candidate, requiredTestKind?: string): boolean {
   if (candidate.status === 'rejected' || candidate.status === 'duplicate') return false;
   if (candidate.status === 'confirmed') {
-    const missingTest = requiredTestKind === undefined
-      ? Object.keys(candidate.tests ?? {}).length === 0
-      : candidate.tests?.[requiredTestKind] === undefined;
-    // Записанный тест — ещё не регрессия: `bh_verify_red` мог вернуть `green` или `broken`.
-    // Вердикта может не быть у кандидата, записанного без проверки; явный не-`red` — работа.
-    const verdict = requiredTestKind === undefined ? undefined : candidate.verdicts?.[requiredTestKind];
-    return candidate.reproduction?.status !== 'reproduced' || missingTest
-      || (verdict !== undefined && verdict !== 'red');
+    if (requiredTestKind !== undefined) {
+      // Записанный тест — ещё не регрессия: нужен явный red verdict от `bh_verify_red`.
+      const missingTest = candidate.tests?.[requiredTestKind] === undefined;
+      const verdict = candidate.verdicts?.[requiredTestKind];
+      return candidate.reproduction?.status !== 'reproduced' || missingTest || verdict !== 'red';
+    }
+    return candidate.reproduction?.status !== 'reproduced'
+      || Object.keys(candidate.tests ?? {}).length === 0;
   }
   return candidate.reproduction?.status !== 'unreproduced' || candidate.reproduction.attempts === 0;
 }
@@ -691,6 +691,14 @@ export async function finishRun(runId: string, stateDir: string, format: ReportF
   const incompleteTargets = run.targets.filter((target) => run.targetStages[target] !== 'done');
   if (incompleteTargets.length > 0) {
     throw new Error(`RUN_INCOMPLETE: targets ${incompleteTargets.join(',')}`);
+  }
+  if (run.scope !== 'sweep') {
+    const unfinishedStages = Object.entries(run.stages)
+      .filter(([, status]) => status !== 'done')
+      .map(([name]) => name);
+    if (unfinishedStages.length > 0) {
+      throw new Error(`RUN_INCOMPLETE: stages ${unfinishedStages.join(',')}`);
+    }
   }
   const [candidates, findings] = await Promise.all([readCandidates(runId, stateDir), readFindings(runId, stateDir)]);
   const contents = renderReport(run, candidates, findings, stateDir, format, requiredTestKind);

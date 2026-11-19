@@ -51,6 +51,7 @@ const agents = {
     'Read',
     'Grep',
     'Glob',
+    'mcp__bughunter__bh_reproduce',
     'mcp__bughunter__bh_triage',
     'Skill',
   ],
@@ -92,20 +93,25 @@ test('entry skill is manual, argument-driven, and orchestrates the complete run'
   assert.equal(data.override, undefined);
   for (const required of [
     '$ARGUMENTS', 'diff', 'full', 'target <path>', 'resume <runId>',
-    'bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run',
+    'bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_finish_run',
     'Agent', 'subagent_type', 'bh-explorer', 'bh-reviewer', 'bh-test-writer', 'leaseId',
-    'run_in_background: false', 'не объединяй', 'не делегируй воспроизведение',
+    'run_in_background: false', 'не объединяй', 'reviewer',
     'EXPLORER_BUSY', 'RUN_INCOMPLETE', 'pendingCandidates', 'RETRY_LATER',
   ]) assert.ok(body.toLowerCase().includes(required.toLowerCase()), `missing entry contract: ${required}`);
   const allowedLine = body.split('\n').find((line) => line.includes('Главному агенту разрешены только'));
   const forbiddenLine = body.split('\n').find((line) => line.includes('Запрещено напрямую вызывать'));
   assert.ok(allowedLine && forbiddenLine, 'binding main-agent allowlist and forbidden list are required');
-  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_reproduce', 'bh_finish_run', 'Agent']) {
+  for (const tool of ['bh_start_run', 'bh_resume_run', 'bh_explore_next', 'bh_finish_run', 'Agent']) {
     assert.ok(allowedLine.includes(tool), `main allowlist missing ${tool}`);
   }
+  assert.ok(!allowedLine.includes('bh_reproduce'), 'main must not be allowed to reproduce directly');
   for (const tool of [
-    'bh_report_candidate', 'bh_triage', 'bh_export_test', 'bh_detect_tests', 'bh_verify_red',
+    'bh_reproduce', 'bh_report_candidate', 'bh_triage', 'bh_export_test', 'bh_detect_tests', 'bh_verify_red',
   ]) assert.ok(forbiddenLine.includes(tool), `main forbidden list missing ${tool}`);
+  assert.match(body, /reviewer[^.]*bh_reproduce/is, 'reviewer must reproduce candidates');
+  assert.match(body, /не запускай[^.]*explorer[^.]*без[^.]*lease/is, 'explorer requires a lease');
+  assert.match(body, /после\s+`?bh_finish_run`?[^.]*не/is, 'main must stop after finish');
+  assert.match(body, /general-purpose/i, 'main must not use general-purpose agents');
   // Словарь пресета entry-скилл не называет: он отправляет главного агента в карту пресета.
   assert.ok(body.includes('bughunter-preset-card'), 'entry skill must send the main agent to the preset card');
   assert.match(body, /ровно один tool\/agent вызов/i);

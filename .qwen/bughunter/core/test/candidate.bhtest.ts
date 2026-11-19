@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -80,6 +80,26 @@ test('reportCandidate writes an unprocessed candidate with an unreproduced verdi
   assert.deepEqual(raw.reproduction, { status: 'unreproduced', attempts: 0 });
   assert.equal(raw.target, '/a');
   assert.equal(raw.check.target, 'Итого 42');
+}));
+
+test('reportCandidate refuses a finished run', () => withStateDir(async (stateDir) => {
+  const runDir = join(stateDir, 'runs', 'finished-run');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(join(runDir, 'run.json'), `${JSON.stringify({
+    id: 'finished-run',
+    scope: 'target',
+    targets: ['/a'],
+    status: 'finished',
+    stages: { explore: 'done', reproduce: 'done', triage: 'done', export: 'done' },
+    targetStages: { '/a': 'done' },
+    createdAt: '2026-11-19T00:00:00.000Z',
+    updatedAt: '2026-11-19T00:10:00.000Z',
+  })}\n`);
+  await assert.rejects(() => reportCandidate({
+    runId: 'finished-run', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: [], check, stateDir,
+  }), /RUN_FINISHED/);
+  await assert.rejects(readdir(join(runDir, 'candidates')), { code: 'ENOENT' });
 }));
 
 test('a signal-backed oracle candidate stores the raw signal signature next to the composite one', () => withStateDir(async (stateDir) => {

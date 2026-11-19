@@ -10,6 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SessionManager } from '../src/browser/session.ts';
 import { createRun } from '../src/runs.ts';
+import { recordCandidateTest } from '@bughunter/core';
 import type { Signal } from '@bughunter/core';
 import type { WebConfig as Config } from '../src/config.ts';
 
@@ -317,7 +318,9 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     assert.deepEqual(Object.keys(resumed).sort(), ['candidates', 'runId', 'stages']);
     assert.equal(resumed.runId, runId);
     assert.deepEqual(resumed.stages, { explore: 'running', reproduce: 'done', triage: 'done', export: 'done' });
-    assert.deepEqual(resumed.candidates, []);
+    assert.deepEqual(resumed.candidates, [{
+      candidateId, status: 'confirmed', title: 'Profile invariant',
+    }]);
 
     const closed = await callValue(client, 'bh_close', { sessionId });
     assert.deepEqual(closed, { ok: true });
@@ -371,12 +374,21 @@ test('real MCP stdio client validates strict schemas and compact core results', 
       await callValue(client, 'bh_close', { sessionId: completed.sessionId });
     }
 
+    const greenFinish = await client.callTool({ name: 'bh_finish_run', arguments: { runId } });
+    assert.equal(greenFinish.isError, true);
+    assert.ok(Array.isArray(greenFinish.content));
+    const greenContent = greenFinish.content[0] as { type: string; text: string };
+    assert.equal((JSON.parse(greenContent.text) as { code?: string }).code, 'RUN_INCOMPLETE');
+
+    await recordCandidateTest(runId as string, candidateId as string, 'e2e', exported.file as string, stateDir, 'red');
+
     const finished = await callValue(client, 'bh_finish_run', { runId });
     const reportPath = join(stateDir, 'runs', runId as string, 'report.md');
     assert.deepEqual(finished, { report: reportPath });
     const report = await readFile(reportPath, 'utf8');
     assert.ok(report.includes('Profile invariant'));
     assert.ok(report.includes(`unit: ${unitTestFile}`), report);
+    assert.ok(report.includes('e2e:'), report);
     assert.deepEqual(await callValue(client, 'bh_finish_run', { runId }), finished);
     assert.equal(await readFile(reportPath, 'utf8'), report);
     const finishedResume = await callValue(client, 'bh_resume_run', { runId });

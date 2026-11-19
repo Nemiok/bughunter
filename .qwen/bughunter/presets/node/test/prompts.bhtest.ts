@@ -55,6 +55,7 @@ const agents = {
     'Read',
     'Grep',
     'Glob',
+    'mcp__bughunter__bh_reproduce',
     'mcp__bughunter__bh_triage',
     'Skill',
   ],
