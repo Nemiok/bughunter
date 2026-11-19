@@ -136,8 +136,8 @@ Authoring: ${installPath === undefined ? '<installPath>/AUTHORING.md' : join(ins
 Template: ${installPath === undefined ? '<installPath>/template/cli-preset' : join(installPath, 'template', 'cli-preset')}
 
 Next:
-1. Complete setup and validate the config (`/bughunter:bughunter` creates CONFIG_CREATED on the first run; fill it in, then validate).
-2. Fully restart qwen in the same project/config. `/plugins reload` does not refresh the MCP toolset on Qwen 1.0.0-preview.2.
+1. Complete setup and validate the config (/bughunter:bughunter creates CONFIG_CREATED on the first run; fill it in, then validate).
+2. Fully restart qwen in the same project/config. /plugins reload does not refresh the MCP toolset on Qwen 1.0.0-preview.2.
 3. In the new session say "продолжай", verify 19 web or 16 node Bughunter tools, then run the target.
 ${allowed ? '' : '4. Allow the tools in your Qwen settings: "permissions": { "allow": ["mcp__bughunter__*"] }'}
 
