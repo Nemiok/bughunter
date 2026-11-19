@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 function invalid(message) {
@@ -93,6 +93,11 @@ export async function runIndependentRed({
       ...(runner === 'playwright' ? { PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath } : {}),
     },
   };
+  try {
+    await rm(reportPath, { force: true });
+  } catch {
+    throw invalid('cannot reset report');
+  }
   let processResult;
   try {
     processResult = spawn(command, args, options);

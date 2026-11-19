@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -117,7 +118,10 @@ export async function validFixture() {
       cwd: root,
       testPath: CANDIDATE_TEST,
       reportPath,
-      spawn: () => ({ status: 1 }),
+      spawn: () => {
+        writeFileSync(reportPath, JSON.stringify(report));
+        return { status: 1 };
+      },
     },
     run,
     candidate,

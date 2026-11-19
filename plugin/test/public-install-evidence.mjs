@@ -6,6 +6,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 const COMMIT = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/i;
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
+const REQUIRED_SENTINELS = ['auth', 'config', 'profiles', 'runs'];
 
 function fail(code, detail) {
   return new Error(detail === undefined ? code : `${code}: ${detail}`);
@@ -101,12 +102,15 @@ async function checkSentinels(sentinelPairs) {
   if (!Array.isArray(sentinelPairs) || sentinelPairs.length === 0) {
     throw fail('PUBLIC_INSTALL_SENTINELS_REQUIRED');
   }
-  const names = [];
+  const seen = new Set();
   for (const pair of sentinelPairs) {
     if (typeof pair?.name !== 'string' || pair.name === ''
-      || typeof pair.beforePath !== 'string' || typeof pair.afterPath !== 'string') {
+      || typeof pair.beforePath !== 'string' || typeof pair.afterPath !== 'string'
+      || !REQUIRED_SENTINELS.includes(pair.name) || seen.has(pair.name)
+      || resolve(pair.beforePath) === resolve(pair.afterPath)) {
       throw fail('PUBLIC_INSTALL_SENTINEL_INVALID');
     }
+    seen.add(pair.name);
     let before;
     let after;
     try {
@@ -124,9 +128,11 @@ async function checkSentinels(sentinelPairs) {
     for (const key of beforeKeys) {
       if (before.get(key) !== after.get(key)) throw fail('PUBLIC_INSTALL_SENTINEL_MISMATCH', pair.name);
     }
-    names.push(pair.name);
   }
-  return [...new Set(names)].sort();
+  if (REQUIRED_SENTINELS.some((name) => !seen.has(name))) {
+    throw fail('PUBLIC_INSTALL_SENTINELS_REQUIRED');
+  }
+  return [...seen].sort();
 }
 
 export async function recordPublicInstallEvidence({
@@ -146,6 +152,7 @@ export async function recordPublicInstallEvidence({
   if (typeof installedFrom !== 'string' || installedFrom.trim() === '') {
     throw fail('PUBLIC_INSTALL_INSTALLED_FROM_REQUIRED');
   }
+  if (installedFrom === expectedVersion) throw fail('PUBLIC_INSTALL_UPDATE_REQUIRED');
 
   const plugin = catalogPlugin(catalog);
   const source = validateCatalog(plugin, expectedVersion, sourceCommit);

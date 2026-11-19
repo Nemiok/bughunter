@@ -100,7 +100,7 @@ core-инструменты у всех пресетов именуются од
 | Оракулы (`check`) | `visibleText`, `notVisibleText`, `elementCount` | `status`, `jsonPath`, `headerContains` |
 | Регрессионный тест | Playwright, вид `e2e` | Vitest, вид `api` |
 | Инструментов MCP | 19 (11 core + 8 пресета) | 16 (11 core + 5 пресета) |
-| Состоя | все гейты пройдены (см. выше) | все гейты пройдены (см. выше), включая приёмку гайдлайнов (3 из 4) |
+| Состояние | статус и evidence — в `COMPATIBILITY.md` релиза | статус и evidence — в `COMPATIBILITY.md` релиза |
 | Операторский README | [`.qwen/bughunter/README.md`](.qwen/bughunter/README.md) | [`presets/node/README.md`](.qwen/bughunter/presets/node/README.md) |
 
 Оба пресета подключают один `@bughunter/core` и не правят его: **ни один из коммитов node-пресета не

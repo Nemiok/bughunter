@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -43,6 +44,16 @@ for (const [name, mutate] of Object.entries({
     await assert.rejects(access(input.expectedEvidencePath));
   });
 }
+
+test('web target rejects a confirmed candidate outside /orders/new', async () => {
+  const input = await validFixture();
+  input.run.targets = ['/orders', '/orders/new'];
+  input.run.targetStages = { '/orders': 'done', '/orders/new': 'done' };
+  input.candidate.target = '/orders';
+  await persistFixture(input);
+  await assert.rejects(recordModelGate(input), /MODEL_EVIDENCE_WEB_TARGET_REQUIRED/);
+  await assert.rejects(access(input.expectedEvidencePath));
+});
 
 test('recorder accepts the node preset api test kind', async () => {
   const input = await validFixture();
@@ -108,6 +119,10 @@ test('caller cannot override the red assertion count', async () => {
     errors: [],
   };
   await writeFile(input.reportPath, JSON.stringify(green));
+  input.red.spawn = () => {
+    writeFileSync(input.reportPath, JSON.stringify(green));
+    return { status: 1 };
+  };
   input.redResult = { failedAssertions: 99 };
   await assert.rejects(recordModelGate(input), /RED_ASSERTIONS_REQUIRED/);
   await assert.rejects(access(input.expectedEvidencePath));

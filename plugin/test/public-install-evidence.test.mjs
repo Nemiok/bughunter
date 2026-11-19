@@ -147,6 +147,30 @@ test('public install evidence rejects changed sentinel content and paths', async
   await assert.rejects(access(missing.expectedEvidencePath));
 });
 
+test('public install evidence rejects same-path, arbitrary and incomplete sentinels', async () => {
+  const same = await fixture();
+  same.sentinelPairs[0].afterPath = same.sentinelPairs[0].beforePath;
+  await assert.rejects(recordPublicInstallEvidence(same.input), /PUBLIC_INSTALL_SENTINEL_INVALID/);
+  await assert.rejects(access(same.expectedEvidencePath));
+
+  const arbitrary = await fixture();
+  arbitrary.sentinelPairs[0].name = 'fake';
+  await assert.rejects(recordPublicInstallEvidence(arbitrary.input), /PUBLIC_INSTALL_SENTINEL_INVALID/);
+  await assert.rejects(access(arbitrary.expectedEvidencePath));
+
+  const incomplete = await fixture();
+  incomplete.sentinelPairs.pop();
+  await assert.rejects(recordPublicInstallEvidence(incomplete.input), /PUBLIC_INSTALL_SENTINELS_REQUIRED/);
+  await assert.rejects(access(incomplete.expectedEvidencePath));
+});
+
+test('public install evidence requires a real update transition', async () => {
+  const f = await fixture();
+  f.input.installedFrom = VERSION;
+  await assert.rejects(recordPublicInstallEvidence(f.input), /PUBLIC_INSTALL_UPDATE_REQUIRED/);
+  await assert.rejects(access(f.expectedEvidencePath));
+});
+
 test('public install evidence requires an install path inside the isolated config', async () => {
   const f = await fixture();
   const outside = join(f.root, 'outside-install');

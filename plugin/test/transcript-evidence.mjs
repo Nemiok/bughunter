@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-const EXPLORER = 'bughunter:bh-explorer';
+const EXPLORERS = new Set(['bughunter:bh-explorer', 'bughunter:bh-explorer-node']);
 const RESTRICTED_MAIN_TOOLS = new Set([
   'mcp__bughunter__bh_reproduce',
   'mcp__bughunter__bh_triage',
@@ -164,8 +164,8 @@ export async function inspectQwenTranscript({ transcriptPaths, runId, gate }) {
           if (pendingLeaseId !== undefined) throw new Error('TRANSCRIPT_EXPLORE_INCOMPLETE');
           pendingLeaseId = block.id;
         } else if (block.name === 'Agent') {
-          if (block.input?.run_in_background !== false) throw new Error('TRANSCRIPT_AGENT_BACKGROUND');
-          if (block.input?.subagent_type === EXPLORER) {
+          if (block.input?.run_in_background === true) throw new Error('TRANSCRIPT_AGENT_BACKGROUND');
+          if (EXPLORERS.has(block.input?.subagent_type)) {
             if (pendingAgentId !== undefined || awaitingAgent === false) {
               throw new Error('TRANSCRIPT_EXPLORER_OVERLAP');
             }

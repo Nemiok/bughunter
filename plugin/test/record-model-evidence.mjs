@@ -71,6 +71,10 @@ export async function recordModelGate(input) {
   assert.equal(confirmedFalse, 0, 'MODEL_EVIDENCE_FALSE_CONFIRMATION');
   if (host === 'qwen' && surface === 'cli' && ['target', 'resume'].includes(gate)) {
     assert.ok(run.targets.includes('/orders/new'), 'MODEL_EVIDENCE_WEB_TARGET_REQUIRED');
+    assert.ok(
+      confirmed.every((candidate) => candidate.target === '/orders/new'),
+      'MODEL_EVIDENCE_WEB_TARGET_REQUIRED',
+    );
   }
 
   const orchestrationResult = await inspectQwenTranscript({

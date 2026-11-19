@@ -67,6 +67,26 @@ test('qwen resume transcript requires resume_run but not reload', async () => {
   });
 });
 
+test('qwen foreground explorer may omit run_in_background', async () => {
+  const implicit = toolUse('Agent', {
+    description: 'explore /orders/new', subagent_type: 'bughunter:bh-explorer', prompt: 'explore',
+  }, 'agent-1');
+  const path = await transcript(targetFlow.map((line) => line === explorer ? implicit : line));
+  assert.deepEqual(await inspectQwenTranscript({ transcriptPaths: [path], runId: RUN_ID, gate: 'target' }), {
+    nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0, reloadVerified: true,
+  });
+});
+
+test('qwen node explorer alias is accepted', async () => {
+  const nodeExplorer = toolUse('Agent', {
+    description: 'explore', subagent_type: 'bughunter:bh-explorer-node', prompt: 'explore',
+  }, 'agent-1');
+  const path = await transcript([start, startResult, lease1, lease1Result, nodeExplorer, explorerResult, lease2, lease2Done]);
+  assert.deepEqual(await inspectQwenTranscript({ transcriptPaths: [path], runId: RUN_ID, gate: 'node-target' }), {
+    nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0, reloadVerified: false,
+  });
+});
+
 test('qwen transcript rejects empty input', async () => {
   const path = await transcript([{}]);
   await assert.rejects(inspectQwenTranscript({ transcriptPaths: [path], runId: RUN_ID, gate: 'target' }), /TRANSCRIPT_EMPTY/);
