@@ -92,6 +92,14 @@ test('qwen transcript rejects empty input', async () => {
   await assert.rejects(inspectQwenTranscript({ transcriptPaths: [path], runId: RUN_ID, gate: 'target' }), /TRANSCRIPT_EMPTY/);
 });
 
+test('qwen init is a meaningful event for activation parsing', async () => {
+  const path = await transcript([{ type: 'system', subtype: 'init', session_id: 'session-1', tools: [] }]);
+  await assert.rejects(
+    inspectQwenTranscript({ transcriptPaths: [path], runId: RUN_ID, gate: 'node-target' }),
+    /TRANSCRIPT_START_REQUIRED/,
+  );
+});
+
 test('qwen target transcript rejects missing start', async () => {
   const path = await transcript(targetFlow.filter((line) => line !== start && line !== startResult));
   await assert.rejects(inspectQwenTranscript({ transcriptPaths: [path], runId: RUN_ID, gate: 'target' }), /TRANSCRIPT_START_REQUIRED/);

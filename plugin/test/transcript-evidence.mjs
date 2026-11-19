@@ -1,6 +1,15 @@
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 const EXPLORERS = new Set(['bughunter:bh-explorer', 'bughunter:bh-explorer-node']);
+const BUGHUNTER_AGENTS = new Set([
+  'bh-explorer',
+  'bh-reviewer',
+  'bh-test-writer',
+  'bh-explorer-node',
+  'bh-reviewer-node',
+  'bh-test-writer-node',
+]);
 const RESTRICTED_MAIN_TOOLS = new Set([
   'mcp__bughunter__bh_reproduce',
   'mcp__bughunter__bh_triage',
@@ -57,7 +66,9 @@ async function readEvents(transcriptPaths) {
     }
   }
   const meaningful = events.some((event) =>
-    event?.type === 'host' || contentBlocks(event).length > 0);
+    event?.type === 'host'
+    || (event?.type === 'system' && event?.subtype === 'init')
+    || contentBlocks(event).length > 0);
   if (!meaningful) throw new Error('TRANSCRIPT_EMPTY');
   return events;
 }
@@ -95,6 +106,132 @@ function userTexts(events) {
     }
   });
   return texts;
+}
+
+function isBughunterSkill(name) {
+  return name === 'bughunter' || name.startsWith('bughunter-') || name.startsWith('bughunter:');
+}
+
+function isBughunterAgent(name) {
+  return name.startsWith('bughunter:') || BUGHUNTER_AGENTS.has(name);
+}
+
+function requireInit(init) {
+  if (init?.type !== 'system' || init?.subtype !== 'init') throw new Error('TRANSCRIPT_INIT_REQUIRED');
+  if (!Array.isArray(init.tools) || !Array.isArray(init.skills) || !Array.isArray(init.agents)) {
+    throw new Error('TRANSCRIPT_INIT_REQUIRED');
+  }
+  return init;
+}
+
+export function inspectQwenComponents(init) {
+  requireInit(init);
+  const tools = init.tools.filter((name) => typeof name === 'string' && name.startsWith('mcp__bughunter__'));
+  const skills = init.skills.filter((name) => typeof name === 'string' && isBughunterSkill(name));
+  const agents = init.agents.filter((name) => typeof name === 'string' && isBughunterAgent(name));
+  const mcpConnected = Array.isArray(init.mcp_servers)
+    && init.mcp_servers.some((server) => server?.name === 'bughunter' && server?.status === 'connected');
+  return {
+    toolCount: tools.length,
+    skillCount: skills.length,
+    agentCount: agents.length,
+    mcpConnected,
+    dormantOnly: tools.length === 1 && tools[0] === 'mcp__bughunter__bh_setup',
+  };
+}
+
+function findInit(events, missingCode) {
+  const event = events.find((entry) => entry?.type === 'system' && entry?.subtype === 'init');
+  if (event === undefined) throw new Error(missingCode);
+  return event;
+}
+
+function bughunterPlugin(init) {
+  return Array.isArray(init.plugins)
+    ? init.plugins.find((plugin) => plugin?.name === 'bughunter')
+    : undefined;
+}
+
+function samePath(first, second) {
+  if (typeof first !== 'string' || typeof second !== 'string') return false;
+  return resolve(first) === resolve(second);
+}
+
+function setupValidateTool(beforeUses) {
+  return beforeUses.find((tool) => {
+    if (tool.name !== 'Bash') return false;
+    const command = tool.input?.command;
+    return typeof command === 'string'
+      && /setup-cli\.mjs/.test(command)
+      && /--action\s+validate/.test(command)
+      && /--preset\s+web/.test(command);
+  });
+}
+
+export async function inspectQwenActivation({ beforeTranscriptPath, afterTranscriptPath } = {}) {
+  if (typeof beforeTranscriptPath !== 'string' || typeof afterTranscriptPath !== 'string') {
+    throw new Error('TRANSCRIPT_EMPTY');
+  }
+  const beforeEvents = await readEvents([beforeTranscriptPath]);
+  const afterEvents = await readEvents([afterTranscriptPath]);
+  const beforeInit = findInit(beforeEvents, 'TRANSCRIPT_INIT_REQUIRED');
+  const afterInit = findInit(afterEvents, 'ACTIVATION_RESTART_REQUIRED');
+
+  if (typeof beforeInit.session_id !== 'string' || typeof afterInit.session_id !== 'string') {
+    throw new Error('ACTIVATION_RESTART_REQUIRED');
+  }
+  if (beforeInit.session_id === afterInit.session_id) throw new Error('ACTIVATION_RESTART_REQUIRED');
+  if (!samePath(beforeInit.cwd, afterInit.cwd)) throw new Error('ACTIVATION_CONTEXT_MISMATCH');
+
+  const beforePlugin = bughunterPlugin(beforeInit);
+  const afterPlugin = bughunterPlugin(afterInit);
+  if (!samePath(beforePlugin?.path, afterPlugin?.path)) throw new Error('ACTIVATION_CONTEXT_MISMATCH');
+
+  const beforeComponents = inspectQwenComponents(beforeInit);
+  const afterComponents = inspectQwenComponents(afterInit);
+  if (!beforeComponents.dormantOnly) throw new Error('ACTIVATION_DORMANT_REQUIRED');
+  if (!afterComponents.mcpConnected) throw new Error('ACTIVATION_TOOLS_INCOMPLETE');
+  if (afterComponents.toolCount !== 19
+    || afterComponents.skillCount !== 7
+    || afterComponents.agentCount !== 6) {
+    throw new Error('ACTIVATION_TOOLS_INCOMPLETE');
+  }
+
+  const beforeUses = toolUses(beforeEvents);
+  const afterUses = toolUses(afterEvents);
+  if ([...beforeUses, ...afterUses].some((tool) => tool.name === 'mcp__bughunter__bh_start_run')) {
+    throw new Error('ACTIVATION_TARGET_TOO_EARLY');
+  }
+
+  const validate = setupValidateTool(beforeUses);
+  if (validate === undefined) throw new Error('ACTIVATION_SETUP_REQUIRED');
+  const validateResult = toolResults(beforeEvents).get(validate.id);
+  if (validateResult === undefined) throw new Error('ACTIVATION_SETUP_REQUIRED');
+  if (validateResult.isError || parseJsonContent(validateResult.content)?.code !== 'SETUP_VALID') {
+    throw new Error('ACTIVATION_SETUP_FAILED');
+  }
+
+  const afterInitIndex = afterEvents.indexOf(afterInit);
+  const continuation = userTexts(afterEvents)
+    .find((text) => text.index > afterInitIndex && /продолжай/i.test(text.text));
+  if (continuation === undefined) throw new Error('ACTIVATION_CONTINUATION_INVALID');
+  const inventory = afterUses
+    .find((tool) => tool.index > continuation.index && tool.name === 'CodeMode');
+  if (inventory === undefined) throw new Error('ACTIVATION_INVENTORY_REQUIRED');
+
+  return {
+    projectRoot: resolve(beforeInit.cwd),
+    pluginRoot: resolve(afterPlugin.path),
+    restartVerified: true,
+    newSessionVerified: true,
+    sameProjectVerified: true,
+    setupValidated: true,
+    continuationVerified: true,
+    activeToolsVerified: true,
+    toolCount: afterComponents.toolCount,
+    skillCount: afterComponents.skillCount,
+    agentCount: afterComponents.agentCount,
+  };
 }
 
 function runIdFromResult(results, toolId) {
