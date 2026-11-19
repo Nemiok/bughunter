@@ -131,7 +131,8 @@ Writer проверяет два ordered transcripts и host/runtime artifacts:
 3. Project root и config identity совпадают. Absolute paths сравниваются в памяти, но не записываются в
    sanitized evidence.
 4. Post-validate config fingerprint совпадает до запуска target. Изменение config отклоняется.
-5. Пользовательское «продолжай» предшествует tool inventory и `bh_start_run`.
+5. After transcript содержит новый init, затем пользовательское «продолжай», затем проверку inventory
+   агентом и только потом `bh_start_run`. Сам init до continuation не доказывает продолжение.
 6. Tool inventory получен из host-native events/output, а не только из caller-supplied JSON.
 7. `sourceCommit` совпадает с validated public-install evidence и фактическим installed payload;
    clientVersion получен из фактического Qwen process и совпадает с остальными gates.
