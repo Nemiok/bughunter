@@ -13,7 +13,7 @@ export const SURFACES = [
 ];
 
 export const requirements = {
-  'qwen/cli': ['install', 'public-install', 'target', 'node-target', 'resume'],
+  'qwen/cli': ['install', 'public-install', 'activation', 'target', 'node-target', 'resume'],
   'kimi/cli': ['install', 'target', 'resume'],
   'claude/cli': ['install', 'target', 'resume'],
   'kimi/desktop': ['install', 'target'],
@@ -76,13 +76,27 @@ function acceptsGate(surface, gate, evidence) {
     return false;
   }
   if (gate === 'public-install' && evidence.statePreserved !== true) return false;
+  if (surface === 'qwen/cli' && gate === 'activation') {
+    if (!/^[a-f0-9]{40}$/.test(evidence.sourceCommit ?? '')) return false;
+    if (evidence.activationMode !== 'new-session' || evidence.preset !== 'web') return false;
+    const booleans = ['setupValidated', 'restartVerified', 'newSessionVerified', 'sameProjectVerified',
+      'configPreserved', 'continuationVerified', 'activeToolsVerified'];
+    if (booleans.some((field) => evidence[field] !== true)) return false;
+    if (evidence.toolCount !== 19 || evidence.skillCount !== 7 || evidence.agentCount !== 6) return false;
+    if (typeof evidence.pluginVersion !== 'string' || evidence.pluginVersion.trim() === '') return false;
+    if (!Array.isArray(evidence.transcriptSha256) || evidence.transcriptSha256.length !== 2
+      || evidence.transcriptSha256.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) return false;
+  }
   if (['target', 'node-target', 'resume'].includes(gate)) {
     if (evidence.finished !== true || evidence.pending !== 0 || evidence.confirmedFalse !== 0) return false;
     if (evidence.nativeForegroundAgents !== true || evidence.singleExplorer !== true) return false;
     if (evidence.mainRestrictedTools !== 0) return false;
     if (!Number.isInteger(evidence.red?.failedAssertions) || evidence.red.failedAssertions < 1) return false;
   }
-  if (surface === 'qwen/cli' && gate === 'target' && evidence.reloadVerified !== true) return false;
+  if (surface === 'qwen/cli' && gate === 'node-target'
+    && (evidence.activeToolsVerified !== true || evidence.preset !== 'node' || evidence.toolCount !== 16)) {
+    return false;
+  }
   return true;
 }
 

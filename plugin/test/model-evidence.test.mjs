@@ -5,7 +5,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { recordModelGate } from './record-model-evidence.mjs';
-import { CANDIDATE_TEST, persistFixture, validFixture } from './model-evidence-fixture.mjs';
+import {
+  CANDIDATE_TEST,
+  NODE_TOOLS,
+  persistFixture,
+  validFixture,
+  validNodeFixture,
+  writeTranscript,
+} from './model-evidence-fixture.mjs';
 
 test('valid model evidence is sanitized and written', async () => {
   const input = await validFixture();
@@ -18,7 +25,8 @@ test('valid model evidence is sanitized and written', async () => {
   assert.equal(evidence.nativeForegroundAgents, true);
   assert.equal(evidence.singleExplorer, true);
   assert.equal(evidence.mainRestrictedTools, 0);
-  assert.equal(evidence.reloadVerified, true);
+  assert.equal('reloadVerified' in evidence, false);
+  assert.equal('activeToolsVerified' in evidence, false);
   assert.equal(evidence.red.failedAssertions, 1);
   assert.match(evidence.red.reportSha256, /^[a-f0-9]{64}$/);
   assert.match(evidence.transcripts[0].sha256, /^[a-f0-9]{64}$/);
@@ -62,6 +70,44 @@ test('recorder accepts the node preset api test kind', async () => {
   const path = await recordModelGate(input);
   const evidence = JSON.parse(await readFile(path, 'utf8'));
   assert.equal(evidence.red.failedAssertions, 1);
+});
+
+test('node target records active node tools from the same project init', async () => {
+  const input = await validNodeFixture();
+  const path = await recordModelGate(input);
+  const evidence = JSON.parse(await readFile(path, 'utf8'));
+  assert.equal(evidence.activeToolsVerified, true);
+  assert.equal(evidence.preset, 'node');
+  assert.equal(evidence.toolCount, 16);
+  assert.equal('reloadVerified' in evidence, false);
+});
+
+for (const [name, options, code] of [
+  ['fifteen tools', { initPatch: { tools: NODE_TOOLS.slice(0, 15) } }, /TRANSCRIPT_NODE_TOOLS_REQUIRED/],
+  ['dormant tools', { initPatch: { tools: ['mcp__bughunter__bh_setup'] } }, /TRANSCRIPT_NODE_TOOLS_REQUIRED/],
+  ['another project', { initCwd: '/other-project' }, /TRANSCRIPT_PROJECT_INIT_REQUIRED/],
+  ['a missing init', { includeInit: false }, /TRANSCRIPT_PROJECT_INIT_REQUIRED/],
+]) {
+  test(`node target rejects ${name}`, async () => {
+    const input = await validNodeFixture();
+    await writeTranscript(input.transcriptPath, input.runId, input.root, {
+      preset: 'node',
+      target: 'GET /orders',
+      ...options,
+    });
+    await assert.rejects(recordModelGate(input), code);
+    await assert.rejects(access(input.expectedEvidencePath));
+  });
+}
+
+test('node target rejects a confirmed candidate outside GET /orders', async () => {
+  const input = await validNodeFixture();
+  input.run.targets = ['/orders'];
+  input.run.targetStages = { '/orders': 'done' };
+  input.candidate.target = '/orders';
+  await persistFixture(input);
+  await assert.rejects(recordModelGate(input), /MODEL_EVIDENCE_NODE_TARGET_REQUIRED/);
+  await assert.rejects(access(input.expectedEvidencePath));
 });
 
 test('recorder rejects malformed candidate json', async () => {

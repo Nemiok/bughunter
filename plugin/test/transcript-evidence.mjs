@@ -39,13 +39,6 @@ function parseJsonContent(content) {
   }
 }
 
-function isReloadAcknowledgement(event) {
-  if (event?.type !== 'host') return false;
-  const command = event.command ?? event.event;
-  const succeeded = event.status === 'success' || event.result === 'success' || event.ok === true;
-  return succeeded && (command === '/plugins reload' || event.event === 'plugins.reload');
-}
-
 async function readEvents(transcriptPaths) {
   if (!Array.isArray(transcriptPaths) || transcriptPaths.length === 0) throw new Error('TRANSCRIPT_EMPTY');
   const events = [];
@@ -144,6 +137,19 @@ function findInit(events, missingCode) {
   const event = events.find((entry) => entry?.type === 'system' && entry?.subtype === 'init');
   if (event === undefined) throw new Error(missingCode);
   return event;
+}
+
+function projectInit(events, projectRoot, openingIndex) {
+  if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
+    throw new Error('TRANSCRIPT_PROJECT_ROOT_REQUIRED');
+  }
+  const init = events.find((entry, index) => index < openingIndex
+    && entry?.type === 'system'
+    && entry?.subtype === 'init'
+    && typeof entry.cwd === 'string'
+    && resolve(entry.cwd) === resolve(projectRoot));
+  if (init === undefined) throw new Error('TRANSCRIPT_PROJECT_INIT_REQUIRED');
+  return init;
 }
 
 function bughunterPlugin(init) {
@@ -246,11 +252,10 @@ function requireRunId(results, tool, runId, code) {
   if (actual !== runId) throw new Error(`${code}: expected ${runId}, got ${actual ?? 'missing'}`);
 }
 
-export async function inspectQwenTranscript({ transcriptPaths, runId, gate }) {
+export async function inspectQwenTranscript({ transcriptPaths, runId, gate, projectRoot }) {
   const events = await readEvents(transcriptPaths);
   const uses = toolUses(events);
   const results = toolResults(events);
-  const texts = userTexts(events);
 
   const restricted = uses.find((tool) => RESTRICTED_MAIN_TOOLS.has(tool.name));
   if (restricted !== undefined) throw new Error(`TRANSCRIPT_MAIN_RESTRICTED_TOOL: ${restricted.name}`);
@@ -258,17 +263,8 @@ export async function inspectQwenTranscript({ transcriptPaths, runId, gate }) {
   const startUses = uses.filter((tool) => tool.name === 'mcp__bughunter__bh_start_run');
   const resumeUses = uses.filter((tool) => tool.name === 'mcp__bughunter__bh_resume_run');
   let opening;
-  let reloadVerified = false;
 
-  if (gate === 'target') {
-    const reload = events.findIndex((event) => isReloadAcknowledgement(event));
-    if (reload < 0) throw new Error('TRANSCRIPT_RELOAD_REQUIRED');
-    const continuation = texts.find((item) => item.index > reload && /продолжай/i.test(item.text));
-    if (continuation === undefined) throw new Error('TRANSCRIPT_CONTINUATION_REQUIRED');
-    opening = startUses.find((tool) => tool.index > continuation.index);
-    if (opening === undefined) throw new Error('TRANSCRIPT_START_REQUIRED');
-    reloadVerified = true;
-  } else if (gate === 'resume') {
+  if (gate === 'resume') {
     opening = resumeUses[0];
     if (opening === undefined) throw new Error('TRANSCRIPT_RESUME_REQUIRED');
   } else {
@@ -277,6 +273,13 @@ export async function inspectQwenTranscript({ transcriptPaths, runId, gate }) {
   }
 
   requireRunId(results, opening, runId, 'TRANSCRIPT_START_RUN_MISMATCH');
+  if (gate === 'node-target') {
+    const init = projectInit(events, projectRoot, opening.index);
+    const components = inspectQwenComponents(init);
+    if (!components.mcpConnected || components.toolCount !== 16) {
+      throw new Error('TRANSCRIPT_NODE_TOOLS_REQUIRED');
+    }
+  }
 
   const exploreUses = uses.filter((tool) => tool.name === 'mcp__bughunter__bh_explore_next');
   for (const tool of exploreUses) {
@@ -328,10 +331,15 @@ export async function inspectQwenTranscript({ transcriptPaths, runId, gate }) {
   }
   if (explorerAgents === 0) throw new Error('TRANSCRIPT_EXPLORER_REQUIRED');
 
-  return {
+  const result = {
     nativeForegroundAgents: true,
     singleExplorer: true,
     mainRestrictedTools: 0,
-    reloadVerified,
   };
+  if (gate === 'node-target') {
+    result.activeToolsVerified = true;
+    result.preset = 'node';
+    result.toolCount = 16;
+  }
+  return result;
 }

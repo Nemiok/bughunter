@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -9,8 +9,33 @@ import { buildSupportMatrix } from '../support-matrix.mjs';
 const modelStrict = {
   finished: true, pending: 0, confirmedFalse: 0,
   nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
-  reloadVerified: true, red: { failedAssertions: 1 },
+  red: { failedAssertions: 1 },
 };
+
+function qwenActivation(sourceCommit, clientVersion) {
+  return {
+    host: 'qwen',
+    surface: 'cli',
+    gate: 'activation',
+    status: 'passed',
+    sourceCommit,
+    clientVersion,
+    pluginVersion: '0.2.4',
+    activationMode: 'new-session',
+    setupValidated: true,
+    restartVerified: true,
+    newSessionVerified: true,
+    sameProjectVerified: true,
+    configPreserved: true,
+    continuationVerified: true,
+    activeToolsVerified: true,
+    preset: 'web',
+    toolCount: 19,
+    skillCount: 7,
+    agentCount: 6,
+    transcriptSha256: ['b'.repeat(64), 'c'.repeat(64)],
+  };
+}
 
 const base = {
   host: 'kimi', surface: 'cli', clientVersion: '2.5.3', status: 'passed',
@@ -156,11 +181,13 @@ test('qwen full requires public checksum install and resume', async () => {
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
     ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
   });
+  await writeEvidence(evidenceDir, 'qwen/activation.json', qwenActivation(COMMIT, base.clientVersion));
   await writeEvidence(evidenceDir, 'qwen/target.json', {
     ...base, gate: 'target', runId: 'run-target', afterHostRefactor: true,
   });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', {
     ...base, gate: 'node-target', runId: 'run-node-target', afterHostRefactor: true,
+    activeToolsVerified: true, preset: 'node', toolCount: 16,
   });
   let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: COMMIT, version: '0.2.0' });
   let entry = matrix.entries.find((item) => item.host === 'qwen' && item.surface === 'cli');
@@ -181,8 +208,12 @@ test('qwen cli full requires marketplace install source and a post-refactor targ
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
     ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
   });
+  await writeEvidence(evidenceDir, 'qwen/activation.json', qwenActivation(commit, qwenBase.clientVersion));
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
-  await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+    ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true,
+    activeToolsVerified: true, preset: 'node', toolCount: 16,
+  });
   await writeEvidence(evidenceDir, 'qwen/resume.json', { ...qwenBase, gate: 'resume', runId: 'run-3', afterHostRefactor: true });
   let matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.notEqual(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status, 'full');
@@ -257,8 +288,12 @@ test('mcp-only status is not awarded to cli surfaces', async () => {
   await writeEvidence(evidenceDir, 'qwen/public-install.json', {
     ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
   });
+  await writeEvidence(evidenceDir, 'qwen/activation.json', qwenActivation(commit, qwenBase.clientVersion));
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
-  await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+    ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true,
+    activeToolsVerified: true, preset: 'node', toolCount: 16,
+  });
   await writeEvidence(evidenceDir, 'qwen/resume.json', { ...qwenBase, gate: 'resume', runId: 'run-3', afterHostRefactor: true });
   const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.0' });
   assert.equal(matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status, 'full');
@@ -354,11 +389,15 @@ test('required gates need a client version and a matching gate name', async () =
       ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true, statePreserved: true,
       ...(overrides.publicInstall ?? {}),
     });
+    await writeEvidence(evidenceDir, 'qwen/activation.json', {
+      ...qwenActivation(commit, base.clientVersion), ...(overrides.activation ?? {}),
+    });
     await writeEvidence(evidenceDir, 'qwen/target.json', {
       ...base, gate: 'target', runId: 'run-1', afterHostRefactor: true, ...(overrides.target ?? {}),
     });
     await writeEvidence(evidenceDir, 'qwen/node-target.json', {
-      ...base, gate: 'node-target', runId: 'run-2', afterHostRefactor: true, ...(overrides.nodeTarget ?? {}),
+      ...base, gate: 'node-target', runId: 'run-2', afterHostRefactor: true,
+      activeToolsVerified: true, preset: 'node', toolCount: 16, ...(overrides.nodeTarget ?? {}),
     });
     await writeEvidence(evidenceDir, 'qwen/resume.json', {
       ...base, gate: 'resume', runId: 'run-3', afterHostRefactor: true, ...(overrides.resume ?? {}),
@@ -383,7 +422,7 @@ const qwenModelBase = {
   status: 'passed', sourceCommit: QWEN_MODEL_COMMIT,
   afterHostRefactor: true, finished: true, pending: 0, confirmedFalse: 0,
   nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
-  reloadVerified: true, red: { failedAssertions: 1 },
+  red: { failedAssertions: 1 },
 };
 
 async function writeAllQwenGates(evidenceDir, overrides = {}) {
@@ -394,11 +433,16 @@ async function writeAllQwenGates(evidenceDir, overrides = {}) {
     ...qwenModelBase, gate: 'public-install', source: 'github-marketplace', public: true,
     sha256Verified: true, statePreserved: true, ...(overrides.publicInstall ?? {}),
   });
+  await writeEvidence(evidenceDir, 'qwen/activation.json', {
+    ...qwenActivation(QWEN_MODEL_COMMIT, qwenModelBase.clientVersion),
+    ...(overrides.activation ?? {}),
+  });
   await writeEvidence(evidenceDir, 'qwen/target.json', {
     ...qwenModelBase, gate: 'target', runId: 'run-target', ...(overrides.target ?? {}),
   });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', {
-    ...qwenModelBase, gate: 'node-target', runId: 'run-node-target', ...(overrides.nodeTarget ?? {}),
+    ...qwenModelBase, gate: 'node-target', runId: 'run-node-target',
+    activeToolsVerified: true, preset: 'node', toolCount: 16, ...(overrides.nodeTarget ?? {}),
   });
   await writeEvidence(evidenceDir, 'qwen/resume.json', {
     ...qwenModelBase, gate: 'resume', runId: 'run-resume', ...(overrides.resume ?? {}),
@@ -423,7 +467,6 @@ for (const [name, invalid] of Object.entries({
   backgroundAgents: { nativeForegroundAgents: false },
   multipleExplorers: { singleExplorer: false },
   mainTools: { mainRestrictedTools: 99 },
-  reloadNotProved: { reloadVerified: false },
   noRedAssertions: { red: { failedAssertions: 0 } },
   missingRed: { red: undefined },
 })) {
@@ -433,6 +476,50 @@ for (const [name, invalid] of Object.entries({
     assert.equal(await qwenStatus(evidenceDir), 'experimental');
   });
 }
+
+for (const [name, invalid] of Object.entries({
+  reloadMode: { activationMode: 'reload' },
+  restartNotProved: { restartVerified: false },
+  newSessionNotProved: { newSessionVerified: false },
+  projectNotProved: { sameProjectVerified: false },
+  configNotPreserved: { configPreserved: false },
+  continuationNotProved: { continuationVerified: false },
+  activeToolsNotProved: { activeToolsVerified: false },
+  setupNotValidated: { setupValidated: false },
+  eighteenTools: { toolCount: 18 },
+  twentyTools: { toolCount: 20 },
+  sixSkills: { skillCount: 6 },
+  fiveAgents: { agentCount: 5 },
+  nodeActivation: { preset: 'node' },
+  missingPluginVersion: { pluginVersion: '' },
+  oneTranscriptHash: { transcriptSha256: ['a'.repeat(64)] },
+  invalidTranscriptHash: { transcriptSha256: ['x'.repeat(64), 'b'.repeat(64)] },
+})) {
+  test(`qwen activation rejects ${name}`, async () => {
+    const evidenceDir = await mkdtemp(join(tmpdir(), `bh-matrix-qwen-activation-${name}-`));
+    await writeAllQwenGates(evidenceDir, { activation: invalid });
+    assert.equal(await qwenStatus(evidenceDir), 'experimental');
+  });
+}
+
+for (const [name, invalid] of Object.entries({
+  toolsNotVerified: { activeToolsVerified: false },
+  wrongPreset: { preset: 'web' },
+  fifteenTools: { toolCount: 15 },
+})) {
+  test(`qwen node-target rejects ${name}`, async () => {
+    const evidenceDir = await mkdtemp(join(tmpdir(), `bh-matrix-qwen-node-${name}-`));
+    await writeAllQwenGates(evidenceDir, { nodeTarget: invalid });
+    assert.equal(await qwenStatus(evidenceDir), 'experimental');
+  });
+}
+
+test('reload-only evidence cannot replace activation', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-qwen-reload-only-'));
+  await writeAllQwenGates(evidenceDir, { target: { reloadVerified: true } });
+  await rm(join(evidenceDir, 'qwen', 'activation.json'));
+  assert.equal(await qwenStatus(evidenceDir), 'experimental');
+});
 
 test('qwen public install rejects missing state preservation', async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-qwen-state-'));

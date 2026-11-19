@@ -3,9 +3,17 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  BUGHUNTER_AGENTS,
+  BUGHUNTER_SKILLS,
+  BUGHUNTER_WEB_TOOLS,
+} from './activation-fixture.mjs';
+
 export const MODEL_COMMIT = 'a'.repeat(40);
 export const RUN_ID = 'run-1';
 export const CANDIDATE_TEST = 'e2e/bughunter/orders-new.spec.ts';
+export const NODE_CANDIDATE_TEST = 'test/bughunter/orders.api.test.ts';
+export const NODE_TOOLS = BUGHUNTER_WEB_TOOLS.slice(0, 16);
 
 function toolUse(name, input, id) {
   return {
@@ -21,51 +29,93 @@ function toolResult(id, content) {
   };
 }
 
-function userText(text) {
-  return { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } };
+export function modelInit(projectRoot, preset = 'web', patch = {}) {
+  return {
+    type: 'system',
+    subtype: 'init',
+    session_id: `session-${preset}`,
+    cwd: projectRoot,
+    tools: preset === 'node' ? [...NODE_TOOLS] : [...BUGHUNTER_WEB_TOOLS],
+    skills: [...BUGHUNTER_SKILLS],
+    agents: [...BUGHUNTER_AGENTS],
+    mcp_servers: [{ name: 'bughunter', status: 'connected' }],
+    plugins: [{ name: 'bughunter', path: '/plugin' }],
+    ...patch,
+  };
 }
 
-async function writeTranscript(path, runId) {
-  const reload = { type: 'host', event: 'plugins.reload', command: '/plugins reload', status: 'success' };
-  const continuation = userText('Продолжай');
-  const start = toolUse('mcp__bughunter__bh_start_run', { scope: 'target', target: '/orders/new' }, 'start-1');
-  const startResult = toolResult('start-1', JSON.stringify({ runId, targets: ['/orders/new'] }));
-  const lease1 = toolUse('mcp__bughunter__bh_explore_next', { runId, target: '/orders/new' }, 'lease-1');
+export async function writeTranscript(path, runId, projectRoot, options = {}) {
+  const target = options.target ?? '/orders/new';
+  const init = options.includeInit === false
+    ? undefined
+    : modelInit(options.initCwd ?? projectRoot, options.preset ?? 'web', options.initPatch);
+  const start = toolUse('mcp__bughunter__bh_start_run', { scope: 'target', target }, 'start-1');
+  const startResult = toolResult('start-1', JSON.stringify({ runId, targets: [target] }));
+  const lease1 = toolUse('mcp__bughunter__bh_explore_next', { runId, target }, 'lease-1');
   const lease1Result = toolResult('lease-1', JSON.stringify({
-    status: 'task', leaseId: 'lease-1', target: '/orders/new', persona: 'новичок',
+    status: 'task', leaseId: 'lease-1', target, persona: 'новичок',
   }));
   const explorer = toolUse('Agent', {
-    description: 'explore /orders/new', subagent_type: 'bughunter:bh-explorer', run_in_background: false, prompt: 'explore',
+    description: `explore ${target}`, subagent_type: 'bughunter:bh-explorer', run_in_background: false, prompt: 'explore',
   }, 'agent-1');
-  const explorerResult = toolResult('agent-1', 'explored /orders/new');
-  const lease2 = toolUse('mcp__bughunter__bh_explore_next', { runId, target: '/orders/new' }, 'lease-2');
+  const explorerResult = toolResult('agent-1', `explored ${target}`);
+  const lease2 = toolUse('mcp__bughunter__bh_explore_next', { runId, target }, 'lease-2');
   const lease2Done = toolResult('lease-2', JSON.stringify({ status: 'done' }));
   const resumed = toolUse('mcp__bughunter__bh_resume_run', { runId }, 'resume-1');
   const resumedResult = toolResult('resume-1', JSON.stringify({ runId }));
   const events = [
-    reload, continuation, start, startResult,
+    init, start, startResult,
     lease1, lease1Result, explorer, explorerResult, lease2, lease2Done,
     resumed, resumedResult,
-  ];
+  ].filter(Boolean);
   await writeFile(path, events.map((event) => `${JSON.stringify(event)}\n`).join(''));
 }
 
-export async function validFixture() {
+function playwrightReport(testPath) {
+  return {
+    suites: [{
+      title: 'orders', file: testPath, specs: [{
+        title: 'total', file: testPath, tests: [{
+          title: 'renders numeric total',
+          results: [{ status: 'failed', error: { message: 'Total: NaN' } }],
+        }],
+      }],
+    }],
+    errors: [],
+  };
+}
+
+function vitestReport(testPath) {
+  return {
+    numFailedTests: 1,
+    testResults: [{
+      name: testPath,
+      assertionResults: [{ status: 'failed', title: 'returns orders' }],
+    }],
+  };
+}
+
+export async function validFixture({
+  gate = 'target',
+  target = '/orders/new',
+  preset = 'web',
+  candidateTest = CANDIDATE_TEST,
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'bh-model-evidence-'));
   const runId = RUN_ID;
   const runDir = join(root, 'runs', runId);
   const evidenceDir = join(root, 'evidence');
   const transcriptPath = join(root, 'transcript.jsonl');
-  const reportPath = join(root, 'playwright-report.json');
+  const reportPath = join(root, 'red-report.json');
   await mkdir(join(runDir, 'candidates'), { recursive: true });
 
   const run = {
     id: runId,
     scope: 'target',
-    targets: ['/orders/new'],
+    targets: [target],
     status: 'finished',
     stages: { explore: 'done', reproduce: 'done', triage: 'done', export: 'done' },
-    targetStages: { '/orders/new': 'done' },
+    targetStages: { [target]: 'done' },
     createdAt: '2026-11-19T00:00:00.000Z',
     updatedAt: '2026-11-19T00:10:00.000Z',
   };
@@ -74,7 +124,7 @@ export async function validFixture() {
     id: 'bug-1',
     runId,
     sessionId: 'session-1',
-    target: '/orders/new',
+    target,
     title: 'Total is NaN on first paint',
     expected: 'Numeric total',
     actual: 'Total: NaN',
@@ -85,28 +135,17 @@ export async function validFixture() {
     status: 'confirmed',
     createdAt: '2026-11-19T00:05:00.000Z',
     reproduction: { status: 'reproduced', attempts: 1 },
-    review: { status: 'confirmed', reason: 'reproduced on /orders/new' },
-    tests: { e2e: CANDIDATE_TEST },
-    verdicts: { e2e: 'red' },
+    review: { status: 'confirmed', reason: `reproduced on ${target}` },
+    tests: preset === 'node' ? { api: candidateTest } : { e2e: candidateTest },
+    verdicts: preset === 'node' ? { api: 'red' } : { e2e: 'red' },
   };
 
-  const report = {
-    suites: [{
-      title: 'orders', file: CANDIDATE_TEST, specs: [{
-        title: 'total', file: CANDIDATE_TEST, tests: [{
-          title: 'renders numeric total',
-          results: [{ status: 'failed', error: { message: 'Total: NaN' } }],
-        }],
-      }],
-    }],
-    errors: [],
-  };
-
+  const report = preset === 'node' ? vitestReport(candidateTest) : playwrightReport(candidateTest);
   const input = {
     root,
     host: 'qwen',
     surface: 'cli',
-    gate: 'target',
+    gate,
     clientVersion: '1.0.0-preview.2',
     sourceCommit: MODEL_COMMIT,
     runId,
@@ -114,9 +153,9 @@ export async function validFixture() {
     evidenceDir,
     orchestration: { transcriptPaths: [transcriptPath] },
     red: {
-      runner: 'playwright',
+      runner: preset === 'node' ? 'vitest' : 'playwright',
       cwd: root,
-      testPath: CANDIDATE_TEST,
+      testPath: candidateTest,
       reportPath,
       spawn: () => {
         writeFileSync(reportPath, JSON.stringify(report));
@@ -125,15 +164,26 @@ export async function validFixture() {
     },
     run,
     candidate,
-    expectedEvidencePath: join(evidenceDir, 'qwen', 'target.json'),
+    expectedEvidencePath: join(evidenceDir, 'qwen', `${gate}.json`),
     transcriptPath,
     reportPath,
+    preset,
+    target,
   };
 
   await persistFixture(input);
-  await writeTranscript(transcriptPath, runId);
+  await writeTranscript(transcriptPath, runId, root, { preset, target });
   await writeFile(reportPath, JSON.stringify(report));
   return input;
+}
+
+export async function validNodeFixture() {
+  return validFixture({
+    gate: 'node-target',
+    target: 'GET /orders',
+    preset: 'node',
+    candidateTest: NODE_CANDIDATE_TEST,
+  });
 }
 
 export async function persistFixture(input) {

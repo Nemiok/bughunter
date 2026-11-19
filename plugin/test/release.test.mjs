@@ -20,8 +20,33 @@ const kimiBase = {
 const modelStrict = {
   finished: true, pending: 0, confirmedFalse: 0,
   nativeForegroundAgents: true, singleExplorer: true, mainRestrictedTools: 0,
-  reloadVerified: true, red: { failedAssertions: 1 },
+  red: { failedAssertions: 1 },
 };
+
+function qwenActivation(commit, clientVersion, pluginVersion = '0.2.0') {
+  return {
+    host: 'qwen',
+    surface: 'cli',
+    gate: 'activation',
+    status: 'passed',
+    sourceCommit: commit,
+    clientVersion,
+    pluginVersion,
+    activationMode: 'new-session',
+    setupValidated: true,
+    restartVerified: true,
+    newSessionVerified: true,
+    sameProjectVerified: true,
+    configPreserved: true,
+    continuationVerified: true,
+    activeToolsVerified: true,
+    preset: 'web',
+    toolCount: 19,
+    skillCount: 7,
+    agentCount: 6,
+    transcriptSha256: ['b'.repeat(64), 'c'.repeat(64)],
+  };
+}
 
 const MANIFEST_FILES = {
   qwen: '.claude-plugin/plugin.json',
@@ -198,9 +223,11 @@ test('missing Claude evidence does not block a qwen-only local bundle', async ()
     ...qwenBase, gate: 'public-install', source: 'github-marketplace',
     public: true, sha256Verified: true, statePreserved: true,
   });
+  await writeEvidence(evidenceDir, 'qwen/activation.json', qwenActivation(COMMIT, qwenBase.clientVersion));
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
   await writeEvidence(evidenceDir, 'qwen/node-target.json', {
     ...qwenBase, gate: 'node-target', runId: 'run-node', afterHostRefactor: true,
+    activeToolsVerified: true, preset: 'node', toolCount: 16,
   });
   await writeEvidence(evidenceDir, 'qwen/resume.json', {
     ...qwenBase, gate: 'resume', runId: 'run-resume', afterHostRefactor: true,
@@ -396,8 +423,12 @@ test('missing license materials cannot render PASS or build a public archive cat
     ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true,
     sha256Verified: true, statePreserved: true,
   });
+  await writeEvidence(evidenceDir, 'qwen/activation.json', qwenActivation(COMMIT, qwenBase.clientVersion));
   await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
-  await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+    ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true,
+    activeToolsVerified: true, preset: 'node', toolCount: 16,
+  });
   await writeEvidence(evidenceDir, 'qwen/resume.json', { ...qwenBase, gate: 'resume', runId: 'run-3', afterHostRefactor: true });
   const result = await createRelease({
     version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,

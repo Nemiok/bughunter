@@ -76,11 +76,19 @@ export async function recordModelGate(input) {
       'MODEL_EVIDENCE_WEB_TARGET_REQUIRED',
     );
   }
+  if (gate === 'node-target') {
+    assert.ok(run.targets.includes('GET /orders'), 'MODEL_EVIDENCE_NODE_TARGET_REQUIRED');
+    assert.ok(
+      confirmed.every((candidate) => candidate.target === 'GET /orders'),
+      'MODEL_EVIDENCE_NODE_TARGET_REQUIRED',
+    );
+  }
 
   const orchestrationResult = await inspectQwenTranscript({
     transcriptPaths: orchestration?.transcriptPaths,
     runId,
     gate,
+    projectRoot: red?.cwd,
   });
   const transcripts = await transcriptDigests(orchestration.transcriptPaths);
 
@@ -100,6 +108,13 @@ export async function recordModelGate(input) {
     spawn: red?.spawn,
   });
 
+  const nodeEvidence = gate === 'node-target'
+    ? {
+      activeToolsVerified: orchestrationResult.activeToolsVerified,
+      preset: orchestrationResult.preset,
+      toolCount: orchestrationResult.toolCount,
+    }
+    : {};
   const evidence = {
     host, surface, gate, clientVersion, sourceCommit, runId,
     status: 'passed', afterHostRefactor: true,
@@ -107,7 +122,7 @@ export async function recordModelGate(input) {
     nativeForegroundAgents: orchestrationResult.nativeForegroundAgents,
     singleExplorer: orchestrationResult.singleExplorer,
     mainRestrictedTools: orchestrationResult.mainRestrictedTools,
-    reloadVerified: orchestrationResult.reloadVerified,
+    ...nodeEvidence,
     transcripts,
     red: {
       command: [redResult.command, ...redResult.args].join(' '),
