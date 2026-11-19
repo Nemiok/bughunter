@@ -82,6 +82,7 @@ function qwenMcpOnly(commit, clientVersion) {
       host: 'qwen',
       surface: 'mcp-only',
       channel: 'extensions',
+      gate: 'install',
       clientVersion,
       initVersion: clientVersion,
       sourceCommit: commit,

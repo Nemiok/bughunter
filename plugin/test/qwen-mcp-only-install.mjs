@@ -174,11 +174,13 @@ try {
   assert.equal(safety.code, 'LEASE_REQUIRED');
   assert.match(safety.message, /^LEASE_REQUIRED: /);
 
-  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
+  const sourceCommit = process.env.BUGHUNTER_PAYLOAD_COMMIT
+    ?? run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).stdout.trim();
   const installEvidence = {
     host: 'qwen',
     surface: 'mcp-only',
     channel: 'extensions',
+    gate: 'install',
     clientVersion,
     initVersion: dormant.qwen_code_version,
     sourceCommit,

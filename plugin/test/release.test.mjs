@@ -198,10 +198,12 @@ test('missing Claude evidence does not block a qwen-only local bundle', async ()
     ...qwenBase, gate: 'resume', runId: 'run-resume', afterHostRefactor: true,
   });
   const artifacts = { qwen: await makeArtifact(root, 'qwen-artifact', 'qwen') };
+  await writeFile(join(root, 'LICENSE'), 'MIT\n');
+  await writeFile(join(root, 'THIRD_PARTY_NOTICES.md'), '# Notices\n');
   const result = await createRelease({
     version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
     hosts: ['qwen'], git: cleanGit(),
-    licenseFiles: { license: join(outDir, 'LICENSE'), notices: join(outDir, 'THIRD_PARTY_NOTICES.md') },
+    licenseFiles: { license: join(root, 'LICENSE'), notices: join(root, 'THIRD_PARTY_NOTICES.md') },
   });
   assert.equal(result.hosts.qwen, 'ready');
   const rendering = renderReleaseSummary(result);
@@ -372,4 +374,31 @@ test('metadata-only flag does not consume the following option', () => {
   assert.equal(options.metadataOnly, true);
   assert.equal(options.releaseBaseUrl, 'https://example.invalid/releases');
   assert.equal(options.marketplaceRepo, 'acme/bughunter');
+});
+
+test('missing license materials cannot render PASS or build a public archive catalog', async () => {
+  const { evidenceDir, outDir, artifacts } = await baseReleaseOptions();
+  const qwenBase = {
+    host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed', sourceCommit: COMMIT,
+    source: 'marketplace',
+  };
+  await writeEvidence(evidenceDir, 'qwen/install.json', { ...qwenBase, gate: 'install' });
+  await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+    ...qwenBase, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+  });
+  await writeEvidence(evidenceDir, 'qwen/target.json', { ...qwenBase, gate: 'target', runId: 'run-1', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/node-target.json', { ...qwenBase, gate: 'node-target', runId: 'run-2', afterHostRefactor: true });
+  await writeEvidence(evidenceDir, 'qwen/resume.json', { ...qwenBase, gate: 'resume', runId: 'run-3', afterHostRefactor: true });
+  const result = await createRelease({
+    version: '0.2.0', sourceCommit: COMMIT, evidenceDir, outDir, artifacts,
+    hosts: ['qwen'], git: cleanGit(),
+    licenseFiles: { license: join(outDir, 'missing-LICENSE'), notices: join(outDir, 'missing-NOTICES') },
+    releaseBaseUrl: 'https://example.invalid/releases',
+    marketplaceRepo: 'acme/bughunter',
+  });
+  assert.equal(result.hosts.qwen, 'ready');
+  assert.equal(result.licenseError, 'LICENSE_MATERIALS_MISSING');
+  assert.match(renderReleaseSummary(result), /INCOMPLETE/);
+  assert.doesNotMatch(renderReleaseSummary(result), /PASS/);
+  assert.equal(existsSync(join(outDir, 'qwen', 'marketplace', '.claude-plugin', 'marketplace.json')), false);
 });

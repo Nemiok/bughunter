@@ -333,3 +333,39 @@ test('native extension surfaces require install, workspace and model gates', asy
   assert.deepEqual([...entry.evidence].sort(), ['install', 'resume', 'target', 'workspace']);
   assert.equal(entry.status, 'full');
 });
+
+test('required gates need a client version and a matching gate name', async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), 'bh-matrix-strict-'));
+  const commit = 'a'.repeat(40);
+  const base = {
+    host: 'qwen', surface: 'cli', clientVersion: '1.0.0', status: 'passed',
+    sourceCommit: commit, source: 'marketplace',
+  };
+  const writeAll = async (overrides = {}) => {
+    await writeEvidence(evidenceDir, 'qwen/install.json', { ...base, gate: 'install', ...(overrides.install ?? {}) });
+    await writeEvidence(evidenceDir, 'qwen/public-install.json', {
+      ...base, gate: 'public-install', source: 'github-marketplace', public: true, sha256Verified: true,
+      ...(overrides.publicInstall ?? {}),
+    });
+    await writeEvidence(evidenceDir, 'qwen/target.json', {
+      ...base, gate: 'target', runId: 'run-1', afterHostRefactor: true, ...(overrides.target ?? {}),
+    });
+    await writeEvidence(evidenceDir, 'qwen/node-target.json', {
+      ...base, gate: 'node-target', runId: 'run-2', afterHostRefactor: true, ...(overrides.nodeTarget ?? {}),
+    });
+    await writeEvidence(evidenceDir, 'qwen/resume.json', {
+      ...base, gate: 'resume', runId: 'run-3', afterHostRefactor: true, ...(overrides.resume ?? {}),
+    });
+  };
+  const status = async () => {
+    const matrix = await buildSupportMatrix({ evidenceDir, sourceCommit: commit, version: '0.2.1' });
+    return matrix.entries.find((entry) => entry.host === 'qwen' && entry.surface === 'cli').status;
+  };
+
+  await writeAll({ target: { clientVersion: undefined } });
+  assert.notEqual(await status(), 'full');
+  await writeAll({ target: { gate: 'resume' } });
+  assert.notEqual(await status(), 'full');
+  await writeAll();
+  assert.equal(await status(), 'full');
+});

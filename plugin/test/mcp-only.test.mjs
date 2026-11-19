@@ -20,6 +20,8 @@ test('Agent Plugins v1 MCP-only artifact has only portable fields', async () => 
   assert.equal(existsSync(`${out}/agents`), false);
   assert.equal(existsSync(`${out}/.claude-plugin`), false);
   assert.equal(existsSync(`${out}/skills/bughunter`), false);
+  assert.ok(existsSync(`${out}/LICENSE`), 'MCP-only artifact must carry LICENSE');
+  assert.ok(existsSync(`${out}/THIRD_PARTY_NOTICES.md`), 'MCP-only artifact must carry third-party notices');
   const readme = await readFile(`${out}/README.md`, 'utf8');
   assert.ok(readme.includes('MCP-only; full workflow not certified'));
   assert.ok(readme.includes('BUGHUNTER_PROJECT_UNKNOWN'), 'README must stop on BUGHUNTER_PROJECT_UNKNOWN');

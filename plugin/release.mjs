@@ -196,7 +196,7 @@ export function renderReleaseSummary(result) {
     `release ${result.version} (${result.sourceCommit})`,
     `publication: ${result.publication}`,
   ];
-  let allReady = true;
+  let allReady = result.licenseError === undefined;
   for (const host of result.requestedHosts) {
     const status = result.hosts[host];
     if (status !== 'ready') allReady = false;
@@ -291,14 +291,16 @@ export async function createRelease({
         const marketplaceRoot = join(hostOut, 'marketplace');
         if (releaseBaseUrl !== undefined || marketplaceRepo !== undefined) {
           if (!releaseBaseUrl || !marketplaceRepo) throw new Error('PUBLICATION_CONFIG_INCOMPLETE');
-          await buildQwenArchiveMarketplace({
-            marketplaceRoot,
-            version,
-            archiveUrl: `${releaseBaseUrl.replace(/\/$/, '')}/${version}/bughunter-qwen.zip`,
-            sha256: built[host].sha256,
-            payloadCommit: sourceCommit,
-            repository: marketplaceRepo,
-          });
+          if (licenseError === undefined) {
+            await buildQwenArchiveMarketplace({
+              marketplaceRoot,
+              version,
+              archiveUrl: `${releaseBaseUrl.replace(/\/$/, '')}/${version}/bughunter-qwen.zip`,
+              sha256: built[host].sha256,
+              payloadCommit: sourceCommit,
+              repository: marketplaceRepo,
+            });
+          }
         } else {
           await buildQwenMarketplace({ pluginDir: artifactDir, marketplaceRoot, version });
         }

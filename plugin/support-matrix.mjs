@@ -53,6 +53,11 @@ function evidencePathFor(evidenceDir, surface, gate) {
 
 function acceptsGate(surface, gate, evidence) {
   if (evidence.status !== 'passed') return false;
+  if (typeof evidence.clientVersion !== 'string' || evidence.clientVersion.trim() === '') return false;
+  const evidenceGates = surface === 'qwen/mcp-only' && gate === 'safety'
+    ? ['safety', 'bh_open-without-lease']
+    : [gate];
+  if (!evidenceGates.includes(evidence.gate)) return false;
   const [host] = surface.split('/');
   if (evidence.host !== host || evidence.surface !== surface.split('/')[1]) return false;
   if (surface === 'qwen/cli' && gate === 'install' && evidence.source !== 'marketplace') return false;

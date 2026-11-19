@@ -13,6 +13,9 @@ export async function buildQwenMcpOnly({ pluginRoot, sharedServer, out, version 
   await cp(join(pluginRoot, 'setup.mjs'), join(server, 'setup.mjs'));
   await cp(join(pluginRoot, 'preflight.mjs'), join(server, 'preflight.mjs'));
   await cp(join(pluginRoot, 'prompts', 'mcp-only-setup.md'), join(out, 'skills', 'bughunter-setup', 'SKILL.md'));
+  for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+    await cp(join(pluginRoot, '..', file), join(out, file));
+  }
   const manifest = {
     $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
     name: 'bughunter-mcp',
