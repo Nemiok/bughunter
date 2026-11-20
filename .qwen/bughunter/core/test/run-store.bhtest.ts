@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import type { ReportFormat } from '../src/preset.ts';
 import {
   completeExplorationLease, createRun, finishRun, leaseNextExploration,
-  readFindings, recordCandidateTest, recordRunStage, recordTargetExploration,
+  readFindings, readRun, recordCandidateTest, recordRunStage, recordTargetExploration,
 } from '../src/run-store.ts';
 import type { Candidate, Config, Finding } from '../src/types.ts';
 
@@ -151,6 +151,58 @@ test('finish accepts a run whose explore queue is drained', () => withStateDir(a
   await markStagesDone(run.id, stateDir);
   const { report } = await finishRun(run.id, stateDir, format);
   assert.match(await readFile(report, 'utf8'), /## Pending\n\nNone\./);
+}));
+
+test('finish accepts a run with no confirmed bugs even though export was never started', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('target', '/a', {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А'], targets: ['/a'],
+  });
+  const leased = await leaseNextExploration(run.id, { personas: ['персона А'] }, stateDir);
+  if (leased.status !== 'task') throw new Error('не достигнуто');
+  await recordTargetExploration(run.id, leased.target, 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
+  await recordRunStage(run.id, 'reproduce', 'done', stateDir);
+  await recordRunStage(run.id, 'triage', 'done', stateDir);
+  const candidate: Candidate = {
+    id: 'rejected-1',
+    runId: run.id,
+    sessionId: 'sess-1',
+    target: '/a',
+    title: 'Заголовок кандидата',
+    expected: 'ожидалось одно',
+    actual: 'получилось другое',
+    signalIds: [],
+    signature: 'signature-rejected',
+    steps: [],
+    artifacts: [],
+    status: 'rejected',
+    createdAt,
+    reproduction: { status: 'reproduced', attempts: 3 },
+    review: { status: 'rejected', reason: 'Не нарушает контракт приложения' },
+  };
+  const directory = join(stateDir, 'runs', run.id, 'candidates');
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${candidate.id}.json`), `${JSON.stringify(candidate, null, 2)}\n`, 'utf8');
+
+  const { report } = await finishRun(run.id, stateDir, format);
+  assert.match(await readFile(report, 'utf8'), /## Pending\n\nNone\./);
+  assert.equal((await readRun(run.id, stateDir)).status, 'finished');
+}));
+
+test('finish accepts a run with no candidates even though candidate stages never started', () => withStateDir(async (stateDir) => {
+  const format: ReportFormat = { candidate: () => ['C'], finding: () => ['F'] };
+  const run = await createRun('target', '/a', {
+    config, projectRoot: stateDir, stateDir, personas: ['персона А'], targets: ['/a'],
+  });
+  const leased = await leaseNextExploration(run.id, { personas: ['персона А'] }, stateDir);
+  if (leased.status !== 'task') throw new Error('не достигнуто');
+  await recordTargetExploration(run.id, leased.target, 'done', stateDir);
+  await completeExplorationLease(run.id, leased.leaseId, stateDir);
+
+  const { report } = await finishRun(run.id, stateDir, format);
+  assert.match(await readFile(report, 'utf8'), /## Pending\n\nNone\./);
+  assert.equal((await readRun(run.id, stateDir)).status, 'finished');
 }));
 
 test('finish refuses a run with a failed stage', () => withStateDir(async (stateDir) => {

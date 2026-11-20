@@ -693,8 +693,10 @@ export async function finishRun(runId: string, stateDir: string, format: ReportF
     throw new Error(`RUN_INCOMPLETE: targets ${incompleteTargets.join(',')}`);
   }
   if (run.scope !== 'sweep') {
+    // `pending` — этап, на который не было работы: очередь, цели и кандидаты уже проверены выше.
+    // Завершению мешает только упавший или прерванный этап.
     const unfinishedStages = Object.entries(run.stages)
-      .filter(([, status]) => status !== 'done')
+      .filter(([, status]) => status === 'failed' || status === 'running')
       .map(([name]) => name);
     if (unfinishedStages.length > 0) {
       throw new Error(`RUN_INCOMPLETE: stages ${unfinishedStages.join(',')}`);
