@@ -88,7 +88,7 @@ export async function recordModelGate(input) {
     transcriptPaths: orchestration?.transcriptPaths,
     runId,
     gate,
-    projectRoot: red?.cwd,
+    projectRoot: orchestration?.projectRoot ?? red?.cwd,
   });
   const transcripts = await transcriptDigests(orchestration.transcriptPaths);
 
