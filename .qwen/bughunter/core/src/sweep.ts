@@ -164,11 +164,13 @@ export async function promoteFindingToCandidate(input: {
   title: string;
   expected: string;
   actual: string;
-  check?: Candidate['check'];
+  check: Candidate['check'];
   stateDir: string;
   findingKinds: FindingKinds;
 }): Promise<{ candidateId: string }> {
   const stateDir = resolve(input.stateDir);
+  // Без оракула кандидат нечем воспроизвести и нечем отклонить: прогон встал бы навсегда.
+  if (input.check === undefined) throw new Error('CANDIDATE_ORACLE_REQUIRED');
   let finding: Finding;
   try {
     finding = JSON.parse(await readFile(findingPath(input.runId, input.findingId, stateDir), 'utf8')) as Finding;
@@ -212,7 +214,7 @@ export async function promoteFindingToCandidate(input: {
     artifacts: [],
     status: 'unprocessed',
     createdAt: timestamp,
-    ...(input.check === undefined ? {} : { check: input.check }),
+    check: input.check,
     reproduction: { status: 'unreproduced', attempts: 0 },
   };
   await writeJsonAtomic(join(runDirectory, 'candidates', `${candidateId}.json`), candidate);

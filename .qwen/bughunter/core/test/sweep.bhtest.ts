@@ -238,6 +238,7 @@ test('promote builds the synthetic step through the preset', () => withStateDir(
   const { candidateId } = await promoteFindingToCandidate({
     runId: run.id, findingId: finding.id, title: 'Экран не отдаёт данные',
     expected: 'Данные ответа видны', actual: 'Ответ не доходит', stateDir, findingKinds,
+    check: { kind: 'response-captured', target: '/a', expected: 1 },
   });
 
   const candidate = JSON.parse(await readFile(
@@ -264,6 +265,7 @@ test('promote builds the synthetic step through the preset', () => withStateDir(
   assert.deepEqual(
     await promoteFindingToCandidate({
       runId: run.id, findingId: finding.id, title: 'x', expected: 'y', actual: 'z', stateDir, findingKinds,
+      check: { kind: 'response-captured', target: '/a', expected: 1 },
     }),
     { candidateId },
     'повторное продвижение той же находки не плодит кандидатов',
@@ -271,7 +273,27 @@ test('promote builds the synthetic step through the preset', () => withStateDir(
   await assert.rejects(
     () => promoteFindingToCandidate({
       runId: run.id, findingId: 'missing', title: 'x', expected: 'y', actual: 'z', stateDir, findingKinds,
+      check: { kind: 'response-captured', target: '/a', expected: 1 },
     }),
     /FINDING_NOT_FOUND: missing/,
   );
+}));
+
+test('promote-requires-check', () => withStateDir(async (stateDir) => {
+  const run = await sweepRun(stateDir);
+  const visit: SweepVisit = { visit: async ({ target }) => [captured(target)] };
+  await runSweep({
+    runId: run.id, stateDir,
+    inventory: inventory(['/a']), session: session([]), visit, reset: reset([]), findingKinds,
+  });
+  const [finding] = await readFindings(run.id, stateDir);
+  assert.ok(finding);
+  await assert.rejects(
+    () => promoteFindingToCandidate({
+      runId: run.id, findingId: finding.id, title: 't', expected: 'e', actual: 'a', stateDir, findingKinds,
+    } as never),
+    /CANDIDATE_ORACLE_REQUIRED/,
+  );
+  const [still] = await readFindings(run.id, stateDir);
+  assert.equal(still?.status, 'new', 'находка не промоутится без оракула');
 }));

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import { webCheckKinds } from './checks.ts';
+import { validateWebCheck, webCheckKinds } from './checks.ts';
 import { errorCode, ToolError } from './errors.ts';
 import { defaultStateDir } from './paths.ts';
 import { webSnapshot } from './snapshot.ts';
@@ -138,6 +138,11 @@ async function main(): Promise<void> {
   const runId = z.string().min(1);
   const sessionId = z.string().min(1);
   const signalIds = z.array(z.string().min(1));
+  const webCheckSchema = z.strictObject({
+    kind: z.enum(webCheckKinds),
+    target: z.string().min(1),
+    expected: z.union([z.string(), z.number()]).optional(),
+  }).describe('Оракул — проверяемое нарушение. target: видимый текст для visibleText/notVisibleText; селектор Playwright для elementCount, а не текст (для подсчёта по тексту пишите text=<текст> или [data-testid="…"]). expected у elementCount — правильное количество: нарушение фиксируется, когда фактическое количество отличается. Неверный селектор отклоняется как CHECK_INVALID');
 
   server.registerTool('bh_start_run', {
     description: 'Создать прогон проверки приложения: diff/full/target исследует модель, sweep (весь инвентарь или один шаблон экрана) обходится детерминированно через bh_sweep',
@@ -310,13 +315,12 @@ async function main(): Promise<void> {
       title: z.string().min(1),
       expected: z.string().min(1),
       actual: z.string().min(1),
-      check: z.strictObject({
-        kind: z.enum(webCheckKinds),
-        target: z.string().min(1),
-        expected: z.union([z.string(), z.number()]).optional(),
-      }).describe('Оракул — проверяемое нарушение. target: видимый текст для visibleText/notVisibleText; селектор Playwright для elementCount, а не текст (для подсчёта по тексту пишите text=<текст> или [data-testid="…"]). expected у elementCount — правильное количество: нарушение фиксируется, когда фактическое количество отличается. Неверный селектор отклоняется как CHECK_INVALID').optional(),
+      check: webCheckSchema,
     }),
-  }, async (input) => invoke(() => promoteFindingToCandidate({ ...input, stateDir })));
+  }, async (input) => invoke(() => {
+    validateWebCheck(input.check);
+    return promoteFindingToCandidate({ ...input, stateDir });
+  }));
 
   server.registerTool('bh_report_candidate', {
     description: 'Сохранить кандидата в баги с сигналами и журналом',
@@ -326,11 +330,7 @@ async function main(): Promise<void> {
       expected: z.string().min(1),
       actual: z.string().min(1),
       signalIds,
-      check: z.strictObject({
-        kind: z.enum(webCheckKinds),
-        target: z.string().min(1),
-        expected: z.union([z.string(), z.number()]).optional(),
-      }).describe('Оракул — проверяемое нарушение. target: видимый текст для visibleText/notVisibleText; селектор Playwright для elementCount, а не текст (для подсчёта по тексту пишите text=<текст> или [data-testid="…"]). expected у elementCount — правильное количество: нарушение фиксируется, когда фактическое количество отличается. Неверный селектор отклоняется как CHECK_INVALID').optional(),
+      check: webCheckSchema.optional(),
     }),
   }, async ({ sessionId: id, ...input }) => invoke(async () => (await manager()).reportCandidate(id, input)));
 

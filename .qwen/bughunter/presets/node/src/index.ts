@@ -113,12 +113,13 @@ async function main(): Promise<void> {
   const runId = z.string().min(1);
   const sessionId = z.string().min(1);
   const signalIds = z.array(z.string().min(1));
-  const check = z.strictObject({
+  const checkShape = z.strictObject({
     kind: z.enum(nodeCheckKinds),
     target: z.string().min(1),
     pointer: z.string().min(1).optional(),
     expected: z.union([z.string(), z.number()]).optional(),
-  }).describe('Оракул — проверяемое нарушение. target: строка запроса «МЕТОД /путь», например GET /orders/ord-unknown. pointer обязателен для jsonPath (указатель $.totalCents или /totalCents) и для headerContains (имя заголовка). expected — правильное значение: нарушение фиксируется, когда фактическое отличается. Оракул судит по последнему ответу сессии, поэтому сначала выполните запросы шагом, потом заявляйте кандидата').optional();
+  }).describe('Оракул — проверяемое нарушение. target: строка запроса «МЕТОД /путь», например GET /orders/ord-unknown. pointer обязателен для jsonPath (указатель $.totalCents или /totalCents) и для headerContains (имя заголовка). expected — правильное значение: нарушение фиксируется, когда фактическое отличается. Оракул судит по последнему ответу сессии, поэтому сначала выполните запросы шагом, потом заявляйте кандидата');
+  const check = checkShape.optional();
 
   server.registerTool('bh_start_run', {
     description: 'Создать прогон проверки API: diff/full/target исследует модель, sweep (весь инвентарь или один эндпоинт) обходится детерминированно через bh_sweep',
@@ -297,11 +298,11 @@ async function main(): Promise<void> {
       title: z.string().min(1),
       expected: z.string().min(1),
       actual: z.string().min(1),
-      check,
+      check: checkShape,
     }),
   }, async ({ runId: id, ...input }) => invoke(async () => {
     // Оракул проверяется до промоции: иначе ошибка синтаксиса всплывёт уже на воспроизведении.
-    if (input.check !== undefined) validateNodeCheck(input.check);
+    validateNodeCheck(input.check);
     return promoteFindingToCandidate({ ...input, runId: id, stateDir });
   }));
 

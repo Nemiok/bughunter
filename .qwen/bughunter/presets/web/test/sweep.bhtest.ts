@@ -263,6 +263,7 @@ test('findings are not candidates until promoted', async () => {
   // Повторное продвижение той же находки не плодит кандидатов.
   assert.deepEqual(await promoteFindingToCandidate({
     runId: run.id, findingId: finding!.id, title: 'x', expected: 'y', actual: 'z', stateDir,
+    check: { kind: 'visibleText', target: 'Отсутствующий текст' },
   }), { candidateId });
 
   const reproduced = await reproduceCandidate({ runId: run.id, candidateId, attempts: 1, stateDir });
@@ -275,7 +276,10 @@ test('findings are not candidates until promoted', async () => {
   assert.equal(triaged.status, 'rejected');
 
   await assert.rejects(
-    () => promoteFindingToCandidate({ runId: run.id, findingId: 'missing', title: 'x', expected: 'y', actual: 'z', stateDir }),
+    () => promoteFindingToCandidate({
+      runId: run.id, findingId: 'missing', title: 'x', expected: 'y', actual: 'z', stateDir,
+      check: { kind: 'visibleText', target: 'Отсутствующий текст' },
+    }),
     /FINDING_NOT_FOUND: missing/,
   );
 });

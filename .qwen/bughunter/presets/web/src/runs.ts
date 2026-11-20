@@ -42,7 +42,7 @@ export function promoteFindingToCandidate(input: {
   title: string;
   expected: string;
   actual: string;
-  check?: Candidate['check'];
+  check: Candidate['check'];
   stateDir: string;
 }): Promise<{ candidateId: string }> {
   return promoteCoreFinding({ ...input, findingKinds: webFindingKinds });

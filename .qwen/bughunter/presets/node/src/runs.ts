@@ -47,7 +47,7 @@ export function promoteFindingToCandidate(input: {
   title: string;
   expected: string;
   actual: string;
-  check?: Check;
+  check: Check;
   stateDir: string;
 }): Promise<{ candidateId: string }> {
   return promoteCoreFinding({ ...input, findingKinds: nodeFindingKinds });
