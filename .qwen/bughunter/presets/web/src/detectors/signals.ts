@@ -190,6 +190,11 @@ async function scanErrorBoundaries(page: Page, config: Config, state: PageState)
   reconcileErrorBoundaries(page, config, state, visibleTexts);
 }
 
+/** Диалог — симптом приложения: модель обязана его видеть, а не получать молчаливую отмену. */
+export function reportDialogSignal(page: Page, config: Config, message: string): void {
+  addSignal(page, config, { kind: 'dialog', message });
+}
+
 export async function scanSignals(page: Page, config: Config): Promise<Signal[]> {
   let state = pageStates.get(page);
   if (!state) {

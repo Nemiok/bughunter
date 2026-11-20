@@ -212,7 +212,7 @@ async function main(): Promise<void> {
   }));
 
   server.registerTool('bh_act', {
-    description: 'Выполнить одно действие: с элементом страницы (click, dblclick, fill, select, press, check, hover, drag, scroll, upload) или по координате точки (clickAt, hoverAt — для canvas и других целей без DOM-семантики)',
+    description: 'Выполнить одно действие: с элементом страницы (click, dblclick, fill, select, press, check, hover, drag, scroll, upload) или по координате точки (clickAt, hoverAt — для canvas и других целей без DOM-семантики). dialog: \'accept\' подтверждает нативный диалог (confirm/alert/prompt) этого действия; по умолчанию \'dismiss\'; каждый диалог возвращается в dialogs и сигналом kind=dialog',
     inputSchema: z.strictObject({
       sessionId,
       elementId: z.string().min(1).optional(),
@@ -225,8 +225,9 @@ async function main(): Promise<void> {
       at: z.strictObject({ x: z.number(), y: z.number() }).optional(),
       file: z.string().min(1).optional(),
       scroll: z.strictObject({ direction: z.enum(['up', 'down', 'left', 'right']), delta: z.number() }).optional(),
+      dialog: z.enum(['accept', 'dismiss']).optional(),
     }),
-  }, async ({ sessionId: id, elementId, action, value, toElementId, at, file, scroll }) => {
+  }, async ({ sessionId: id, elementId, action, value, toElementId, at, file, scroll, dialog }) => {
     const response = await invoke(async () => (await manager()).act(id, {
       action,
       ...(elementId === undefined ? {} : { elementId }),
@@ -235,6 +236,7 @@ async function main(): Promise<void> {
       ...(at === undefined ? {} : { at }),
       ...(file === undefined ? {} : { file }),
       ...(scroll === undefined ? {} : { scroll }),
+      ...(dialog === undefined ? {} : { dialog }),
     }));
     const text = response.content[0]?.text;
     if (text) {

@@ -41,7 +41,7 @@ export function errorCode(error: unknown): { code: string; message: string } {
     return { code: 'CONFIG_INVALID', message };
   }
   if (message === 'LIMIT_REACHED') return { code: 'LIMIT_REACHED', message };
-  if (message === 'FORBIDDEN_ACTION' || message === 'FORM_SUBMISSION_BLOCKED') {
+  if (message === 'FORBIDDEN_ACTION' || message.startsWith('FORBIDDEN_ACTION:') || message === 'FORM_SUBMISSION_BLOCKED') {
     return { code: 'FORBIDDEN_ACTION', message };
   }
   if (message.startsWith('CANDIDATE_UNREPRODUCED:')) return { code: 'CANDIDATE_UNREPRODUCED', message };

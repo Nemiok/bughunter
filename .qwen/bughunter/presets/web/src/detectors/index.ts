@@ -2,11 +2,11 @@ import type { Detectors, SessionHandle, Signal } from '@bughunter/core';
 
 import type { WebSessionHandle } from '../session-handle.ts';
 
-export { findAnomalyTexts, scanSignals } from './signals.ts';
+export { findAnomalyTexts, reportDialogSignal, scanSignals } from './signals.ts';
 
 /** Виды симптомов веб-пресета: словарь открыт, core нормализует и подписывает любой из них. */
 export const webDetectorKinds = [
-  'console', 'pageerror', 'requestfailed', 'response', 'anomaly', 'errorBoundary',
+  'console', 'pageerror', 'requestfailed', 'response', 'anomaly', 'errorBoundary', 'dialog',
 ] as const;
 
 /**

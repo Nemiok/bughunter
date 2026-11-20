@@ -224,6 +224,9 @@ test('real MCP stdio client validates strict schemas and compact core results', 
       assert.equal(schema.additionalProperties, false, tool.name);
       assert.deepEqual([...(schema.required ?? [])].sort(), requiredInputs[tool.name], tool.name);
     }
+    const actSchema = listed.tools.find((tool) => tool.name === 'bh_act')?.inputSchema as
+      { properties?: { dialog?: { enum?: string[] } } };
+    assert.deepEqual(actSchema.properties?.dialog?.enum, ['accept', 'dismiss']);
 
     const detected = await callValue(client, 'bh_detect_tests', {
       path: resolve(import.meta.dirname, '../../../fixtures/jest-project/sum.test.js'),
@@ -251,7 +254,7 @@ test('real MCP stdio client validates strict schemas and compact core results', 
 
     const state = await callValue(client, 'bh_state', { sessionId });
     assert.deepEqual(Object.keys(state).sort(), [
-      'elements', 'screen', 'signals', 'stepsLeft', 'title', 'totalVisible', 'truncated', 'url',
+      'dialogs', 'elements', 'screen', 'signals', 'stepsLeft', 'title', 'totalVisible', 'truncated', 'url',
     ]);
     assert.equal(state.truncated, false);
     assert.deepEqual(state.screen, { widgets: [] });
@@ -266,10 +269,10 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     const filled = await callValue(client, 'bh_act', {
       sessionId, elementId: name.id, action: 'fill', value: 'Alice',
     });
-    assert.deepEqual(Object.keys(filled).sort(), ['navigated', 'ok', 'signals']);
+    assert.deepEqual(Object.keys(filled).sort(), ['dialogs', 'navigated', 'ok', 'signals']);
     assert.equal(filled.ok, true);
     const saved = await callValue(client, 'bh_act', { sessionId, elementId: save.id, action: 'click' });
-    assert.deepEqual(Object.keys(saved).sort(), ['navigated', 'ok', 'signals']);
+    assert.deepEqual(Object.keys(saved).sort(), ['dialogs', 'navigated', 'ok', 'signals']);
 
     const blocked = await client.callTool({
       name: 'bh_act', arguments: { sessionId, elementId: submit.id, action: 'click' },

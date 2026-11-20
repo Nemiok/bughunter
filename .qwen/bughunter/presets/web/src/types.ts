@@ -39,6 +39,11 @@ export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 export type ScrollInput = { direction: ScrollDirection; delta: number };
 
+/** Политика нативного диалога на время действия: confirm/alert/prompt. */
+export type DialogPolicy = 'accept' | 'dismiss';
+
+export type DialogRecord = { type: string; message: string; handled: DialogPolicy };
+
 /**
  * Шаг журнала веб-пресета: конверт core плюс поля действия. Core хранит и повторяет шаг,
  * не зная, что такое клик или скролл, — форма на диске при этом остаётся плоской.
@@ -60,4 +65,8 @@ export type Step = StepBase & {
   /** Путь файла загрузки относительно `profile.testData.dir` — абсолютный путь машины в журнал не попадает. */
   file?: string;
   scroll?: ScrollInput;
+  /** Политика диалога, с которой выполнялся шаг; повтор обязан её воспроизвести. */
+  dialog?: DialogPolicy;
+  /** Диалоги, возникшие во время шага: доказательство для отчёта и ревью. */
+  dialogs?: DialogRecord[];
 };

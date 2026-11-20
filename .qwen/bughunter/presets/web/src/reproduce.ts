@@ -69,6 +69,7 @@ function replayActInput(step: Step, state: StateResult): ActInput {
     ...(toElementId === undefined ? {} : { toElementId }),
     ...(step.file === undefined ? {} : { file: step.file }),
     ...(step.scroll === undefined ? {} : { scroll: step.scroll }),
+    ...(step.dialog === undefined ? {} : { dialog: step.dialog }),
   };
 }
 

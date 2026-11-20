@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { access, mkdir, rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
-import { scanSignals } from '../detectors/index.ts';
+import { reportDialogSignal, scanSignals } from '../detectors/index.ts';
 import { validateWebCheck } from '../checks.ts';
 import type { Profile } from '../profile/types.ts';
 import { attachCandidateArtifacts, reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
@@ -15,6 +15,8 @@ import type {
   StepBase,
 } from '@bughunter/core';
 import type {
+  DialogPolicy,
+  DialogRecord,
   ElementSnapshot,
   ScrollInput,
   SemanticLocator,
@@ -40,6 +42,8 @@ export type StateResult = {
   truncated: boolean;
   nextCursor?: number;
   screen?: ScreenStructure;
+  /** Диалоги с прошлого снимка: буфер опустошается, каждый диалог отдаётся один раз. */
+  dialogs: DialogRecord[];
 };
 
 export type StateOptions = {
@@ -62,6 +66,8 @@ export type ActInput = {
   /** Путь файла загрузки относительно `profile.testData.dir`. */
   file?: string;
   scroll?: ScrollInput;
+  /** Политика нативного диалога этого действия; по умолчанию 'dismiss'. */
+  dialog?: DialogPolicy;
 };
 
 /** Действия, которым цель не нужна: скролл страницы работает по viewport. */
@@ -74,6 +80,7 @@ export type ActResult = {
   error?: string;
   navigated: boolean;
   signals: Signal[];
+  dialogs: DialogRecord[];
 };
 
 type ResolvedAction =
@@ -108,6 +115,9 @@ type Session = {
   candidateIds: string[];
   mediaDir: string;
   network: NetworkCapture;
+  dialogPolicy: DialogPolicy;
+  dialogs: DialogRecord[];
+  dialogForbidden: boolean;
 };
 
 function errorMessage(error: unknown): string {
@@ -256,8 +266,23 @@ export class SessionManager {
         candidateIds: [],
         mediaDir,
         network,
+        dialogPolicy: 'dismiss',
+        dialogs: [],
+        dialogForbidden: false,
       };
       this.sessions.set(sessionId, session);
+      // Без слушателя Playwright молча отклоняет диалоги: приложение, ждущее confirm(),
+      // выглядело бы сломанным. Диалог становится сигналом и записью, политика — явной.
+      page.on('dialog', (dialog) => {
+        const message = dialog.message();
+        const forbidden = this.config.safety.forbiddenActionText.some((token) =>
+          token.length > 0 && message.toLocaleLowerCase().includes(token.toLocaleLowerCase()));
+        const handled: DialogPolicy = session.dialogPolicy === 'accept' && !forbidden ? 'accept' : 'dismiss';
+        session.dialogs.push({ type: dialog.type(), message, handled });
+        if (forbidden && session.dialogPolicy === 'accept') session.dialogForbidden = true;
+        reportDialogSignal(page, this.config, `${dialog.type()}: ${message}`);
+        void (handled === 'accept' ? dialog.accept() : dialog.dismiss()).catch(() => undefined);
+      });
       await scanSignals(page, this.config);
       await page.goto(target, { waitUntil: 'domcontentloaded' });
       await this.settle(page);
@@ -280,27 +305,29 @@ export class SessionManager {
   async act(sessionId: string, input: ActInput): Promise<ActResult> {
     const session = this.session(sessionId);
     if (this.stepsLeft(session) <= 0) {
-      return { ok: false, error: 'LIMIT_REACHED', navigated: false, signals: [] };
+      return { ok: false, error: 'LIMIT_REACHED', navigated: false, signals: [], dialogs: session.dialogs.splice(0) };
     }
     const resolved = await this.resolveAction(session, input);
     if (!resolved.ok) {
-      return { ok: false, error: resolved.error, navigated: false, signals: [] };
+      return { ok: false, error: resolved.error, navigated: false, signals: [], dialogs: session.dialogs.splice(0) };
     }
     const { element, locator, point, target, filePath } = resolved;
     // Guard'ы проверяют разрешённую цель, а не аргументы модели: координата сначала
     // превращается в элемент, иначе клик по точке обошёл бы и запретный текст, и readOnly.
     if (element !== undefined && locator !== null) {
       if (await this.isForbidden(element, locator)) {
-        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [] };
+        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [], dialogs: session.dialogs.splice(0) };
       }
       if (await this.isReadOnlySubmission(locator, input)) {
-        return { ok: false, error: 'FORM_SUBMISSION_BLOCKED', navigated: false, signals: [] };
+        return { ok: false, error: 'FORM_SUBMISSION_BLOCKED', navigated: false, signals: [], dialogs: session.dialogs.splice(0) };
       }
       if (target !== undefined && await this.isForbidden(target.snapshot, target.locator)) {
-        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [] };
+        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: false, signals: [], dialogs: session.dialogs.splice(0) };
       }
     }
 
+    session.dialogPolicy = input.dialog ?? 'dismiss';
+    session.dialogForbidden = false;
     const beforeUrl = session.page.url();
     const value = input.action === 'fill' && input.value === undefined
       ? `${this.config.testDataPrefix}${randomUUID().slice(0, 8)}`
@@ -327,12 +354,17 @@ export class SessionManager {
     if (popupBlocked) actionError ??= new Error('FORBIDDEN_ORIGIN');
     await this.settle(session.page);
     const signals = await this.collectSignals(session);
+    const dialogs = session.dialogs.splice(0);
+    if (session.dialogForbidden) {
+      return { ok: false, error: 'FORBIDDEN_ACTION', navigated: beforeUrl !== session.page.url(), signals, dialogs };
+    }
     if (actionError !== undefined) {
       return {
         ok: false,
         error: navigationBlocked ? 'NAVIGATION_NOT_ALLOWED' : popupBlocked ? 'FORBIDDEN_ORIGIN' : `ACTION_FAILED: ${errorMessage(actionError)}`,
         navigated: beforeUrl !== session.page.url(),
         signals,
+        dialogs,
       };
     }
 
@@ -351,9 +383,11 @@ export class SessionManager {
       ...(target === undefined ? {} : { to: { locator: toPlaywrightLocator(target.snapshot.locator) } }),
       ...(input.action === 'upload' && input.file !== undefined ? { file: input.file } : {}),
       ...(input.action === 'scroll' && isValidScroll(input.scroll) ? { scroll: input.scroll } : {}),
+      ...(input.dialog === undefined ? {} : { dialog: input.dialog }),
+      ...(dialogs.length === 0 ? {} : { dialogs }),
       signalIds: signals.map((signal) => signal.id),
     });
-    return { ok: true, navigated: beforeUrl !== session.page.url(), signals };
+    return { ok: true, navigated: beforeUrl !== session.page.url(), signals, dialogs };
   }
 
   private async resolveAction(session: Session, input: ActInput): Promise<ResolvedAction> {
@@ -772,6 +806,7 @@ export class SessionManager {
       stepsLeft: this.stepsLeft(session),
       totalVisible: elements.length,
       truncated: false,
+      dialogs: session.dialogs.splice(0),
     };
   }
 

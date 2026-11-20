@@ -111,10 +111,27 @@ function actionSource(step: Step, profile: Profile | null): string {
   }
 }
 
+function stepsOf(candidate: Candidate): Step[] {
+  return ((candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) as Step[];
+}
+
+/** Обработчик диалогов в тесте нужен только кандидату, чьи шаги их видели. */
+function dialogSetupSource(steps: Step[]): string {
+  const usesDialogs = steps.some((step) => step.dialog !== undefined || (step.dialogs?.length ?? 0) > 0);
+  if (!usesDialogs) return '';
+  return `  let dialogPolicy: 'accept' | 'dismiss' = 'dismiss';
+  page.on('dialog', (dialog) => { if (dialogPolicy === 'accept') void dialog.accept(); else void dialog.dismiss(); });
+`;
+}
+
 function replaySource(candidate: Candidate, config: Config, profile: Profile | null): string {
-  const steps = ((candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) as Step[];
+  const steps = stepsOf(candidate);
+  const usesDialogs = steps.some((step) => step.dialog !== undefined || (step.dialogs?.length ?? 0) > 0);
   return steps.map((step) => {
-    if (step.kind === 'act') return `  ${actionSource(step, profile)}\n`;
+    if (step.kind === 'act') {
+      const policy = usesDialogs ? `  dialogPolicy = ${JSON.stringify(step.dialog ?? 'dismiss')};\n` : '';
+      return `${policy}  ${actionSource(step, profile)}\n`;
+    }
     if (step.kind === 'navigate') {
       if (!step.path) throw new Error(`STEP_PATH_REQUIRED: ${step.id}`);
       return `  await page.goto(new URL(${JSON.stringify(step.path)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });\n`;
@@ -181,7 +198,7 @@ function signalSource(candidate: Candidate, config: Config, initialRoute: string
 import { test, expect } from '@playwright/test';
 
 test(${JSON.stringify(candidate.title)}, async ({ page }) => {
-  let matched = false;
+${dialogSetupSource(stepsOf(candidate))}  let matched = false;
   const normalize = (value: string): string => value
     .replace(/([?&][^=\\s&]+)=([^&\\s]*)/g, '$1=<value>')
     .replace(/\\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\b/gi, '<uuid>')
@@ -281,14 +298,14 @@ export function generatePlaywrightTest(
 ): string {
   allowedUrl(initialRoute, config);
   const replay = replaySource(candidate, config, profile);
-  for (const step of ((candidate as Candidate & { minimalSteps?: Step[] }).minimalSteps ?? candidate.steps) as Step[]) {
+  for (const step of stepsOf(candidate)) {
     if (step.kind === 'navigate' && step.path) allowedUrl(step.path, config);
   }
   if (candidate.signalIds.length > 0) return signalSource(candidate, config, initialRoute, replay);
   return `import { test, expect } from '@playwright/test';
 
 test(${JSON.stringify(candidate.title)}, async ({ page }) => {
-  await page.goto(new URL(${JSON.stringify(initialRoute)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });
+${dialogSetupSource(stepsOf(candidate))}  await page.goto(new URL(${JSON.stringify(initialRoute)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });
 ${replay}  ${checkAssertion(candidate)}
 });
 `;
