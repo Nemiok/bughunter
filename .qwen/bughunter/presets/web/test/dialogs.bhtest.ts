@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
-import { writeJsonAtomic } from '@bughunter/core';
+import { signalSignature, writeJsonAtomic } from '@bughunter/core';
 import type { Candidate } from '@bughunter/core';
 import { SessionManager } from '../src/browser/session.ts';
 import type { ActInput } from '../src/browser/session.ts';
 import type { WebConfig as Config } from '../src/config.ts';
 import { generatePlaywrightTest } from '../src/export-playwright.ts';
+import { verifyWebRed } from '../src/test-runner.ts';
 import type { Step } from '../src/types.ts';
 
 const temporaryDirectories: string[] = [];
@@ -22,6 +23,10 @@ before(async () => {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     if (request.url?.startsWith('/dialog-alert')) {
       response.end(`<title>Alert</title><body onload="alert('Загрузка завершена')"><main>ok</main></body>`);
+      return;
+    }
+    if (request.url?.startsWith('/dialog-load-confirm')) {
+      response.end(`<title>Load</title><body onload="if(confirm('Продолжить?')) document.title='Confirmed'"><main>ok</main></body>`);
       return;
     }
     response.end(`<title>Dialog</title><main>
@@ -47,7 +52,7 @@ function configTemplate(): Config {
   return {
     baseUrl: origin,
     allowedOrigins: [origin],
-    routes: ['/dialog', '/dialog-alert'],
+    routes: ['/dialog', '/dialog-alert', '/dialog-load-confirm'],
     targetMap: {},
     baseBranch: 'main',
     limits: { stepsPerSession: 60, candidatesPerRun: 20 },
@@ -157,4 +162,64 @@ test('dialog-export', async () => {
   assert.ok(!plain.includes("page.on('dialog'"));
   const mixed = generatePlaywrightTest(candidateWith([click, plainClick]), config, '/dialog');
   assert.ok(mixed.includes('dialogPolicy = "dismiss";'));
+  // Политика действует ровно на своё действие: после accept-шага она сброшена.
+  assert.match(source, /dialogPolicy = "accept";\n  await page\.getByTestId\("safe"\)\.click\(\);\n  dialogPolicy = "dismiss";/);
+});
+
+test('dialog-policy-does-not-leak-into-navigate', async () => {
+  const { manager } = await createManager();
+  const { sessionId } = await manager.open('run-dialogs', '/dialog', 'newbie');
+  const accepted = await clickNamed(manager, sessionId, 'Safe', { dialog: 'accept' });
+  assert.equal(accepted.dialogs[0]?.handled, 'accept');
+  const state = await manager.navigate(sessionId, '/dialog-load-confirm');
+  assert.deepEqual(state.dialogs, [{ type: 'confirm', message: 'Продолжить?', handled: 'dismiss' }]);
+  assert.equal(await manager.pageOf(sessionId).title(), 'Load');
+});
+
+function dialogSignalCandidate(initialTarget: string): Candidate {
+  return {
+    id: 'c0ffee00-0000-4000-8000-000000000002',
+    runId: 'run-dialogs',
+    sessionId: 'session-dialogs',
+    target: initialTarget,
+    title: 'Unexpected alert on load',
+    expected: 'Экран загружается без диалога',
+    actual: 'alert при загрузке',
+    signalIds: ['signal-dialog'],
+    signature: signalSignature({ kind: 'dialog', message: 'alert: Загрузка завершена', target: '/dialog-alert' }),
+    steps: [],
+    artifacts: [],
+    status: 'confirmed',
+    createdAt: new Date().toISOString(),
+    reproduction: { status: 'reproduced', attempts: 1 },
+  };
+}
+
+test('dialog-signal-export-matches', () => {
+  const source = generatePlaywrightTest(dialogSignalCandidate('/dialog-alert'), configTemplate(), '/dialog-alert');
+  assert.ok(source.includes("page.on('dialog'"));
+  assert.ok(source.includes("kind: 'dialog'"));
+});
+
+test('dialog-signal-export-red-and-green', { timeout: 180_000 }, async () => {
+  const fixtureRoot = resolve(import.meta.dirname, '../../../fixtures/buggy-app');
+  const project = await realpath(await mkdtemp(join(tmpdir(), 'bh-dialog-export-')));
+  temporaryDirectories.push(project);
+  await symlink(join(fixtureRoot, 'node_modules'), join(project, 'node_modules'), 'dir');
+  await writeFile(join(project, 'package.json'), JSON.stringify({
+    name: 'bh-dialog-export', private: true, devDependencies: { '@playwright/test': '*' },
+  }));
+  await writeFile(join(project, 'playwright.config.ts'),
+    `import { defineConfig } from '@playwright/test';\nexport default defineConfig({ use: { channel: 'chrome' } });\n`);
+  const config = configTemplate();
+
+  const redFile = join(project, 'red.spec.ts');
+  await writeFile(redFile, generatePlaywrightTest(dialogSignalCandidate('/dialog-alert'), config, '/dialog-alert'));
+  const red = await verifyWebRed(redFile, { kind: 'e2e' });
+  assert.equal(red.status, 'red', red.message);
+
+  const greenFile = join(project, 'green.spec.ts');
+  await writeFile(greenFile, generatePlaywrightTest(dialogSignalCandidate('/dialog'), config, '/dialog'));
+  const green = await verifyWebRed(greenFile, { kind: 'e2e' });
+  assert.equal(green.status, 'green', green.message);
 });

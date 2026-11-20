@@ -60,6 +60,11 @@ function expectedSignalSource(signature: string): string {
 import { test, expect } from '@playwright/test';
 
 test("Profile \\"save\\" fails\\nsafely", async ({ page }) => {
+  let dialogPolicy: 'accept' | 'dismiss' = 'dismiss';
+  page.on('dialog', (dialog) => {
+    if (signature({ kind: 'dialog', message: \`\${dialog.type()}: \${dialog.message()}\`, target: route() }) === ${JSON.stringify(signature)}) matched = true;
+    if (dialogPolicy === 'accept') void dialog.accept(); else void dialog.dismiss();
+  });
   let matched = false;
   const normalize = (value: string): string => value
     .replace(/([?&][^=\\s&]+)=([^&\\s]*)/g, '$1=<value>')

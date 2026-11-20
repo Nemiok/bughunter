@@ -124,13 +124,28 @@ function dialogSetupSource(steps: Step[]): string {
 `;
 }
 
+/**
+ * Signal-тест обязан матчить и диалоговый симптом: без этого экспортированная регрессия
+ * зелёная на живом баге, а прогон не завершить (red-вердикт недостижим).
+ */
+function dialogSignalSetupSource(candidateSignature: string): string {
+  return `  let dialogPolicy: 'accept' | 'dismiss' = 'dismiss';
+  page.on('dialog', (dialog) => {
+    if (signature({ kind: 'dialog', message: \`\${dialog.type()}: \${dialog.message()}\`, target: route() }) === ${candidateSignature}) matched = true;
+    if (dialogPolicy === 'accept') void dialog.accept(); else void dialog.dismiss();
+  });
+`;
+}
+
 function replaySource(candidate: Candidate, config: Config, profile: Profile | null): string {
   const steps = stepsOf(candidate);
   const usesDialogs = steps.some((step) => step.dialog !== undefined || (step.dialogs?.length ?? 0) > 0);
   return steps.map((step) => {
     if (step.kind === 'act') {
       const policy = usesDialogs ? `  dialogPolicy = ${JSON.stringify(step.dialog ?? 'dismiss')};\n` : '';
-      return `${policy}  ${actionSource(step, profile)}\n`;
+      // Политика принадлежит действию: после шага она сброшена, как в сессии.
+      const reset = usesDialogs ? `  dialogPolicy = ${JSON.stringify('dismiss')};\n` : '';
+      return `${policy}  ${actionSource(step, profile)}\n${reset}`;
     }
     if (step.kind === 'navigate') {
       if (!step.path) throw new Error(`STEP_PATH_REQUIRED: ${step.id}`);
@@ -198,7 +213,7 @@ function signalSource(candidate: Candidate, config: Config, initialRoute: string
 import { test, expect } from '@playwright/test';
 
 test(${JSON.stringify(candidate.title)}, async ({ page }) => {
-${dialogSetupSource(stepsOf(candidate))}  let matched = false;
+${dialogSignalSetupSource(signature)}  let matched = false;
   const normalize = (value: string): string => value
     .replace(/([?&][^=\\s&]+)=([^&\\s]*)/g, '$1=<value>')
     .replace(/\\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\b/gi, '<uuid>')

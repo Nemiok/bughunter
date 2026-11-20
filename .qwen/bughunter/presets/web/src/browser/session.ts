@@ -328,66 +328,71 @@ export class SessionManager {
 
     session.dialogPolicy = input.dialog ?? 'dismiss';
     session.dialogForbidden = false;
-    const beforeUrl = session.page.url();
-    const value = input.action === 'fill' && input.value === undefined
-      ? `${this.config.testDataPrefix}${randomUUID().slice(0, 8)}`
-      : input.value;
-    let actionError: unknown;
     try {
-      await this.executeAction(session.page, locator, input, {
-        ...(value === undefined ? {} : { value }),
-        ...(target === undefined ? {} : { target: target.locator }),
-        ...(filePath === undefined ? {} : { filePath }),
-      });
-    } catch (error) {
-      actionError = error;
-    }
-    const navigationBlocked = this.blockedNavigations.delete(session.page);
-    if (navigationBlocked) {
-      await session.page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => undefined);
-      if (session.page.url() !== beforeUrl) {
-        await session.page.goto(beforeUrl, { waitUntil: 'domcontentloaded' });
+      const beforeUrl = session.page.url();
+      const value = input.action === 'fill' && input.value === undefined
+        ? `${this.config.testDataPrefix}${randomUUID().slice(0, 8)}`
+        : input.value;
+      let actionError: unknown;
+      try {
+        await this.executeAction(session.page, locator, input, {
+          ...(value === undefined ? {} : { value }),
+          ...(target === undefined ? {} : { target: target.locator }),
+          ...(filePath === undefined ? {} : { filePath }),
+        });
+      } catch (error) {
+        actionError = error;
       }
-      actionError ??= new Error('NAVIGATION_NOT_ALLOWED');
-    }
-    const popupBlocked = this.blockedPopups.delete(session.context);
-    if (popupBlocked) actionError ??= new Error('FORBIDDEN_ORIGIN');
-    await this.settle(session.page);
-    const signals = await this.collectSignals(session);
-    const dialogs = session.dialogs.splice(0);
-    if (session.dialogForbidden) {
-      return { ok: false, error: 'FORBIDDEN_ACTION', navigated: beforeUrl !== session.page.url(), signals, dialogs };
-    }
-    if (actionError !== undefined) {
-      return {
-        ok: false,
-        error: navigationBlocked ? 'NAVIGATION_NOT_ALLOWED' : popupBlocked ? 'FORBIDDEN_ORIGIN' : `ACTION_FAILED: ${errorMessage(actionError)}`,
-        navigated: beforeUrl !== session.page.url(),
-        signals,
-        dialogs,
-      };
-    }
+      const navigationBlocked = this.blockedNavigations.delete(session.page);
+      if (navigationBlocked) {
+        await session.page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => undefined);
+        if (session.page.url() !== beforeUrl) {
+          await session.page.goto(beforeUrl, { waitUntil: 'domcontentloaded' });
+        }
+        actionError ??= new Error('NAVIGATION_NOT_ALLOWED');
+      }
+      const popupBlocked = this.blockedPopups.delete(session.context);
+      if (popupBlocked) actionError ??= new Error('FORBIDDEN_ORIGIN');
+      await this.settle(session.page);
+      const signals = await this.collectSignals(session);
+      const dialogs = session.dialogs.splice(0);
+      if (session.dialogForbidden) {
+        return { ok: false, error: 'FORBIDDEN_ACTION', navigated: beforeUrl !== session.page.url(), signals, dialogs };
+      }
+      if (actionError !== undefined) {
+        return {
+          ok: false,
+          error: navigationBlocked ? 'NAVIGATION_NOT_ALLOWED' : popupBlocked ? 'FORBIDDEN_ORIGIN' : `ACTION_FAILED: ${errorMessage(actionError)}`,
+          navigated: beforeUrl !== session.page.url(),
+          signals,
+          dialogs,
+        };
+      }
 
-    await this.appendStep(session, {
-      id: randomUUID(),
-      kind: 'act',
-      timestamp: new Date().toISOString(),
-      targetRef: this.currentRoute(session.page),
-      action: input.action,
-      ...(input.elementId === undefined ? {} : { elementId: input.elementId }),
-      ...(value === undefined ? {} : { value }),
-      // Для координатного действия локатор не записывается: повтор идёт по точке,
-      // а семантическая цель под ней остаётся в resolvedLocator как доказательство для guard'ов и отчёта.
-      ...(point !== undefined || element === undefined ? {} : { locator: toPlaywrightLocator(element.locator) }),
-      ...(point === undefined ? {} : { at: input.at, resolvedLocator: point.locator }),
-      ...(target === undefined ? {} : { to: { locator: toPlaywrightLocator(target.snapshot.locator) } }),
-      ...(input.action === 'upload' && input.file !== undefined ? { file: input.file } : {}),
-      ...(input.action === 'scroll' && isValidScroll(input.scroll) ? { scroll: input.scroll } : {}),
-      ...(input.dialog === undefined ? {} : { dialog: input.dialog }),
-      ...(dialogs.length === 0 ? {} : { dialogs }),
-      signalIds: signals.map((signal) => signal.id),
-    });
-    return { ok: true, navigated: beforeUrl !== session.page.url(), signals, dialogs };
+      await this.appendStep(session, {
+        id: randomUUID(),
+        kind: 'act',
+        timestamp: new Date().toISOString(),
+        targetRef: this.currentRoute(session.page),
+        action: input.action,
+        ...(input.elementId === undefined ? {} : { elementId: input.elementId }),
+        ...(value === undefined ? {} : { value }),
+        // Для координатного действия локатор не записывается: повтор идёт по точке,
+        // а семантическая цель под ней остаётся в resolvedLocator как доказательство для guard'ов и отчёта.
+        ...(point !== undefined || element === undefined ? {} : { locator: toPlaywrightLocator(element.locator) }),
+        ...(point === undefined ? {} : { at: input.at, resolvedLocator: point.locator }),
+        ...(target === undefined ? {} : { to: { locator: toPlaywrightLocator(target.snapshot.locator) } }),
+        ...(input.action === 'upload' && input.file !== undefined ? { file: input.file } : {}),
+        ...(input.action === 'scroll' && isValidScroll(input.scroll) ? { scroll: input.scroll } : {}),
+        ...(input.dialog === undefined ? {} : { dialog: input.dialog }),
+        ...(dialogs.length === 0 ? {} : { dialogs }),
+        signalIds: signals.map((signal) => signal.id),
+      });
+      return { ok: true, navigated: beforeUrl !== session.page.url(), signals, dialogs };
+    } finally {
+      // Политика принадлежит действию: спонтанный диалог навигации не подтверждается прошлым accept.
+      session.dialogPolicy = 'dismiss';
+    }
   }
 
   private async resolveAction(session: Session, input: ActInput): Promise<ResolvedAction> {
