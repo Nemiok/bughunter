@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import type { ReportFormat } from '../src/preset.ts';
 import {
   completeExplorationLease, createRun, finishRun, leaseNextExploration,
-  readFindings, readRun, recordCandidateTest, recordRunStage, recordTargetExploration,
+  readFindings, readRun, readSharedMemory, recordCandidateTest, recordRunStage, recordTargetExploration,
+  triageCandidate,
 } from '../src/run-store.ts';
 import type { Candidate, Config, Finding } from '../src/types.ts';
 
@@ -278,4 +279,62 @@ test('a test kind is an arbitrary preset string', () => withStateDir(async (stat
   )) as { tests: Record<string, string> };
   assert.equal(raw.tests.api, 'api/x.test.ts');
   assert.ok(raw.tests.e2e !== undefined, 'прежний вид теста сохраняется');
+}));
+
+async function writeReproducedCandidate(runId: string, stateDir: string, id: string, signature: string): Promise<void> {
+  const candidate: Candidate = {
+    id,
+    runId,
+    sessionId: 'sess-1',
+    target: '/a',
+    title: 'Кандидат на отзыв',
+    expected: 'ожидалось одно',
+    actual: 'получилось другое',
+    signalIds: [],
+    signature,
+    steps: [],
+    artifacts: [],
+    status: 'unprocessed',
+    createdAt,
+    reproduction: { status: 'reproduced', attempts: 1 },
+  };
+  const directory = join(stateDir, 'runs', runId, 'candidates');
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${id}.json`), `${JSON.stringify(candidate, null, 2)}\n`, 'utf8');
+}
+
+test('rejected-revokes-own-known-bug', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeReproducedCandidate(run.id, stateDir, 'cand-a', 'sig-shared');
+  await triageCandidate({ runId: run.id, candidateId: 'cand-a', verdict: 'confirmed', reason: 'воспроизведено', stateDir });
+  assert.equal((await readSharedMemory('known-bugs.json', stateDir)).length, 1);
+  await triageCandidate({ runId: run.id, candidateId: 'cand-a', verdict: 'rejected', reason: 'артефакт среды', stateDir });
+  assert.deepEqual(await readSharedMemory('known-bugs.json', stateDir), []);
+}));
+
+test('rejected-keeps-foreign-known-bug', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeReproducedCandidate(run.id, stateDir, 'cand-a', 'sig-shared');
+  await writeReproducedCandidate(run.id, stateDir, 'cand-b', 'sig-shared');
+  await triageCandidate({ runId: run.id, candidateId: 'cand-a', verdict: 'confirmed', reason: 'воспроизведено', stateDir });
+  await triageCandidate({ runId: run.id, candidateId: 'cand-b', verdict: 'rejected', reason: 'ложная заявка того же симптома', stateDir });
+  const known = await readSharedMemory('known-bugs.json', stateDir);
+  assert.equal(known.length, 1);
+  assert.equal(known[0]!.sourceCandidate, 'cand-a');
+}));
+
+test('rejected-without-known-bug-is-noop', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeReproducedCandidate(run.id, stateDir, 'cand-c', 'sig-other');
+  await triageCandidate({ runId: run.id, candidateId: 'cand-c', verdict: 'rejected', reason: 'не баг', stateDir });
+  assert.deepEqual(await readSharedMemory('known-bugs.json', stateDir), []);
+}));
+
+test('duplicate-verdict-keeps-known-bug', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeReproducedCandidate(run.id, stateDir, 'cand-a', 'sig-shared');
+  await writeReproducedCandidate(run.id, stateDir, 'cand-b', 'sig-shared');
+  await triageCandidate({ runId: run.id, candidateId: 'cand-a', verdict: 'confirmed', reason: 'воспроизведено', stateDir });
+  await triageCandidate({ runId: run.id, candidateId: 'cand-b', verdict: 'duplicate', reason: 'тот же симптом', stateDir });
+  assert.equal((await readSharedMemory('known-bugs.json', stateDir)).length, 1);
 }));

@@ -557,6 +557,16 @@ export async function triageCandidate(input: TriageInput): Promise<Candidate> {
     await writeJsonAtomic(suppressionsPath, suppressions);
   }
 
+  // Повторный триаж в rejected отзывает собственную запись: ложный подтверждённый баг
+  // не должен оставаться в общей памяти и делать будущие заявки того же симптома дубликатами.
+  // Запись, подтверждённая другим кандидатом, остаётся: этот кандидат — лишь ложная заявка того же бага.
+  if (input.verdict === 'rejected') {
+    const known = await readSharedMemory('known-bugs.json', input.stateDir);
+    const remaining = known.filter((entry) =>
+      !(entry.signature === candidate.signature && entry.sourceCandidate === candidate.id));
+    if (remaining.length !== known.length) await writeJsonAtomic(knownPath, remaining);
+  }
+
   const updated: Candidate = {
     ...candidate,
     status: input.verdict,
