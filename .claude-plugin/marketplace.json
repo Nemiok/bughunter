@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "bughunter",
-      "description": "Evidence-based bug hunting with reproduction and red regression tests. (experimental; full workflow not certified)",
+      "description": "Evidence-based bug hunting with reproduction and red regression tests.",
       "version": "0.2.5",
       "source": {
         "source": "archive",
