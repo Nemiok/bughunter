@@ -227,6 +227,9 @@ test('real MCP stdio client validates strict schemas and compact core results', 
     const actSchema = listed.tools.find((tool) => tool.name === 'bh_act')?.inputSchema as
       { properties?: { dialog?: { enum?: string[] } } };
     assert.deepEqual(actSchema.properties?.dialog?.enum, ['accept', 'dismiss']);
+    const sweepSchema = listed.tools.find((tool) => tool.name === 'bh_sweep')?.inputSchema as
+      { properties?: Record<string, unknown> };
+    assert.ok(!('cursor' in (sweepSchema.properties ?? {})), 'курсор обхода не принадлежит модели');
 
     const detected = await callValue(client, 'bh_detect_tests', {
       path: resolve(import.meta.dirname, '../../../fixtures/jest-project/sum.test.js'),

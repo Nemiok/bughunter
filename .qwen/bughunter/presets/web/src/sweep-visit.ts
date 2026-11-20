@@ -170,7 +170,6 @@ export async function runSweep(options: {
   runId: string;
   stateDir: string;
   limit?: number;
-  cursor?: number;
 }): Promise<SweepResult> {
   const config = await loadConfig(resolve(options.stateDir));
   try {
@@ -178,7 +177,6 @@ export async function runSweep(options: {
       runId: options.runId,
       stateDir: options.stateDir,
       limit: options.limit ?? config.limits.screensPerSweep ?? defaultScreensPerSweep,
-      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
       inventory: webInventory,
       session: webSweepSession,
       visit: webSweepVisit,

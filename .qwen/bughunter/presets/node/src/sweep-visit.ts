@@ -115,7 +115,6 @@ export async function runSweep(input: {
   runId: string;
   stateDir: string;
   limit?: number;
-  cursor?: number;
 }): Promise<SweepResult> {
   return runCoreSweep({
     ...input,

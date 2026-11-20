@@ -277,17 +277,15 @@ async function main(): Promise<void> {
   }));
 
   server.registerTool('bh_sweep', {
-    description: 'Детерминированно обойти эндпоинты инвентаря в прогоне области sweep: сброс стенда, заявленные сценарии (валидный, пустой, невалидный, граничный), сравнение с объявленным ожиданием. Находки пишутся в runs/<runId>/findings, курсор — в sweep.json, поэтому прерванный обход продолжается. Модель при этом не расходуется',
+    description: 'Детерминированно обойти эндпоинты инвентаря в прогоне области sweep: сброс стенда, заявленные сценарии (валидный, пустой, невалидный, граничный), сравнение с объявленным ожиданием. Находки пишутся в runs/<runId>/findings, возобновление автоматическое по журналу обхода (sweep.json), курсор модели не передаётся. Модель при этом не расходуется',
     inputSchema: z.strictObject({
       runId,
       limit: z.number().int().positive().max(2000).optional(),
-      cursor: z.number().int().nonnegative().optional(),
     }),
-  }, async ({ runId: id, limit, cursor }) => invoke(() => runSweep({
+  }, async ({ runId: id, limit }) => invoke(() => runSweep({
     runId: id,
     stateDir,
     ...(limit === undefined ? {} : { limit }),
-    ...(cursor === undefined ? {} : { cursor }),
   })));
 
   server.registerTool('bh_promote_finding', {

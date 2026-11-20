@@ -93,7 +93,6 @@ test('sweep checkpoints the cursor after every target and resumes from it', asyn
   const first = await runSweep({ runId, stateDir: state.stateDir, limit: 2 });
   assert.equal(first.done, false);
   assert.equal(first.visited.length, 2);
-  assert.equal(first.nextCursor, 2);
 
   const progress = JSON.parse(await readFile(
     join(state.stateDir, 'runs', runId, 'sweep.json'),

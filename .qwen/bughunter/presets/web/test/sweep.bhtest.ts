@@ -119,7 +119,6 @@ test('sweep visits every inventoried screen without a model and records response
   assert.equal(result.targets, 3);
   assert.deepEqual([...result.visited].sort(), ['/', '/orders/:id', '/profile']);
   assert.equal(result.done, true);
-  assert.equal(result.nextCursor, undefined);
   assert.ok(result.findings >= 3, JSON.stringify(result));
 
   const findings = await readFindings(run.id, stateDir);
@@ -188,7 +187,6 @@ test('interrupted sweep resumes from its cursor and finishRun accepts sweep scop
   const first = await runSweep({ runId: run.id, stateDir, limit: 1 });
   assert.equal(first.visited.length, 1);
   assert.equal(first.done, false);
-  assert.equal(first.nextCursor, 1);
   await assert.rejects(() => finishRun(run.id, stateDir), /RUN_INCOMPLETE: sweep/);
 
   const second = await runSweep({ runId: run.id, stateDir });

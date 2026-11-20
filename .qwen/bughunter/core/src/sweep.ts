@@ -17,7 +17,6 @@ const sweepPersona = 'sweep';
 export type SweepResult = {
   /** Цели, пройденные этим вызовом. */
   visited: string[];
-  nextCursor?: number;
   findings: number;
   done: boolean;
   targets: number;
@@ -28,7 +27,6 @@ export type SweepOptions = {
   stateDir: string;
   /** Сколько целей пройти за один вызов; без лимита — весь оставшийся инвентарь. */
   limit?: number;
-  cursor?: number;
   inventory: TargetInventory;
   session: Session;
   visit: SweepVisit;
@@ -71,8 +69,11 @@ export async function runSweep(options: SweepOptions): Promise<SweepResult> {
   const startedAt = new Date().toISOString();
   const progress = await readProgress(options.runId, stateDir)
     ?? { visited: [], cursor: 0, startedAt, updatedAt: startedAt };
-  const start = options.cursor ?? progress.cursor;
-  const slice = selected.slice(start, start + (options.limit ?? selected.length));
+  // Возобновление по множеству пройденных целей, а не по индексу: рост и переупорядочивание
+  // инвентаря между вызовами не пропускают цели и не переобходят пройденные.
+  const visitedSet = new Set(progress.visited);
+  const remaining = selected.filter((target) => !visitedSet.has(target));
+  const slice = remaining.slice(0, options.limit ?? remaining.length);
 
   const visited: string[] = [];
   let findings = 0;
@@ -125,7 +126,8 @@ export async function runSweep(options: SweepOptions): Promise<SweepResult> {
           await record(draft);
         }
 
-        progress.cursor = start + index + 1;
+        visitedSet.add(target);
+        progress.cursor = selected.length - remaining.length + index + 1;
         progress.visited.push(target);
         progress.updatedAt = new Date().toISOString();
         await writeJsonAtomic(progressPath(options.runId, stateDir), progress);
@@ -139,18 +141,12 @@ export async function runSweep(options: SweepOptions): Promise<SweepResult> {
     await handle?.close().catch(() => undefined);
   }
 
-  const done = progress.cursor >= selected.length;
+  const done = selected.every((target) => visitedSet.has(target));
   if (done) {
     await recordRunStage(options.runId, 'sweep', 'done', stateDir);
     await recordRunStage(options.runId, 'findings', 'done', stateDir);
   }
-  return {
-    visited,
-    findings,
-    done,
-    targets: selected.length,
-    ...(done ? {} : { nextCursor: progress.cursor }),
-  };
+  return { visited, findings, done, targets: selected.length };
 }
 
 /**

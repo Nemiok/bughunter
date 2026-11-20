@@ -5,13 +5,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import type {
-  FindingKinds, Reset, Session, SessionHandle, SweepVisit, TargetInventory,
+  FindingKinds, ReportFormat, Reset, Session, SessionHandle, SweepVisit, TargetInventory,
 } from '../src/preset.ts';
-import { createRun, readFindings, readRun } from '../src/run-store.ts';
+import { createRun, finishRun, readFindings, readRun } from '../src/run-store.ts';
 import { promoteFindingToCandidate, runSweep } from '../src/sweep.ts';
 import type { Config, FindingDraft } from '../src/types.ts';
 
 const config = { targetMap: {}, baseBranch: 'main' } as unknown as Config;
+const reportFormat: ReportFormat = { finding: () => [], candidate: () => [] };
 const kinds = ['response-captured', 'navigation-failed', 'reset-unsupported'];
 
 async function withStateDir(run: (stateDir: string) => Promise<void>): Promise<void> {
@@ -89,7 +90,6 @@ test('the cursor resumes an interrupted sweep without revisiting targets', () =>
   assert.deepEqual(first.visited, ['/a']);
   assert.equal(first.targets, 3);
   assert.equal(first.done, false);
-  assert.equal(first.nextCursor, 1);
   assert.equal(first.findings, 1);
 
   const second = await runSweep({
@@ -99,7 +99,6 @@ test('the cursor resumes an interrupted sweep without revisiting targets', () =>
   assert.deepEqual(second.visited, ['/b', '/c']);
   assert.deepEqual(targets, ['/a', '/b', '/c'], 'прерванный обход продолжается, а не начинается заново');
   assert.equal(second.done, true);
-  assert.equal(second.nextCursor, undefined);
 
   assert.deepEqual(events, ['open:sweep', 'reset', 'close', 'open:sweep', 'reset', 'reset', 'close'],
     'сброс перед каждой целью, одна сессия на вызов, сессия закрыта');
@@ -214,15 +213,55 @@ test('an empty inventory stops the sweep before opening a session', () => withSt
     }),
     /TARGETS_EMPTY: \/unknown\/:id/,
   );
-  // Курсор за пределами инвентаря даёт пустой срез: обход не падает и стенд не запускает.
-  const beyond = await runSweep({
-    runId: run.id, stateDir,
-    inventory: inventory(['/a']), session: session(events), visit, reset: reset(events), findingKinds,
-    cursor: 5,
+}));
+
+test('sweep-visits-appended-targets', () => withStateDir(async (stateDir) => {
+  const run = await sweepRun(stateDir);
+  const targets: string[] = [];
+  const visit: SweepVisit = { visit: async ({ target }) => { targets.push(target); return [captured(target)]; } };
+  const first = await runSweep({
+    runId: run.id, stateDir, limit: 1,
+    inventory: inventory(['/a', '/b']), session: session([]), visit, reset: reset([]), findingKinds,
   });
-  assert.deepEqual(beyond.visited, []);
-  assert.equal(beyond.done, false);
-  assert.deepEqual(events, []);
+  assert.deepEqual(first.visited, ['/a']);
+  const second = await runSweep({
+    runId: run.id, stateDir,
+    inventory: inventory(['/a', '/b', '/c']), session: session([]), visit, reset: reset([]), findingKinds,
+  });
+  assert.deepEqual(second.visited, ['/b', '/c'], 'выросший инвентарь дообходится, старое не переобходится');
+  assert.equal(second.done, true);
+  assert.equal(second.targets, 3);
+  assert.deepEqual(targets, ['/a', '/b', '/c']);
+}));
+
+test('sweep-survives-reorder', () => withStateDir(async (stateDir) => {
+  const run = await sweepRun(stateDir);
+  const targets: string[] = [];
+  const visit: SweepVisit = { visit: async ({ target }) => { targets.push(target); return [captured(target)]; } };
+  await runSweep({
+    runId: run.id, stateDir, limit: 1,
+    inventory: inventory(['/a', '/b', '/c']), session: session([]), visit, reset: reset([]), findingKinds,
+  });
+  const second = await runSweep({
+    runId: run.id, stateDir,
+    inventory: inventory(['/c', '/b', '/a']), session: session([]), visit, reset: reset([]), findingKinds,
+  });
+  assert.deepEqual(second.visited, ['/c', '/b'], 'переупорядоченный инвентарь не пропускает цели');
+  assert.equal(second.done, true);
+  assert.deepEqual(targets, ['/a', '/c', '/b'], 'каждая цель ровно один раз');
+}));
+
+test('sweep-done-requires-full-coverage', () => withStateDir(async (stateDir) => {
+  const run = await sweepRun(stateDir);
+  const visit: SweepVisit = { visit: async ({ target }) => [captured(target)] };
+  const partial = await runSweep({
+    runId: run.id, stateDir, limit: 1,
+    inventory: inventory(['/a', '/b']), session: session([]), visit, reset: reset([]), findingKinds,
+  });
+  assert.equal(partial.done, false);
+  const after = await readRun(run.id, stateDir);
+  assert.notEqual(after.stages.sweep, 'done');
+  await assert.rejects(() => finishRun(run.id, stateDir, reportFormat), /RUN_INCOMPLETE: sweep/);
 }));
 
 test('promote builds the synthetic step through the preset', () => withStateDir(async (stateDir) => {
