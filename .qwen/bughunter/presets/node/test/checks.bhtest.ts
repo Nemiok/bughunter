@@ -98,16 +98,14 @@ test('a check without responses is not violated and performs no request', async 
   }
 });
 
-test('a jsonPath check on a missing pointer reports the pointer, not a stack', async () => {
+test('jsonPath-missing-field-is-violation', async () => {
   const handle = await openSession('GET /health');
   try {
     await request(handle, 'GET', '/health');
-    await assert.rejects(
-      violated(handle, { kind: 'jsonPath', target: 'GET /health', pointer: '$.absent', expected: 1 }),
-      (error) => {
-        assert.equal(String(error), 'Error: POINTER_NOT_FOUND: $.absent');
-        return true;
-      },
+    assert.equal(
+      await violated(handle, { kind: 'jsonPath', target: 'GET /health', pointer: '$.absent', expected: 1 }),
+      true,
+      'отсутствующее поле нарушает ожидание, а не роняет оракул',
     );
   } finally {
     await handle.close();

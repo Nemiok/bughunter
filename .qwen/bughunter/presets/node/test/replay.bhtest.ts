@@ -88,6 +88,18 @@ test('replay reproduces a status violation in a clean session', async () => {
   }
 });
 
+test('replay-step-incomplete-surfaces-error', async () => {
+  const replay = createNodeReplay();
+  try {
+    const broken = { ...step({ method: 'GET', path: '/health' }), method: undefined } as NodeStep;
+    const outcome = await replay.replay([broken], contextFor(candidate(), [broken]));
+    assert.equal(outcome.matched, false);
+    assert.match(outcome.error ?? '', /REPLAY_STEP_INCOMPLETE/);
+  } finally {
+    await replay.close();
+  }
+});
+
 test('replay applies the reset before the journal', async () => {
   const replay = createNodeReplay();
   const steps = [step({

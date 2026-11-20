@@ -45,7 +45,12 @@ export type Checks = {
 };
 
 /** Результат одного повтора журнала: совпал ли симптом и какие артефакты он оставил. */
-export type ReplayOutcome = { matched: boolean; artifacts: string[] };
+export type ReplayOutcome = {
+  matched: boolean;
+  artifacts: string[];
+  /** Отказ инфраструктуры повтора (стенд упал, селектор невалиден): это не «симптом не совпал». */
+  error?: string;
+};
 
 /** Что пресет знает о повторяемом кандидате: сам кандидат, его журнал и каталог состояния. */
 export type ReplayContext = { candidate: Candidate; journal: Journal; stateDir: string };

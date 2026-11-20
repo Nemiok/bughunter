@@ -274,3 +274,35 @@ test('text checks judge by a visible match, not by the first DOM match', async (
     await browser.close();
   }
 });
+
+test('replay infrastructure failure surfaces as REPLAY_FAILED, not unreproduced', { timeout: 60_000 }, async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'bh-replay-failed-'));
+  const config = demoConfig();
+  const run = await createRun('full', undefined, { config, projectRoot: fixtureRoot, stateDir });
+  await writeJsonAtomic(join(stateDir, 'config.json'), config);
+  await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
+  await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
+  const manager = new SessionManager(config, stateDir);
+  try {
+    const { sessionId } = await manager.open(run.id, '/profile', 'replay-test');
+    await act(manager, sessionId, 'profile-save', 'click');
+    const { candidateId } = await manager.reportCandidate(sessionId, {
+      title: 'Broken locator', expected: 'Validation', actual: 'Nothing', signalIds: [],
+      check: { kind: 'visibleText', target: 'Saved' },
+    });
+    await manager.close(sessionId);
+    const candidatePath = join(stateDir, 'runs', run.id, 'candidates', `${candidateId}.json`);
+    const stored = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate & { steps: Step[] };
+    stored.steps = stored.steps.map((step) => ({ ...step, locator: 'page.getByTestId("does-not-exist")' })) as Step[];
+    await writeJsonAtomic(candidatePath, stored);
+    await assert.rejects(
+      reproduceCandidate({ runId: run.id, candidateId, attempts: 1, stateDir }),
+      /REPLAY_FAILED: REPLAY_ELEMENT_NOT_FOUND/,
+    );
+    const after = JSON.parse(await readFile(candidatePath, 'utf8')) as Candidate;
+    assert.deepEqual(after.reproduction, { status: 'unreproduced', attempts: 0 });
+  } finally {
+    await manager.closeAll();
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

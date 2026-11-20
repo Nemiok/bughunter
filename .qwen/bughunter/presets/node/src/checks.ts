@@ -53,8 +53,17 @@ export async function nodeCheckViolated(handle: SessionHandle, check: Check): Pr
   switch (oracle.kind) {
     case 'status':
       return response.status !== Number(oracle.expected);
-    case 'jsonPath':
-      return !sameValue(readPointer(response.body, oracle.pointer as string), oracle.expected);
+    case 'jsonPath': {
+      let actual: unknown;
+      try {
+        actual = readPointer(response.body, oracle.pointer as string);
+      } catch {
+        // Отсутствующее поле — нарушение ожидания «поле равно значению», а не отказ оракула:
+        // иначе баги «поле пропало из ответа» никогда не воспроизводились бы.
+        return true;
+      }
+      return !sameValue(actual, oracle.expected);
+    }
     case 'headerContains': {
       const wanted = (oracle.pointer as string).trim().toLowerCase();
       const header = Object.entries(response.headers).find(([name]) => name.toLowerCase() === wanted);

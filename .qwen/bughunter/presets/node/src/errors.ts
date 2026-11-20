@@ -55,7 +55,7 @@ export function errorCode(error: unknown): { code: string; message: string } {
   if (translated !== undefined) return { code: translated, message };
   if ((nodeDomainCodes as readonly string[]).includes(token)) return { code: token, message };
   // Эти коды бросает core (очередь исследования, обход, находки), поэтому сопоставляются по префиксу.
-  if (/^(EXPLORER_BUSY|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED)\b/.test(message)) {
+  if (/^(EXPLORER_BUSY|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED|REPLAY_FAILED)\b/.test(message)) {
     return { code: token || 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };

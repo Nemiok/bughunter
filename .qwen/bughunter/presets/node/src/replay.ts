@@ -62,8 +62,8 @@ export function createNodeReplay(): NodeReplay {
           ? signals.some((signal) => signal.signature === symptomSignature)
           : candidate.check !== undefined && await nodeCheckViolated(handle, candidate.check);
         return { matched, artifacts };
-      } catch {
-        return { matched: false, artifacts };
+      } catch (error) {
+        return { matched: false, artifacts, error: error instanceof Error ? error.message : String(error) };
       } finally {
         if (active === handle) active = undefined;
         await handle?.close().catch(() => undefined);

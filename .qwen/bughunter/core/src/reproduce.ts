@@ -20,6 +20,8 @@ export type ReplayAlgorithmResult = {
   initialAttempts: number;
   evaluations: number;
   minimalSteps: StepBase[];
+  errors: number;
+  lastError?: string;
 };
 
 export type ReproductionResult = {
@@ -73,7 +75,7 @@ async function readJournal(runId: string, sessionId: string, stateDir: string): 
 export async function replayAndMinimize(
   originalSteps: StepBase[],
   attempts: number,
-  replay: (steps: StepBase[]) => Promise<boolean>,
+  replay: (steps: StepBase[]) => Promise<ReplayOutcome>,
   options: ReplayOptions = {},
 ): Promise<ReplayAlgorithmResult> {
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > reproductionBudget.maximumAttempts) {
@@ -84,14 +86,27 @@ export async function replayAndMinimize(
   let evaluations = 0;
   let initialAttempts = 0;
   let successes = 0;
+  let errors = 0;
+  let lastError: string | undefined;
 
-  async function evaluate(steps: StepBase[]): Promise<boolean | undefined> {
+  async function evaluate(steps: StepBase[]): Promise<boolean | 'error' | undefined> {
     if (evaluations >= reproductionBudget.maximumEvaluations || now() >= deadline) return undefined;
     const remaining = deadline - now();
     if (remaining <= 0) return undefined;
     evaluations += 1;
     let timer: NodeJS.Timeout | undefined;
-    const work = Promise.resolve().then(() => replay(steps)).catch(() => false);
+    const work = Promise.resolve().then(() => replay(steps))
+      .then((outcome) => {
+        if (outcome.error !== undefined) {
+          lastError = outcome.error;
+          return 'error' as const;
+        }
+        return outcome.matched;
+      })
+      .catch((error: unknown) => {
+        lastError = error instanceof Error ? error.message : String(error);
+        return 'error' as const;
+      });
     const expired = new Promise<false>((resolveExpired) => {
       timer = setTimeout(() => {
         void Promise.resolve(options.abort?.()).catch(() => undefined).then(() => resolveExpired(false));
@@ -108,7 +123,8 @@ export async function replayAndMinimize(
     const matched = await evaluate(originalSteps);
     if (matched === undefined) break;
     initialAttempts += 1;
-    if (matched) successes += 1;
+    if (matched === 'error') errors += 1;
+    else if (matched) successes += 1;
   }
 
   const minimalSteps = [...originalSteps];
@@ -117,12 +133,19 @@ export async function replayAndMinimize(
       const candidate = minimalSteps.filter((_, stepIndex) => stepIndex !== index);
       const matched = await evaluate(candidate);
       if (matched === undefined) break;
-      if (matched) minimalSteps.splice(index, 1);
+      // Отказ инфраструктуры не доказывает ненужность шага: шаг сохраняется.
+      if (matched === 'error') {
+        errors += 1;
+        index += 1;
+      } else if (matched) minimalSteps.splice(index, 1);
       else index += 1;
     }
   }
 
-  return { successes, initialAttempts, evaluations, minimalSteps };
+  return {
+    successes, initialAttempts, evaluations, minimalSteps, errors,
+    ...(lastError === undefined ? {} : { lastError }),
+  };
 }
 
 /**
@@ -153,11 +176,16 @@ export async function reproduceCandidate(input: {
   const algorithm = await replayAndMinimize(candidate.steps, attempts, async (steps) => {
     const outcome: ReplayOutcome = await input.replay.replay(steps, { candidate, journal, stateDir });
     replayArtifacts.push(...outcome.artifacts);
-    return outcome.matched;
+    return outcome;
   }, {
     ...(input.now === undefined ? {} : { now: input.now }),
     ...(input.replay.abort === undefined ? {} : { abort: input.replay.abort }),
   });
+
+  // Все повторы сломались инфраструктурно: вердикта о баге нет, кандидат не перезаписывается.
+  if (algorithm.successes === 0 && algorithm.initialAttempts > 0 && algorithm.errors === algorithm.initialAttempts) {
+    throw new Error(`REPLAY_FAILED: ${algorithm.lastError ?? 'replay failed'}`);
+  }
 
   const reproduced = algorithm.successes > 0;
   const artifacts = [...new Set([...candidate.artifacts, ...replayArtifacts])];

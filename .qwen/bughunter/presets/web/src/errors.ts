@@ -53,7 +53,7 @@ export function errorCode(error: unknown): { code: string; message: string } {
   if (translated !== undefined) return { code: translated, message };
   if ((webDomainCodes as readonly string[]).includes(token)) return { code: token, message };
   // Эти коды бросает core (фасад сессии, обход, находки), поэтому сопоставляются по префиксу.
-  if (/^(EXPLORER_BUSY|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED)\b/.test(message)) {
+  if (/^(EXPLORER_BUSY|FINDING_NOT_CANDIDATE|FINDING_NOT_FOUND|FINDING_KIND_INVALID|SWEEP_SCOPE_REQUIRED|RESET_UNSUPPORTED|REPLAY_FAILED)\b/.test(message)) {
     return { code: token || 'TOOL_FAILED', message };
   }
   if (message.includes('NOT_FOUND:')) return { code: 'NOT_FOUND', message };

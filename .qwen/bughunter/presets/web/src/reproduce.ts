@@ -83,6 +83,7 @@ async function executeReplay(
 ): Promise<ReplayOutcome> {
   let sessionId: string | undefined;
   let matched = false;
+  let replayError: string | undefined;
   try {
     const opened = await manager.open(candidate.runId, journal.target, journal.persona);
     sessionId = opened.sessionId;
@@ -115,11 +116,14 @@ async function executeReplay(
     } else if (candidate.check) {
       matched = await checkViolated(manager.pageOf(sessionId), candidate.check);
     }
-  } catch {
+  } catch (error) {
     matched = false;
+    replayError = error instanceof Error ? error.message : String(error);
   }
 
-  if (!sessionId) return { matched: false, artifacts: [] };
+  if (!sessionId) {
+    return { matched: false, artifacts: [], ...(replayError === undefined ? {} : { error: replayError }) };
+  }
   try {
     await manager.close(sessionId);
   } catch {
@@ -132,7 +136,7 @@ async function executeReplay(
   const artifacts = ['trace.zip', 'screenshot.png', 'video.webm'].map((name) =>
     relative(stateDir, join(destination, name)).split(sep).join('/'),
   );
-  return { matched, artifacts };
+  return { matched, artifacts, ...(replayError === undefined ? {} : { error: replayError }) };
 }
 
 export type WebReplay = Replay & { close(): Promise<void> };
