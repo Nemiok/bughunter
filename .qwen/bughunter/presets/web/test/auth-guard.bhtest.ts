@@ -8,7 +8,7 @@ import { writeJsonAtomic } from '@bughunter/core';
 import { createRun } from '../src/runs.ts';
 import { runSweep } from '../src/sweep-visit.ts';
 import { crawlScreens } from '../src/discovery/crawl.ts';
-import { upsertScreens } from '../src/discovery/screens-store.ts';
+import { upsertScreens, readScreens } from '../src/discovery/screens-store.ts';
 import { readFindings } from '@bughunter/core';
 import type { WebConfig as Config } from '../src/config.ts';
 
@@ -17,8 +17,10 @@ const cookiesSeen: string[] = [];
 let foreignHits = 0;
 let server: Server;
 let foreign: Server;
+let second: Server;
 let origin: string;
 let foreignOrigin: string;
+let secondOrigin: string;
 
 function page(title: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>
@@ -37,12 +39,39 @@ before(async () => {
   assert.ok(foreignAddress && typeof foreignAddress === 'object');
   foreignOrigin = `http://127.0.0.1:${foreignAddress.port}`;
 
+  second = createServer((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    if (url.pathname === '/data') {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ from: 'second' }));
+      return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    response.end(page('second'));
+  });
+  await new Promise<void>((resolveListen) => second.listen(0, '127.0.0.1', resolveListen));
+  const secondAddress = second.address();
+  assert.ok(secondAddress && typeof secondAddress === 'object');
+  secondOrigin = `http://127.0.0.1:${secondAddress.port}`;
+
   server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     cookiesSeen.push(request.headers.cookie ?? '');
     if (url.pathname === '/api/data') {
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (url.pathname === '/to-api') {
+      response.writeHead(302, { Location: `${secondOrigin}/data` }).end();
+      return;
+    }
+    if (url.pathname === '/chain1') {
+      response.writeHead(302, { Location: '/chain2' }).end();
+      return;
+    }
+    if (url.pathname === '/chain2') {
+      response.writeHead(302, { Location: `${foreignOrigin}/landed` }).end();
       return;
     }
     if (url.pathname === '/needs-cookie') {
@@ -58,6 +87,12 @@ before(async () => {
       response.writeHead(302, { Location: `${foreignOrigin}/landed` }).end();
       return;
     }
+    if (url.pathname === '/with-subresource') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html><html><head><meta charset="utf-8"><title>sub</title></head>
+<body><main><h1>sub</h1></main><script>fetch('/to-api').catch(() => undefined);</script></body></html>`);
+      return;
+    }
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     response.end(page(url.pathname === '/login-redirect' ? 'login' : 'ok'));
   });
@@ -68,7 +103,7 @@ before(async () => {
 });
 
 after(async () => {
-  for (const active of [server, foreign]) {
+  for (const active of [server, foreign, second]) {
     if (active?.listening) {
       await new Promise<void>((resolveClose, reject) => active.close((error) => error ? reject(error) : resolveClose()));
     }
@@ -76,10 +111,10 @@ after(async () => {
   await Promise.all(directories.map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-function configTemplate(): Config {
+function configTemplate(allowedOrigins: string[] = [origin]): Config {
   return {
     baseUrl: origin,
-    allowedOrigins: [origin],
+    allowedOrigins,
     routes: ['/ok'],
     targetMap: {},
     baseBranch: 'main',
@@ -96,10 +131,10 @@ function configTemplate(): Config {
   };
 }
 
-async function setup(screens: Array<{ template: string; sampleUrl: string }>, auth: boolean) {
+async function setup(screens: Array<{ template: string; sampleUrl: string }>, auth: boolean, allowedOrigins?: string[]) {
   const stateDir = await mkdtemp(join(tmpdir(), 'bh-auth-guard-'));
   directories.push(stateDir);
-  const config = configTemplate();
+  const config = configTemplate(allowedOrigins);
   await writeJsonAtomic(join(stateDir, 'config.json'), config);
   await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
   await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
@@ -164,4 +199,57 @@ test('crawl-blocks-foreign-redirect', async () => {
   });
   assert.equal(foreignHits, 0, 'редирект за разрешённые origins не выполняется');
   assert.ok(result.blocked.some((url) => url.includes('/escape')), `переход обязан попасть в blocked: ${JSON.stringify(result.blocked)}`);
+});
+
+test('sweep-blocks-redirect-chain', async () => {
+  const { stateDir, run } = await setup([
+    { template: '/chain1', sampleUrl: `${origin}/chain1` },
+    { template: '/ok', sampleUrl: `${origin}/ok` },
+  ], false);
+  const result = await runSweep({ runId: run.id, stateDir });
+  assert.deepEqual(result.visited, ['/chain1', '/ok'], 'обход продолжается после заблокированной цепочки');
+  const findings = await readFindings(run.id, stateDir);
+  const chain = findings.filter((finding) => finding.targetRef === '/chain1');
+  assert.ok(chain.some((finding) => finding.kind === 'navigation-failed'), `цепочка обязана дать navigation-failed: ${JSON.stringify(chain)}`);
+  assert.ok(!chain.some((finding) => finding.kind === 'response-captured'), 'чужой DOM не описывается');
+  assert.ok(findings.some((finding) => finding.targetRef === '/ok' && finding.kind === 'response-captured'));
+});
+
+test('crawl-blocks-redirect-chain', async () => {
+  const { stateDir, config } = await setup([], false);
+  const result = await crawlScreens({
+    baseUrl: origin, allowedOrigins: config.allowedOrigins, stateDir, profile: null,
+    maxScreens: 5, maxDepth: 1, startPaths: ['/chain1'],
+  });
+  assert.ok(result.blocked.some((url) => url.includes('/chain1')), `цепочка обязана попасть в blocked: ${JSON.stringify(result.blocked)}`);
+  const screens = await readScreens(stateDir);
+  assert.ok(!screens.some((screen) => screen.template.includes('chain')), 'чужой landing не попадает в инвентарь');
+});
+
+test('subresource-redirect-between-allowed-origins', async () => {
+  const { stateDir, run } = await setup(
+    [{ template: '/with-subresource', sampleUrl: `${origin}/with-subresource` }],
+    false,
+    [origin, secondOrigin],
+  );
+  await runSweep({ runId: run.id, stateDir });
+  const findings = await readFindings(run.id, stateDir);
+  const captured = findings.find((finding) => finding.targetRef === '/with-subresource' && finding.kind === 'response-captured');
+  assert.ok(captured, 'ответ субресурса после cross-origin редиректа обязан захватываться');
+  assert.match(captured.detail, /Ответов: [1-9]/, `редирект между allowed origins не ломается: ${captured.detail}`);
+});
+
+test('dead-stand-shows-real-network-error', async () => {
+  const dead = createServer();
+  await new Promise<void>((resolveListen) => dead.listen(0, '127.0.0.1', resolveListen));
+  const deadAddress = dead.address();
+  assert.ok(deadAddress && typeof deadAddress === 'object');
+  const deadOrigin = `http://127.0.0.1:${deadAddress.port}`;
+  await new Promise<void>((resolveClose, reject) => dead.close((error) => error ? reject(error) : resolveClose()));
+  const { stateDir, run } = await setup([{ template: '/dead', sampleUrl: `${deadOrigin}/` }], false, [origin, deadOrigin]);
+  await runSweep({ runId: run.id, stateDir });
+  const findings = await readFindings(run.id, stateDir);
+  const failed = findings.find((finding) => finding.targetRef === '/dead' && finding.kind === 'navigation-failed');
+  assert.ok(failed, 'мёртвый стенд даёт navigation-failed');
+  assert.match(failed.detail, /ERR_CONNECTION_REFUSED/, `видна настоящая сетевая ошибка, не маскировка guard'ом: ${failed.detail}`);
 });

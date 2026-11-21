@@ -9,7 +9,7 @@ import type {
 
 import { attachNetworkCapture } from './browser/network.ts';
 import type { NetworkCapture } from './browser/network.ts';
-import { installOriginGuard, readStorageStatePath } from './browser/guard.ts';
+import { installOriginGuard, readStorageStatePath, allowedLanding } from './browser/guard.ts';
 import { describeScreen } from './browser/screen.ts';
 import type { ScreenStructure } from './browser/screen.ts';
 import { resolveLaunchOptions } from './browser/session.ts';
@@ -33,6 +33,7 @@ export type WebSweepHandle = SessionHandle & Resettable & {
   network: NetworkCapture;
   /** Сколько миллисекунд обход ждёт ответов приложения на экране. */
   settleMs: number;
+  allowedOrigins: string[];
 };
 
 function messageOf(error: unknown): string {
@@ -77,6 +78,7 @@ export const webSweepSession: Session = {
         baseUrl: config.baseUrl,
         network: capture,
         settleMs: config.limits.responseSettleMs ?? defaultResponseSettleMs,
+        allowedOrigins: config.allowedOrigins,
         snapshot: async () => describeScreen(page, profile),
         act: async () => {
           throw new Error('SWEEP_SESSION_READ_ONLY: детерминированный обход не совершает действий');
@@ -116,6 +118,13 @@ export const webSweepVisit: SweepVisit = {
       await sweep.page.goto(screen.sampleUrl, { waitUntil: 'domcontentloaded', timeout: sweep.settleMs * 10 });
     } catch (error) {
       return [{ targetRef: target, kind: 'navigation-failed', detail: messageOf(error), evidenceHashes: [] }];
+    }
+    // Многозвенный редирект браузер следует вне routing: приземление проверяется отдельно,
+    // чужой DOM не описывается и не засоряет находки.
+    if (!allowedLanding(sweep.page.url(), sweep.allowedOrigins)) {
+      const landed = sweep.page.url();
+      await sweep.page.goto('about:blank').catch(() => undefined);
+      return [{ targetRef: target, kind: 'navigation-failed', detail: `FOREIGN_REDIRECT: ${landed}`, evidenceHashes: [] }];
     }
     await sweep.page.waitForLoadState('networkidle', { timeout: sweep.settleMs }).catch(() => undefined);
     await sweep.network.flush();

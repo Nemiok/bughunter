@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-core';
 import type { Page } from 'playwright-core';
-import { installOriginGuard, readStorageStatePath } from '../browser/guard.ts';
+import { installOriginGuard, readStorageStatePath, allowedLanding } from '../browser/guard.ts';
 import { describeScreen } from '../browser/screen.ts';
 import type { LaunchOptions } from '../browser/session.ts';
 import type { Profile } from '../profile/types.ts';
@@ -128,6 +128,12 @@ export async function crawlScreens(options: CrawlOptions): Promise<CrawlResult> 
       // Таймаут ожидания здесь не ошибка перехода: экран описывается в том состоянии, до которого
       // дошёл. Зато без ожидания обход собирает ссылки из ещё не отрисованного документа.
       await page.waitForLoadState('networkidle', { timeout: settle }).catch(() => undefined);
+      // Многозвенный редирект браузер следует вне routing: чужой landing не описывается.
+      if (!allowedLanding(page.url(), options.allowedOrigins)) {
+        blocked.push(next.url);
+        await page.goto('about:blank').catch(() => undefined);
+        continue;
+      }
       const template = templatisedPathname(url.pathname, pattern);
       const screen = await describeScreen(page, options.profile);
       entries.push({
