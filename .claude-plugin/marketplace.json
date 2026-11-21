@@ -20,7 +20,8 @@
         "name": "Bughunter"
       },
       "metadata": {
-        "payloadCommit": "d8bff7d821f1325b85e3a41de51cc34f64ef6091"
+        "payloadCommit": "d8bff7d821f1325b85e3a41de51cc34f64ef6091",
+        "certifiedWorkflow": true
       }
     }
   ]
