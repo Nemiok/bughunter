@@ -355,7 +355,8 @@ test('candidate signatures deduplicate against known bugs and suppressions', asy
     await writeJsonAtomic(join(stateDir, 'suppressions.json'), [{ id: 'suppressed-1', signature }]);
     const suppressedSession = await manager.open('run-dedup', '/profile', 'newbie');
     const suppressed = await manager.reportCandidate(suppressedSession.sessionId, checkCandidate());
-    assert.equal(suppressed.duplicateOf, 'suppressed-1');
+    assert.equal(suppressed.suppressedBy, 'suppressed-1');
+    assert.equal(suppressed.duplicateOf, undefined);
   } finally {
     await manager.closeAll();
   }
@@ -447,7 +448,8 @@ test('check-only signatures use fixed field order and preserve expected counts',
     const suppressed = await manager.reportCandidate(sessionId, input({
       target: '[data-testid="order-row"]', expected: 2, kind: 'elementCount',
     }));
-    assert.equal(suppressed.duplicateOf, 'suppressed-check');
+    assert.equal(suppressed.suppressedBy, 'suppressed-check');
+    assert.equal(suppressed.duplicateOf, undefined);
   } finally {
     await manager.closeAll();
   }
