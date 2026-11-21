@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -303,6 +303,44 @@ test('replay infrastructure failure surfaces as REPLAY_FAILED, not unreproduced'
     assert.deepEqual(after.reproduction, { status: 'unreproduced', attempts: 0 });
   } finally {
     await manager.closeAll();
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('web replay resets the stand before journal steps', { timeout: 60_000 }, async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'bh-replay-reset-'));
+  const config = demoConfig();
+  config.profile = 'replay-reset';
+  try {
+    const run = await createRun('full', undefined, { config, projectRoot: fixtureRoot, stateDir });
+    await writeJsonAtomic(join(stateDir, 'config.json'), config);
+    await writeJsonAtomic(join(stateDir, 'known-bugs.json'), []);
+    await writeJsonAtomic(join(stateDir, 'suppressions.json'), []);
+    await mkdir(join(stateDir, 'profiles', 'replay-reset'), { recursive: true });
+    await writeFile(join(stateDir, 'profiles', 'replay-reset', 'index.ts'), `export default {
+      name: 'replay-reset', extractors: [], oracles: [],
+      reset: { kind: 'mock-endpoint', url: '/__reset' },
+    };\n`);
+    const callsBefore = await (await fetch(`${baseUrl}/__reset-calls`)).json() as string[];
+    const manager = new SessionManager(config, stateDir);
+    try {
+      const { sessionId } = await manager.open(run.id, '/profile', 'replay-test');
+      await act(manager, sessionId, 'profile-name', 'fill', 'Alice');
+      await act(manager, sessionId, 'profile-save', 'click');
+      const { candidateId } = await manager.reportCandidate(sessionId, {
+        title: 'Saved profile', expected: 'Saved', actual: 'Missing', signalIds: [],
+        check: { kind: 'visibleText', target: 'Saved' },
+      });
+      await manager.close(sessionId);
+      const result = await reproduceCandidate({ runId: run.id, candidateId, attempts: 1, stateDir });
+      assert.equal(result.reproduced, '1/1');
+      const callsAfter = await (await fetch(`${baseUrl}/__reset-calls`)).json() as string[];
+      assert.ok(callsAfter.length > callsBefore.length, 'повтор обязан сбросить стенд');
+      assert.ok(callsAfter.includes('POST'), `сброс — POST: ${JSON.stringify(callsAfter)}`);
+    } finally {
+      await manager.closeAll();
+    }
+  } finally {
     await rm(stateDir, { recursive: true, force: true });
   }
 });

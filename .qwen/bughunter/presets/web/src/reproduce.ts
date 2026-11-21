@@ -7,6 +7,8 @@ import type { ActInput, StateResult } from './browser/session.ts';
 import { toPlaywrightLocator } from './browser/elements.ts';
 import { loadConfig } from './config.ts';
 import { loadProfile } from './profile/load.ts';
+import type { Profile } from './profile/types.ts';
+import { applyReset } from './reset.ts';
 import { findAnomalyTexts } from './detectors/signals.ts';
 import { defaultStateDir } from './paths.ts';
 import { reproduceCandidate as reproduceCoreCandidate, signalSignature } from '@bughunter/core';
@@ -80,6 +82,7 @@ async function executeReplay(
   candidate: Candidate,
   journal: Journal,
   steps: Step[],
+  profile: Profile | null,
 ): Promise<ReplayOutcome> {
   let sessionId: string | undefined;
   let matched = false;
@@ -87,6 +90,11 @@ async function executeReplay(
   try {
     const opened = await manager.open(candidate.runId, journal.target, journal.persona);
     sessionId = opened.sessionId;
+    // Повтор начинается с того же состояния, что и исследование: data-зависимый баг
+    // без сброса воспроизводился бы на изменённых данных.
+    if (profile?.reset !== undefined) {
+      await applyReset(manager.pageOf(sessionId), profile, config.baseUrl);
+    }
     // Композитная сигнатура кандидата включает оракул; повтор ищет сырую сигнатуру симптома.
     const symptomSignature = candidate.signalSignature ?? candidate.signature;
     const observedAnomaly = await observeReplayAnomaly(manager.pageOf(sessionId), config, symptomSignature);
@@ -166,6 +174,7 @@ export function createWebReplay(): WebReplay {
         context.candidate,
         context.journal,
         steps as Step[],
+        loaded.profile,
       );
       active = operation;
       try {

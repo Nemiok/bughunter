@@ -60,6 +60,25 @@ function ordersApi(): Plugin {
   };
 }
 
+const resetCalls: string[] = [];
+
+function resetApi(): Plugin {
+  return {
+    name: 'reset-api',
+    configureServer(server) {
+      server.middlewares.use('/__reset', (req, res) => {
+        resetCalls.push(req.method ?? 'UNKNOWN');
+        res.statusCode = 204;
+        res.end();
+      });
+      server.middlewares.use('/__reset-calls', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(resetCalls));
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), ordersApi()],
+  plugins: [react(), ordersApi(), resetApi()],
 });
