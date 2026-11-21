@@ -193,15 +193,15 @@ test('suppression matches by signalSignature across different checks', () => wit
     runId: 'run-1', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
     steps: [], signalIds: ['s1'], signalSignature: 'sym-1', stateDir,
   };
-  const a = await reportCandidate({ ...base, check: { kind: 'elementCount', target: '#x', expected: 0 } });
-  const b = await reportCandidate({ ...base, check: { kind: 'elementCount', target: '#y', expected: 1 } });
+  const a = await reportCandidate({ ...base, check: { kind: 'invariant', target: 'Итого A' } });
+  const b = await reportCandidate({ ...base, check: { kind: 'invariant', target: 'Итого B' } });
   assert.equal(a.suppressedBy, 'sup-1');
   assert.equal(b.suppressedBy, 'sup-1', 'иной check → иной candidate.signature, но тот же симптом подавлен');
   assert.notEqual(a.candidateId, b.candidateId);
 }));
 
 test('suppression without signalSignature falls back to signature', () => withStateDir(async (stateDir) => {
-  const legacyCheck: Check = { kind: 'elementCount', target: '#x', expected: 0 };
+  const legacyCheck: Check = { kind: 'invariant', target: 'Итого X' };
   const signature = candidateSignature({ check: legacyCheck, target: '/a' });
   await writeMemory(stateDir, 'suppressions.json', [{
     id: 'sup-2', signature, reason: 'легально', sourceCandidate: 'c0', createdAt: stamp, updatedAt: stamp,
@@ -222,7 +222,7 @@ test('suppressed symptom does not block confirming a different-check real bug', 
   const r = await reportCandidate({
     runId: run.id, sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
     steps: [], signalIds: ['s1'], signalSignature: 'sym-1',
-    check: { kind: 'visibleText', target: 'body', expected: 'ok' }, stateDir,
+    check: { kind: 'invariant', target: 'Итого real', expected: 'ok' }, stateDir,
   });
   assert.equal(r.suppressedBy, 'sup-1', 'подсказка есть');
   const path = join(stateDir, 'runs', run.id, 'candidates', `${r.candidateId}.json`);
