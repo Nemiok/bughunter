@@ -112,6 +112,8 @@ export async function attachCandidateArtifacts(input: {
   for (const candidateId of input.candidateIds) {
     const path = candidatePath(input.runId, candidateId, input.stateDir);
     const candidate = JSON.parse(await readFile(path, 'utf8')) as Candidate;
-    await writeJsonAtomic(path, { ...candidate, artifacts: input.artifacts });
+    // Артефакты повтора уже могли быть записаны: закрытие сессии дополняет, а не затирает.
+    const artifacts = [...new Set([...candidate.artifacts, ...input.artifacts])];
+    await writeJsonAtomic(path, { ...candidate, artifacts });
   }
 }

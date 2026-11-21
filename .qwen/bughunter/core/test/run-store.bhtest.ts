@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -337,4 +338,23 @@ test('duplicate-verdict-keeps-known-bug', () => withStateDir(async (stateDir) =>
   await triageCandidate({ runId: run.id, candidateId: 'cand-a', verdict: 'confirmed', reason: 'воспроизведено', stateDir });
   await triageCandidate({ runId: run.id, candidateId: 'cand-b', verdict: 'duplicate', reason: 'тот же симптом', stateDir });
   assert.equal((await readSharedMemory('known-bugs.json', stateDir)).length, 1);
+}));
+
+test('diff scope includes uncommitted changes', () => withStateDir(async (stateDir) => {
+  const git = (args: string[]) => {
+    const result = spawnSync('git', args, { cwd: stateDir, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git(['init', '-b', 'main']);
+  git(['config', 'user.email', 'test@example.com']);
+  git(['config', 'user.name', 'Test']);
+  await mkdir(join(stateDir, 'src'), { recursive: true });
+  await writeFile(join(stateDir, 'src', 'a.ts'), 'export const a = 1;\n');
+  await writeFile(join(stateDir, 'src', 'b.ts'), 'export const b = 1;\n');
+  git(['add', '.']);
+  git(['commit', '-m', 'init']);
+  await writeFile(join(stateDir, 'src', 'a.ts'), 'export const a = 2;\n');
+  const diffConfig = { targetMap: { 'src/a.ts': ['/a'], 'src/b.ts': ['/b'] }, baseBranch: 'main' } as unknown as Config;
+  const run = await createRun('diff', undefined, { config: diffConfig, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a', '/b'] });
+  assert.deepEqual(run.targets, ['/a'], 'незакоммиченное изменение обязано попасть в diff-область');
 }));

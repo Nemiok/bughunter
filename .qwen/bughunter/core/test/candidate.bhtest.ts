@@ -159,3 +159,22 @@ test('artifacts are attached to every candidate of the session', () => withState
   const raw = JSON.parse(await readFile(join(stateDir, 'runs', 'run-1', 'candidates', `${first.candidateId}.json`), 'utf8'));
   assert.deepEqual(raw.artifacts, ['runs/run-1/artifacts/a/trace.zip']);
 }));
+
+test('attachCandidateArtifacts merges with existing artifacts', () => withStateDir(async (stateDir) => {
+  const first = await reportCandidate({
+    runId: 'run-1', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: [], check, stateDir,
+  });
+  const path = join(stateDir, 'runs', 'run-1', 'candidates', `${first.candidateId}.json`);
+  const stored = JSON.parse(await readFile(path, 'utf8')) as { artifacts: string[] };
+  stored.artifacts = ['runs/run-1/replay-x/trace.zip'];
+  await writeFile(path, JSON.stringify(stored));
+  await attachCandidateArtifacts({
+    runId: 'run-1',
+    candidateIds: [first.candidateId],
+    artifacts: ['runs/run-1/artifacts/a/trace.zip'],
+    stateDir,
+  });
+  const raw = JSON.parse(await readFile(path, 'utf8')) as { artifacts: string[] };
+  assert.deepEqual(raw.artifacts, ['runs/run-1/replay-x/trace.zip', 'runs/run-1/artifacts/a/trace.zip']);
+}));

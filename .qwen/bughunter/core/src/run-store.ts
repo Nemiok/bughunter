@@ -64,7 +64,13 @@ async function diffTargets(config: Config, targets: readonly string[], projectRo
     cwd: projectRoot,
     encoding: 'utf8',
   });
-  const files = stdout.split(/\r?\n/).filter(Boolean).map((file) => file.replace(/\\/g, '/'));
+  // Незакоммиченные правки — тоже область diff: разработчик проверяет текущее состояние дерева.
+  const working = await execFile('git', ['diff', '--name-only', 'HEAD'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  const files = [...stdout.split(/\r?\n/), ...working.stdout.split(/\r?\n/)]
+    .filter(Boolean).map((file) => file.replace(/\\/g, '/'));
   const matched = targets.filter((target) =>
     Object.entries(config.targetMap).some(([pattern, mappedTargets]) =>
       mappedTargets.includes(target) && files.some((file) => globMatches(pattern, file)),
