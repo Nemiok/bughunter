@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core';
 import type { Page } from 'playwright-core';
+import { installOriginGuard, readStorageStatePath } from '../browser/guard.ts';
 import { describeScreen } from '../browser/screen.ts';
 import type { LaunchOptions } from '../browser/session.ts';
 import type { Profile } from '../profile/types.ts';
@@ -96,9 +97,12 @@ export async function crawlScreens(options: CrawlOptions): Promise<CrawlResult> 
     queue.push({ url: url.href, depth, via });
   };
 
+  const storageState = await readStorageStatePath(options.stateDir);
   const context = await browser.newContext({
+    ...(storageState === undefined ? {} : { storageState }),
     ...(launch.ignoreHTTPSErrors ? { ignoreHTTPSErrors: true } : {}),
   });
+  await installOriginGuard(context, options.allowedOrigins);
   try {
     const page = await context.newPage();
     for (const path of options.startPaths) push(path, 0, 'start', options.baseUrl);

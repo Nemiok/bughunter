@@ -9,6 +9,7 @@ import type {
 
 import { attachNetworkCapture } from './browser/network.ts';
 import type { NetworkCapture } from './browser/network.ts';
+import { installOriginGuard, readStorageStatePath } from './browser/guard.ts';
 import { describeScreen } from './browser/screen.ts';
 import type { ScreenStructure } from './browser/screen.ts';
 import { resolveLaunchOptions } from './browser/session.ts';
@@ -55,9 +56,12 @@ export const webSweepSession: Session = {
     let context: BrowserContext | undefined;
     let network: NetworkCapture | undefined;
     try {
+      const storageState = await readStorageStatePath(stateDir);
       context = await browser.newContext({
+        ...(storageState === undefined ? {} : { storageState }),
         ...(launch.ignoreHTTPSErrors ? { ignoreHTTPSErrors: true } : {}),
       });
+      await installOriginGuard(context, config.allowedOrigins);
       const page = await context.newPage();
       network = await attachNetworkCapture(page, {
         stateDir,
