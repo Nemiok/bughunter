@@ -18,7 +18,7 @@ export function normalizeMessage(message: string): string {
     // Версии (/v1 ≠ /v2) и коды ответов (404 ≠ 500) — разные симптомы, числа в них сохраняются.
     .replace(/\d+(?:\.\d+)?/g, (match, offset: number, source: string) => {
       const before = source.slice(0, offset);
-      return /[vV]$/.test(before) || /[Hh][Tt][Tt][Pp] $/.test(before) ? match : '<number>';
+      return /[vV]$/.test(before) || /HTTP $/i.test(before) ? match : '<number>'; // status-code-prefix
     })
     .replace(/\s+/g, ' ')
     .trim();

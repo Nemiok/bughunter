@@ -33,7 +33,12 @@ function verdict(status: Verdict['status'], diagnostic: string): Verdict {
   };
 }
 
-/** Экранирование одного аргумента командной оболочки: пресеты собирают из него команду запуска. */
+/**
+ * Экранирование одного аргумента командной оболочки: пресеты собирают из него команду запуска.
+ * win32: удвоение кавычек защищает метасимволы cmd.exe (&, |, <) и даёт литеральную кавычку
+ * в argv; ограничение — cmd раскрывает %VAR% и внутри кавычек, а backslash перед кавычкой
+ * ломает разбор. Практически имена файлов Windows кавычек не содержат.
+ */
 export function shellArgument(value: string, platform: NodeJS.Platform = process.platform): string {
   if (platform === 'win32') return `"${value.replaceAll('"', '""')}"`;
   return `'${value.replaceAll("'", `'"'"'`)}'`;

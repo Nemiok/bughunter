@@ -42,6 +42,11 @@ before(async () => {
   }
 
   controlsServer = createServer((request, response) => {
+    if (request.url?.startsWith('/polling')) {
+      response.writeHead(200, { 'Content-Type': 'text/html' });
+      response.end(`<title>Polling</title><main>ok</main><script>setInterval(() => fetch('/slow-api').catch(() => undefined), 100);</script>`);
+      return;
+    }
     if (request.url?.startsWith('/slow-api')) {
       setTimeout(() => {
         response.writeHead(200, { 'Content-Type': 'application/json' });
@@ -544,4 +549,13 @@ test('responseSettleMs lets slow data land in the snapshot', async () => {
     state.elements.some((element) => element.locator.kind === 'testid' && element.locator.value === 'late'),
     'медленные данные обязаны попасть в снимок при заданном responseSettleMs',
   );
+});
+
+test('responseSettleMs zero disables the network wait instead of hanging', { timeout: 15_000 }, async () => {
+  const { manager } = await createManager(controlsOrigin, (config) => {
+    config.limits.responseSettleMs = 0;
+  });
+  const { sessionId } = await manager.open('run-zero-settle', '/polling', 'newbie');
+  const state = await manager.state(sessionId);
+  assert.ok(state.url.endsWith('/polling'));
 });

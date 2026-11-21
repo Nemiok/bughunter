@@ -29,8 +29,12 @@ const presetImportPatterns = [/from\s+'[^']*presets\//, /from\s+'@bughunter\/web
  * Совместимость с записанным состоянием прежней схемы: core обязан узнать эти имена, чтобы
  * прочитать старый прогон или отвергнуть его. Это не знание домена, поэтому строки с маркером
  * `legacy-envelope` и миграционный guard исключены из лексиконной проверки.
+ * Маркер `status-code-prefix` — явное исключение для нормализации сигнатур: числовой префикс
+ * кода ответа (404 ≠ 500) отличает симптомы, но не вводит доменного знания — core не знает,
+ * что такое HTTP, он лишь сохраняет числа после семантического префикса. Исключение
+ * документируется здесь, а не обходится написанием токена по буквам.
  */
-const legacySchemaGuard = /const retiredRunFields =|legacy-envelope/;
+const legacySchemaGuard = /const retiredRunFields =|legacy-envelope|status-code-prefix/;
 
 /** Оракулы и виды проверок принадлежат пресету: core-тесты не должны закреплять их имена. */
 const presetCheckKindPattern = /\bkind:\s*'(?:status|jsonPath|headerContains|pointer|visibleText|elementCount)'/;

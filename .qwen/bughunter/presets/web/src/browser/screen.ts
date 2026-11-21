@@ -41,15 +41,16 @@ export async function describeScreen(page: Page, profile: Profile | null): Promi
   const widgets: ScreenWidget[] = [];
   for (const extractor of profile?.extractors ?? []) {
     let summary: unknown;
-    const evaluate = new Function(`return (${extractor.script})();`) as () => unknown;
+    // Конструирование внутри try: битый скрипт профиля — ошибка виджета, не авария снимка.
+    const run = () => page.evaluate(new Function(`return (${extractor.script})();`) as () => unknown);
     try {
-      summary = await page.evaluate(evaluate);
+      summary = await run();
     } catch {
       // Рендер может отставать от сетевого успокоения под нагрузкой: одна попытка
       // после macrotask-тика. Постоянная ошибка экстрактора переживает retry и репортится.
       await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).catch(() => undefined);
       try {
-        summary = await page.evaluate(evaluate);
+        summary = await run();
       } catch {
         widgets.push({
           widget: extractor.widget,

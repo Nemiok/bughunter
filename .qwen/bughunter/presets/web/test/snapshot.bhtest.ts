@@ -298,3 +298,14 @@ test('extractor gets one retry after a rendering tick', async () => {
     truncated: false,
   }]);
 });
+
+test('syntactically broken extractor script is reported, not thrown', async () => {
+  const profile: Profile = {
+    name: 'snapshot',
+    extractors: [{ name: 'broken-syntax', widget: 'broken', kind: 'chart', script: '() => {' }],
+    oracles: [],
+  };
+  const { manager, sessionId } = await createManager(profile);
+  const state = await manager.state(sessionId, { screen: true });
+  assert.equal(state.screen?.widgets[0]?.error, 'EXTRACTOR_FAILED: broken-syntax');
+});
