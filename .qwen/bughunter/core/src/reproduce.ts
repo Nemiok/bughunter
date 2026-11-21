@@ -83,6 +83,8 @@ export async function replayAndMinimize(
   }
   const now = options.now ?? Date.now;
   const deadline = now() + reproductionBudget.maximumDurationMs;
+  // Бюджет оценок растёт с журналом: длинный журнал не обрывает минимизацию на полпути.
+  const evaluationCap = Math.min(200, Math.max(reproductionBudget.maximumEvaluations, attempts + originalSteps.length * 2));
   let evaluations = 0;
   let initialAttempts = 0;
   let successes = 0;
@@ -90,7 +92,7 @@ export async function replayAndMinimize(
   let lastError: string | undefined;
 
   async function evaluate(steps: StepBase[]): Promise<boolean | 'error' | undefined> {
-    if (evaluations >= reproductionBudget.maximumEvaluations || now() >= deadline) return undefined;
+    if (evaluations >= evaluationCap || now() >= deadline) return undefined;
     const remaining = deadline - now();
     if (remaining <= 0) return undefined;
     evaluations += 1;

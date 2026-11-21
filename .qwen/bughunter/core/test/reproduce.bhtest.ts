@@ -36,16 +36,16 @@ test('fake replay minimizes by removal and restores required steps exactly', asy
   assert.deepEqual(result.minimalSteps.map((step) => step.id), ['step-1', 'step-2']);
 });
 
-test('fake replay never invokes the 21st evaluation including initial attempts', async () => {
+test('fake replay minimizes a long journal within the scaled budget', async () => {
   let calls = 0;
   const result = await replayAndMinimize(algorithmSteps(25), 3, async () => {
     calls += 1;
     return matched(true);
   });
-  assert.equal(calls, 20);
-  assert.equal(result.evaluations, 20);
+  assert.equal(calls, 28);
+  assert.equal(result.evaluations, 28);
   assert.equal(result.successes, 3);
-  assert.equal(result.minimalSteps.length, 8);
+  assert.equal(result.minimalSteps.length, 0);
 });
 
 test('deadline aborts pending replay and prevents further evaluations', async () => {
@@ -141,4 +141,18 @@ test('outcome-error-field-counts-as-error', async (t) => {
   const fixture = await reproduceFixture(async () => ({ matched: false, artifacts: [], error: 'CHECK_INVALID: bad selector' }));
   t.after(() => rm(fixture.stateDir, { recursive: true, force: true }));
   await assert.rejects(reproduceCandidate(fixture.input), /REPLAY_FAILED: CHECK_INVALID/);
+});
+
+test('minimization-budget-scales-with-journal', async () => {
+  const steps = algorithmSteps(30);
+  const result = await replayAndMinimize(steps, 3, async (candidateSteps) => matched(candidateSteps.length === 30));
+  assert.equal(result.successes, 3);
+  assert.equal(result.evaluations, 33, 'все 30 удалений проверены, бюджет не обрывает минимизацию');
+  assert.equal(result.minimalSteps.length, 30);
+});
+
+test('minimization-budget-caps-at-200', async () => {
+  const result = await replayAndMinimize(algorithmSteps(250), 3, async () => matched(true));
+  assert.equal(result.evaluations, 200);
+  assert.equal(result.minimalSteps.length, 53);
 });
