@@ -173,4 +173,6 @@ export type Candidate = {
   /** Вердикты `bh_verify_red` по видам тестов: `green` и `broken` не закрывают баг. */
   verdicts?: Record<string, CandidateVerdict>;
   minimalSteps?: StepBase[];
+  /** Надёжность минимизации: stable=false означает нестабильное воспроизведение и повторные подтверждения. */
+  minimization?: { stable: boolean; confirmations: number };
 };

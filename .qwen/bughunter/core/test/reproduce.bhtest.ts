@@ -156,3 +156,33 @@ test('minimization-budget-caps-at-200', async () => {
   assert.equal(result.evaluations, 200);
   assert.equal(result.minimalSteps.length, 53);
 });
+
+test('unstable replay confirms deletion before keeping an extraneous step', async () => {
+  const steps = algorithmSteps(2);
+  const calls = new Map<string, number>();
+  const key = (s: StepBase[]) => s.map((x) => x.id).join(',');
+  const result = await replayAndMinimize(steps, 3, async (s) => {
+    const k = key(s); const n = (calls.get(k) ?? 0) + 1; calls.set(k, n);
+    if (!s.some((x) => x.id === 'step-1')) return matched(false);
+    if (k === 'step-0,step-1') return matched(n === 1);
+    return matched(n >= 2);
+  });
+  assert.equal(result.successes, 1);
+  assert.equal(result.minimization.stable, false);
+  assert.equal(result.minimization.confirmations, 3);
+  assert.deepEqual(result.minimalSteps.map((s) => s.id), ['step-1']);
+});
+
+test('unstable replay keeps the trigger when removal never reproduces', async () => {
+  const steps = algorithmSteps(2);
+  const calls = new Map<string, number>();
+  const key = (s: StepBase[]) => s.map((x) => x.id).join(',');
+  const result = await replayAndMinimize(steps, 3, async (s) => {
+    const k = key(s); const n = (calls.get(k) ?? 0) + 1; calls.set(k, n);
+    if (!s.some((x) => x.id === 'step-1')) return matched(false);
+    if (k === 'step-0,step-1') return matched(n === 1);
+    return matched(false);
+  });
+  assert.equal(result.minimization.stable, false);
+  assert.deepEqual(result.minimalSteps.map((s) => s.id), ['step-0', 'step-1']);
+});

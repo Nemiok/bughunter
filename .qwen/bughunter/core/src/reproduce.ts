@@ -15,6 +15,9 @@ export const reproductionBudget = {
   maximumDurationMs: 300_000,
 } as const;
 
+/** Сколько прогонов подтверждают удаление шага при нестабильном воспроизведении. */
+export const minimizationConfirmations = 3;
+
 export type ReplayAlgorithmResult = {
   successes: number;
   initialAttempts: number;
@@ -22,6 +25,7 @@ export type ReplayAlgorithmResult = {
   minimalSteps: StepBase[];
   errors: number;
   lastError?: string;
+  minimization: { stable: boolean; confirmations: number };
 };
 
 export type ReproductionResult = {
@@ -83,8 +87,9 @@ export async function replayAndMinimize(
   }
   const now = options.now ?? Date.now;
   const deadline = now() + reproductionBudget.maximumDurationMs;
-  // Бюджет оценок растёт с журналом: длинный журнал не обрывает минимизацию на полпути.
-  const evaluationCap = Math.min(200, Math.max(reproductionBudget.maximumEvaluations, attempts + originalSteps.length * 2));
+  // Провизорный бюджет достаточен для initial-попыток; полный пересчитывается после них,
+  // когда известна стабильность: нестабильный режим требует больше оценок на подтверждение удаления.
+  let evaluationCap: number = reproductionBudget.maximumEvaluations;
   let evaluations = 0;
   let initialAttempts = 0;
   let successes = 0;
@@ -129,23 +134,33 @@ export async function replayAndMinimize(
     else if (matched) successes += 1;
   }
 
+  const stable = successes > 0 && successes === initialAttempts;
+  const confirmations = stable ? 1 : minimizationConfirmations;
+  evaluationCap = Math.min(200, Math.max(reproductionBudget.maximumEvaluations, attempts + originalSteps.length * (stable ? 2 : confirmations)));
+
   const minimalSteps = [...originalSteps];
   if (successes > 0) {
     for (let index = 0; index < minimalSteps.length;) {
-      const candidate = minimalSteps.filter((_, stepIndex) => stepIndex !== index);
-      const matched = await evaluate(candidate);
-      if (matched === undefined) break;
-      // Отказ инфраструктуры не доказывает ненужность шага: шаг сохраняется.
-      if (matched === 'error') {
-        errors += 1;
-        index += 1;
-      } else if (matched) minimalSteps.splice(index, 1);
+      const reduced = minimalSteps.filter((_, stepIndex) => stepIndex !== index);
+      let removable = false;
+      let exhausted = false;
+      for (let c = 0; c < confirmations; c += 1) {
+        const matched = await evaluate(reduced);
+        if (matched === undefined) { exhausted = true; break; }
+        // Отказ инфраструктуры не доказывает ненужность шага: шаг сохраняется.
+        if (matched === 'error') { errors += 1; break; }
+        if (matched) { removable = true; break; }
+        // false при нестабильном воспроизведении может быть плавающим промахом — подтверждаем ещё раз.
+      }
+      if (exhausted) break;
+      if (removable) minimalSteps.splice(index, 1);
       else index += 1;
     }
   }
 
   return {
     successes, initialAttempts, evaluations, minimalSteps, errors,
+    minimization: { stable, confirmations },
     ...(lastError === undefined ? {} : { lastError }),
   };
 }
@@ -196,8 +211,13 @@ export async function reproduceCandidate(input: {
     artifacts,
     reproduction: { status: reproduced ? 'reproduced' : 'unreproduced', attempts: algorithm.initialAttempts },
   };
-  if (reproduced) updated.minimalSteps = algorithm.minimalSteps;
-  else delete updated.minimalSteps;
+  if (reproduced) {
+    updated.minimalSteps = algorithm.minimalSteps;
+    updated.minimization = algorithm.minimization;
+  } else {
+    delete updated.minimalSteps;
+    delete updated.minimization;
+  }
   await writeJsonAtomic(join(stateDir, 'runs', input.runId, 'candidates', `${input.candidateId}.json`), updated);
 
   return {
