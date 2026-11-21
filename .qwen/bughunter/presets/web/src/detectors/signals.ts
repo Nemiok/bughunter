@@ -29,13 +29,14 @@ function currentRoute(page: Page): string {
   }
 }
 
-type DetectedSignal = Omit<SignatureInput, 'target'> & { url?: string; status?: number };
+type DetectedSignal = Omit<SignatureInput, 'target'> & { url?: string; status?: number; blockedBy?: string };
 
 function addSignal(page: Page, config: Config, input: DetectedSignal): Signal {
   const target = currentRoute(page);
   const details = {
     ...(input.url === undefined ? {} : { url: input.url }),
     ...(input.status === undefined ? {} : { status: input.status }),
+    ...(input.blockedBy === undefined ? {} : { blockedBy: input.blockedBy }),
   };
   const signal: Signal = {
     id: randomUUID(),
@@ -73,10 +74,13 @@ async function installListeners(page: Page, config: Config, state: PageState): P
     const url = request.url();
     if (ignored(url, config.detectors.ignoreRequests)) return;
     const reason = request.failure()?.errorText ?? 'Request failed';
+    // В controlled-браузере пресета нет расширений: blockedbyclient порождает только origin-guard.
+    const blockedBy = /blocked_by_client/i.test(reason) ? 'origin-guard' : undefined;
     addSignal(page, config, {
       kind: 'requestfailed',
       message: `${request.method()} ${url}: ${reason}`,
       url,
+      ...(blockedBy === undefined ? {} : { blockedBy }),
     });
   });
   page.on('response', (response) => {

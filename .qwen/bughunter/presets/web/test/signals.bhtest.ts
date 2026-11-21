@@ -12,6 +12,10 @@ let origin: string;
 before(async () => {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   server = createServer((request, response) => {
+    if (request.url === '/foreign') {
+      response.writeHead(200, { 'Content-Type': 'text/html' }).end('<main>Total 0</main><script src="http://127.0.0.1:1/x.js"></script>');
+      return;
+    }
     if (request.url?.startsWith('/missing')) {
       response.writeHead(404).end('missing');
       return;
@@ -167,6 +171,40 @@ test('error boundary hide and show between scans emits exactly one new appearanc
     const signals = await scanSignals(page, config);
     assert.equal(signals.filter((signal) => signal.kind === 'errorBoundary').length, 1);
     assert.deepEqual(await scanSignals(page, config), []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('requestfailed blocked by client is attributed to origin guard', async () => {
+  const page = await browser.newPage();
+  try {
+    const config = configTemplate();
+    await scanSignals(page, config);
+    await page.route('**/*', (route) => {
+      const url = route.request().url();
+      return url.startsWith(origin) ? route.continue() : route.abort('blockedbyclient');
+    });
+    await page.goto(`${origin}/foreign`);
+    const signals = await scanSignals(page, config);
+    const blocked = signals.find((signal) => signal.kind === 'requestfailed' && signal.details?.blockedBy === 'origin-guard');
+    assert.ok(blocked, 'guard-blocked request must carry blockedBy');
+    assert.ok(String(blocked.details?.url).includes('127.0.0.1:1'));
+  } finally {
+    await page.close();
+  }
+});
+
+test('ordinary network failure is not attributed to guard', async () => {
+  const page = await browser.newPage();
+  try {
+    const config = configTemplate();
+    await scanSignals(page, config);
+    await page.goto(`${origin}/foreign`);
+    const signals = await scanSignals(page, config);
+    const failed = signals.filter((signal) => signal.kind === 'requestfailed');
+    assert.ok(failed.length > 0, 'foreign script on a closed port must fail');
+    assert.ok(failed.every((signal) => signal.details?.blockedBy === undefined));
   } finally {
     await page.close();
   }
