@@ -162,3 +162,9 @@ test('validate rejects a check without a request line', () => {
     /POINTER_INVALID/,
   );
 });
+
+test('sameValue ignores object key order', async () => {
+  const { sameValue } = await import('../src/checks.ts');
+  assert.equal(sameValue({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 }), true);
+  assert.equal(sameValue({ a: 1 }, { a: 2 }), false);
+});

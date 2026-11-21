@@ -73,12 +73,24 @@ export async function nodeCheckViolated(handle: SessionHandle, check: Check): Pr
   }
 }
 
-/** Равенство значений ответа: примитивы напрямую, составные — по JSON-представлению. */
+/** Равенство значений ответа: примитивы напрямую, составные — по каноническому JSON (порядок ключей не важен). */
 export function sameValue(actual: unknown, expected: unknown): boolean {
   if (actual === expected) return true;
   if (actual === null || expected === null) return false;
   if (typeof actual !== 'object' || typeof expected !== 'object') return false;
-  return JSON.stringify(actual) === JSON.stringify(expected);
+  return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonical(entry)]),
+    );
+  }
+  return value;
 }
 
 export const nodeChecks: Checks = {

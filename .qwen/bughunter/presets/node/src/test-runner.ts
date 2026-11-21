@@ -145,7 +145,7 @@ export const nodeTestRunner: TestRunner = {
     const selection = runnerSelection(projectRoot, testFile);
     if (kind === vitestKind) {
       await stat(join(projectRoot, `node_modules/${vitestDependency}/package.json`));
-      const args = [selection, '--reporter=json', `--outputFile=${reportFile}`].map(shellArgument).join(' ');
+      const args = [selection, '--reporter=json', `--outputFile=${reportFile}`].map((value) => shellArgument(value)).join(' ');
       return { command: `npx vitest run ${args}` };
     }
     const detected = await detectNodeTests(testFile, { unitCommand });
@@ -153,7 +153,7 @@ export const nodeTestRunner: TestRunner = {
     const reporterArguments = kind === jestKind
       ? ['--runTestsByPath', selection, '--runInBand', '--json', `--outputFile=${reportFile}`]
       : [selection, '--reporter=json', `--outputFile=${reportFile}`];
-    return { command: [detected.command, ...reporterArguments.map(shellArgument)].join(' ') };
+    return { command: [detected.command, ...reporterArguments.map((value) => shellArgument(value))].join(' ') };
   },
   parseReport: (_kind, raw, { testFile }) => unitSummary(JSON.parse(raw) as unknown, testFile),
   ownsProject: vitestProject,

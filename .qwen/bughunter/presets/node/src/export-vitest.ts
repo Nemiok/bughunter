@@ -73,6 +73,7 @@ function requestHelper(): string {
   return `async function request(method: string, path: string, body?: unknown, headers?: Record<string, string>) {
   const response = await fetch(\`\${baseUrl}\${path}\`, {
     method,
+    redirect: 'manual',
     headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -159,7 +160,7 @@ function pointerHelper(): string {
   return `function valueAt(value: unknown, pointer: string): unknown {
   const segments = pointer.startsWith('$')
     ? pointer.slice(1).split(/[[\\].]+/).filter((segment) => segment !== '')
-    : pointer.split('/').filter((segment) => segment !== '');
+    : pointer.split('/').filter((segment) => segment !== '').map((segment) => segment.replaceAll('~1', '/').replaceAll('~0', '~'));
   let current: unknown = value;
   for (const segment of segments) {
     if (current === null || typeof current !== 'object') return undefined;

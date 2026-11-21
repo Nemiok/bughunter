@@ -216,7 +216,7 @@ export const webTestRunner: TestRunner = {
   async command(kind, { projectRoot, testFile, reportFile, unitCommand }) {
     if (kind === playwrightKind) {
       await stat(join(projectRoot, `node_modules/${playwrightDependency}/package.json`));
-      const args = [testFile, '--reporter=json', '--workers=1'].map(shellArgument).join(' ');
+      const args = [testFile, '--reporter=json', '--workers=1'].map((value) => shellArgument(value)).join(' ');
       return { command: `npm exec -- playwright test ${args}`, env: { PLAYWRIGHT_JSON_OUTPUT_FILE: reportFile } };
     }
     const detected = await detectWebTests(testFile, { unitCommand });
@@ -224,7 +224,7 @@ export const webTestRunner: TestRunner = {
     const reporterArguments = kind === jestKind
       ? ['--runTestsByPath', testFile, '--runInBand', '--json', `--outputFile=${reportFile}`]
       : [testFile, '--reporter=json', `--outputFile=${reportFile}`];
-    return { command: [detected.command, ...reporterArguments.map(shellArgument)].join(' ') };
+    return { command: [detected.command, ...reporterArguments.map((value) => shellArgument(value))].join(' ') };
   },
   parseReport(kind, raw, { testFile, exitCode }) {
     const report = JSON.parse(raw) as unknown;

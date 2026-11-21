@@ -94,3 +94,9 @@ test('a long diagnostic is truncated, not dropped', () => {
   assert.equal(verdict.status, 'red');
   assert.ok(verdict.message.length <= 1500, `message length ${verdict.message.length}`);
 });
+
+test('shellArgument escapes per platform', () => {
+  assert.equal(shellArgument("a'b", 'linux'), `'a'"'"'b'`);
+  assert.equal(shellArgument('a"b', 'win32'), '"a""b"');
+  assert.equal(shellArgument('plain', 'win32'), '"plain"');
+});

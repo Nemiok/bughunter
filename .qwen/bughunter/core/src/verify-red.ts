@@ -34,8 +34,8 @@ function verdict(status: Verdict['status'], diagnostic: string): Verdict {
 }
 
 /** Экранирование одного аргумента командной оболочки: пресеты собирают из него команду запуска. */
-export function shellArgument(value: string): string {
-  if (process.platform === 'win32') return `"${value.replaceAll('"', '\\"')}"`;
+export function shellArgument(value: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') return `"${value.replaceAll('"', '""')}"`;
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 

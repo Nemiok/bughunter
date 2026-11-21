@@ -167,3 +167,18 @@ test('resolveKind maps the api kind to vitest and detects the project runner oth
   assert.equal(nodeTestRunner.ownsProject({ dependencies: { vitest: '^3.2.4' } }), true);
   assert.equal(nodeTestRunner.ownsProject({ dependencies: { express: '^4.0.0' } }), false);
 });
+
+test('vitest export follows session redirect and pointer semantics', async () => {
+  const { generateVitestTest } = await import('../src/export-vitest.ts');
+  const candidate = {
+    id: 'c1', runId: 'r1', sessionId: 's1', target: 'GET /orders/:id',
+    title: 't', expected: 'e', actual: 'a', signalIds: [], signature: 'sig',
+    steps: [{ id: 'st1', kind: 'act', timestamp: createdAt, targetRef: 'GET /orders/1', method: 'GET', path: '/orders/1', status: 200, durationMs: 1 }],
+    artifacts: [], status: 'confirmed', createdAt,
+    check: { kind: 'jsonPath', target: 'GET /orders/1', pointer: '/a~1b', expected: 1 },
+    reproduction: { status: 'reproduced', attempts: 1 },
+  } as unknown as Candidate;
+  const source = generateVitestTest(candidate, state.config);
+  assert.ok(source.includes("redirect: 'manual'"), 'редиректы не выполняются, как в сессии');
+  assert.ok(source.includes('.replaceAll(\'~1\', \'/\')'), 'RFC-указатель разэкранируется, как readPointer');
+});
