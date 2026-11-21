@@ -10,6 +10,8 @@ import {
   ordersEnvelope,
   unitPriceCents,
 } from './bugs.js';
+
+let bigDestroyedEarly = false;
 import { db } from './db.js';
 
 /** Ошибка входных данных: отдаётся как 400 с коротким сообщением, без стека. */
@@ -49,6 +51,33 @@ async function route(request, response) {
 
   if (method === 'GET' && path === '/health') {
     return send(response, 200, { status: 'ok' });
+  }
+
+  // Служебный эндпоинт тестов: поток больше cap тела; ранний обрыв виден в /big-status.
+  if (method === 'GET' && path === '/big') {
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    let written = 0;
+    const timer = setInterval(() => {
+      if (response.destroyed || response.writableEnded) {
+        clearInterval(timer);
+        return;
+      }
+      if (written >= 200) {
+        clearInterval(timer);
+        response.end();
+        return;
+      }
+      response.write('x'.repeat(1024));
+      written += 1;
+    }, 5);
+    response.on('close', () => {
+      if (written < 200) bigDestroyedEarly = true;
+      clearInterval(timer);
+    });
+    return undefined;
+  }
+  if (method === 'GET' && path === '/big-status') {
+    return send(response, 200, { destroyedEarly: bigDestroyedEarly });
   }
 
   // Служебный эндпоинт тестов: держит ответ, чтобы проверить таймаут запроса пресета.

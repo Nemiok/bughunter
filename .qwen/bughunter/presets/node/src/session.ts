@@ -315,9 +315,24 @@ async function sendRequest(
 }
 
 async function readBodyCapped(response: Response): Promise<string> {
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const capped = bytes.length > maximumRawBytes ? bytes.subarray(0, maximumRawBytes) : bytes;
-  return capped.toString('utf8');
+  const reader = response.body?.getReader();
+  if (reader === undefined) return '';
+  const parts: Buffer[] = [];
+  let total = 0;
+  // Тело читается потоком и отменяется на cap: большой ответ не собирается в память целиком.
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done || value === undefined) break;
+    const remaining = maximumRawBytes - total;
+    const slice = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+    parts.push(Buffer.from(slice));
+    total += slice.byteLength;
+    if (total >= maximumRawBytes) {
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+  }
+  return Buffer.concat(parts).toString('utf8');
 }
 
 function parseBody(raw: string, contentType: string | null): unknown {

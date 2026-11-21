@@ -360,3 +360,15 @@ test('candidates-per-run limit is enforced', async () => {
     await limited.cleanup();
   }
 });
+
+test('response body is capped while streaming, not after full read', async () => {
+  const handle = await openSession('GET /big');
+  try {
+    const { response } = await performRequest(handle, { method: 'GET', path: '/big' }, state.config);
+    assert.ok(response.raw.length <= 65_536, `тело обязано быть усечено до cap: ${response.raw.length}`);
+    const { response: status } = await performRequest(handle, { method: 'GET', path: '/big-status' }, state.config);
+    assert.equal((status.body as { destroyedEarly: boolean }).destroyedEarly, true, 'поток обязан быть отменён на cap, а не дочитан целиком');
+  } finally {
+    await handle.close();
+  }
+});
