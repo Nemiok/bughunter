@@ -502,3 +502,15 @@ test('contract session handle drives the session it opened', async () => {
     await (created === undefined ? undefined : await created)?.closeAll();
   }
 });
+
+test('candidates-per-run limit is enforced', async () => {
+  const { manager } = await createManager(demoOrigin, (config) => {
+    config.limits.candidatesPerRun = 1;
+  });
+  const { sessionId } = await manager.open('run-candidates-limit', '/profile', 'newbie');
+  await manager.reportCandidate(sessionId, checkCandidate());
+  await assert.rejects(
+    manager.reportCandidate(sessionId, { ...checkCandidate(), title: 'Вторая заявка' }),
+    /CANDIDATES_LIMIT_REACHED/,
+  );
+});

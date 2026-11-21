@@ -5,6 +5,7 @@ import type { Errors } from '@bughunter/core';
  * а не как общую аварию. В словаре только те коды, которые пресет действительно бросает.
  */
 export const nodeDomainCodes = [
+  'CANDIDATES_LIMIT_REACHED',
   'CHECK_INVALID',
   'ENDPOINT_NOT_FOUND',
   'FORBIDDEN_ORIGIN',

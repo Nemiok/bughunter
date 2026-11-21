@@ -334,3 +334,29 @@ test('the step limit is enforced by the session before the request is sent', asy
     await limited.cleanup();
   }
 });
+
+test('candidates-per-run limit is enforced', async () => {
+  const limited = await stateForFixture(fixture.baseUrl, (config) => {
+    config.limits.candidatesPerRun = 1;
+  });
+  const handle = await nodeSession.open({
+    runId: 'run-candidates-limit',
+    target: 'GET /health',
+    persona: 'интегратор',
+    stateDir: limited.stateDir,
+  }) as NodeSessionHandle;
+  try {
+    const input = {
+      title: 'Первая заявка', expected: '200', actual: '500', signalIds: [],
+      check: { kind: 'status' as const, target: 'GET /health', expected: 200 },
+    };
+    await reportNodeCandidate(handle, input);
+    await assert.rejects(
+      reportNodeCandidate(handle, { ...input, title: 'Вторая заявка', check: { kind: 'status', target: 'GET /health', expected: 201 } }),
+      /CANDIDATES_LIMIT_REACHED/,
+    );
+  } finally {
+    await handle.close();
+    await limited.cleanup();
+  }
+});

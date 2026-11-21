@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, rm } from 'node:fs/promises';
+import { access, mkdir, readdir, rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright-core';
 import { reportDialogSignal, scanSignals } from '../detectors/index.ts';
 import { validateWebCheck } from '../checks.ts';
 import type { Profile } from '../profile/types.ts';
-import { attachCandidateArtifacts, reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
+import { attachCandidateArtifacts, countRunCandidates, reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
 import { resolveTestDataFile } from '../profile/load.ts';
 import type {
   Candidate,
@@ -492,6 +492,10 @@ export class SessionManager {
 
   async reportCandidate(sessionId: string, input: CandidateInput): Promise<{ candidateId: string; duplicateOf?: string }> {
     const session = this.session(sessionId);
+    const candidateCount = await countRunCandidates(session.runId, this.stateDir);
+    if (candidateCount >= this.config.limits.candidatesPerRun) {
+      throw new Error(`CANDIDATES_LIMIT_REACHED: ${this.config.limits.candidatesPerRun}`);
+    }
     const referencedSignals = input.signalIds.map((id) => {
       const signal = session.signals.get(id);
       if (!signal) throw new Error(`SIGNAL_NOT_FOUND: ${id}`);

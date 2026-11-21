@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 
-import { reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
+import { countRunCandidates, reportCandidate as reportCoreCandidate, writeJsonAtomic } from '@bughunter/core';
 import type { Check, Journal, Session, SessionHandle, Signal } from '@bughunter/core';
 
 import { loadNodeConfig } from './config.ts';
@@ -244,6 +244,10 @@ export async function reportNodeCandidate(
   input: { title: string; expected: string; actual: string; signalIds: string[]; check?: Check & { pointer?: string } },
 ): Promise<{ candidateId: string; duplicateOf?: string }> {
   const state = stateOf(handle);
+  const candidateCount = await countRunCandidates(state.runId, state.stateDir);
+  if (candidateCount >= state.config.limits.candidatesPerRun) {
+    throw new Error(`CANDIDATES_LIMIT_REACHED: ${state.config.limits.candidatesPerRun}`);
+  }
   const referenced = input.signalIds.map((id) => {
     const signal = state.signals.get(id);
     if (signal === undefined) throw new Error(`SIGNAL_NOT_FOUND: ${id}`);

@@ -359,6 +359,17 @@ export function candidatePath(runId: string, candidateId: string, stateDir: stri
   return join(stateDir, 'runs', runId, 'candidates', `${candidateId}.json`);
 }
 
+/** Лимит кандидатов прогона: раскладка каталога и limits принадлежат core, код ошибки — пресету. */
+export async function countRunCandidates(runId: string, stateDir: string): Promise<number> {
+  validateRunId(runId);
+  try {
+    return (await readdir(join(stateDir, 'runs', runId, 'candidates'))).filter((file) => file.endsWith('.json')).length;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+}
+
 export async function readCandidate(runId: string, candidateId: string, stateDir: string): Promise<Candidate> {
   try {
     return JSON.parse(await readFile(candidatePath(runId, candidateId, stateDir), 'utf8')) as Candidate;

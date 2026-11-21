@@ -5,6 +5,7 @@ import type { Errors } from '@bughunter/core';
  * а не как общую аварию. Нейтральные коды core объявлены там, где их бросают.
  */
 export const webDomainCodes = [
+  'CANDIDATES_LIMIT_REACHED',
   'CHECK_INVALID',
   'DRAG_TARGET_REQUIRED',
   'PERSONA_UNKNOWN',
