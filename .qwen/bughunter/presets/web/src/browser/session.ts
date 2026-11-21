@@ -796,6 +796,11 @@ export class SessionManager {
   private async settle(page: Page): Promise<void> {
     await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => undefined);
     await page.locator('body').waitFor({ state: 'visible', timeout: 5000 });
+    // SPA отдаёт документ до данных: без ожидания сети снимок видел бы пустой экран.
+    const settleMs = this.config.limits.responseSettleMs;
+    if (settleMs !== undefined) {
+      await page.waitForLoadState('networkidle', { timeout: settleMs }).catch(() => undefined);
+    }
     await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   }
 

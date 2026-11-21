@@ -42,6 +42,25 @@ before(async () => {
   }
 
   controlsServer = createServer((request, response) => {
+    if (request.url?.startsWith('/slow-api')) {
+      setTimeout(() => {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end('{}');
+      }, 300);
+      return;
+    }
+    if (request.url?.startsWith('/slow-data')) {
+      response.writeHead(200, { 'Content-Type': 'text/html' });
+      response.end(`<title>Slow</title><main></main><script>
+        fetch('/slow-api').then(() => {
+          const late = document.createElement('button');
+          late.setAttribute('data-testid', 'late');
+          late.textContent = 'ready';
+          document.querySelector('main').appendChild(late);
+        });
+      </script>`);
+      return;
+    }
     response.writeHead(200, { 'Content-Type': 'text/html' });
     if (request.url?.startsWith('/other')) {
       response.end('<title>Other</title><main><a href="/controls">Controls</a></main>');
@@ -512,5 +531,17 @@ test('candidates-per-run limit is enforced', async () => {
   await assert.rejects(
     manager.reportCandidate(sessionId, { ...checkCandidate(), title: 'Вторая заявка' }),
     /CANDIDATES_LIMIT_REACHED/,
+  );
+});
+
+test('responseSettleMs lets slow data land in the snapshot', async () => {
+  const { manager } = await createManager(controlsOrigin, (config) => {
+    config.limits.responseSettleMs = 1500;
+  });
+  const { sessionId } = await manager.open('run-slow', '/slow-data', 'newbie');
+  const state = await manager.state(sessionId);
+  assert.ok(
+    state.elements.some((element) => element.locator.kind === 'testid' && element.locator.value === 'late'),
+    'медленные данные обязаны попасть в снимок при заданном responseSettleMs',
   );
 });

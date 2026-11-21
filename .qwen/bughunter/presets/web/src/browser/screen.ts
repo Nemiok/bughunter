@@ -41,18 +41,25 @@ export async function describeScreen(page: Page, profile: Profile | null): Promi
   const widgets: ScreenWidget[] = [];
   for (const extractor of profile?.extractors ?? []) {
     let summary: unknown;
+    const evaluate = new Function(`return (${extractor.script})();`) as () => unknown;
     try {
-      const evaluate = new Function(`return (${extractor.script})();`) as () => unknown;
       summary = await page.evaluate(evaluate);
     } catch {
-      widgets.push({
-        widget: extractor.widget,
-        kind: extractor.kind,
-        extractor: extractor.name,
-        truncated: false,
-        error: `EXTRACTOR_FAILED: ${extractor.name}`,
-      });
-      continue;
+      // Рендер может отставать от сетевого успокоения под нагрузкой: одна попытка
+      // после macrotask-тика. Постоянная ошибка экстрактора переживает retry и репортится.
+      await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).catch(() => undefined);
+      try {
+        summary = await page.evaluate(evaluate);
+      } catch {
+        widgets.push({
+          widget: extractor.widget,
+          kind: extractor.kind,
+          extractor: extractor.name,
+          truncated: false,
+          error: `EXTRACTOR_FAILED: ${extractor.name}`,
+        });
+        continue;
+      }
     }
     const capped = capSummary(summary);
     widgets.push({

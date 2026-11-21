@@ -270,3 +270,31 @@ test('describeScreen returns no widgets without a profile', async () => {
   assert.deepEqual(state.screen, { widgets: [] });
   assert.ok(describeScreen !== undefined);
 });
+
+test('extractor gets one retry after a rendering tick', async () => {
+  const profile: Profile = {
+    name: 'snapshot',
+    extractors: [{
+      name: 'lagging-table',
+      widget: 'lagging',
+      kind: 'table',
+      script: `() => {
+        const w = window;
+        if (!w.__bhReady) { w.__bhReady = true; throw new Error('render lag'); }
+        return { rows: 20 };
+      }`,
+    }],
+    oracles: [],
+  };
+  const { manager, sessionId } = await createManager(profile);
+
+  const state = await manager.state(sessionId, { screen: true });
+
+  assert.deepEqual(state.screen?.widgets, [{
+    widget: 'lagging',
+    kind: 'table',
+    extractor: 'lagging-table',
+    summary: { rows: 20 },
+    truncated: false,
+  }]);
+});
