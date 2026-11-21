@@ -542,7 +542,10 @@ export async function triageCandidate(input: TriageInput): Promise<Candidate> {
   await readRun(input.runId, input.stateDir);
   const candidate = await readCandidate(input.runId, input.candidateId, input.stateDir);
   if (candidate.runId !== input.runId) throw new Error(`CANDIDATE_RUN_MISMATCH: ${input.candidateId}`);
-  if (candidate.reproduction?.status !== 'reproduced') {
+  // Подсказанный подавлением кандидат — уже известный средовой артефакт: ревьюер может отклонить
+  // его без повтора. Подтверждение и дубль по-прежнему требуют воспроизведения.
+  const hinted = candidate.suppressedBy !== undefined;
+  if (candidate.reproduction?.status !== 'reproduced' && !(input.verdict === 'rejected' && hinted)) {
     throw new Error(`CANDIDATE_UNREPRODUCED: ${input.candidateId}`);
   }
   const knownPath = join(input.stateDir, 'known-bugs.json');

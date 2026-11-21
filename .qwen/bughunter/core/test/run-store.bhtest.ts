@@ -304,6 +304,45 @@ async function writeReproducedCandidate(runId: string, stateDir: string, id: str
   await writeFile(join(directory, `${id}.json`), `${JSON.stringify(candidate, null, 2)}\n`, 'utf8');
 }
 
+async function writeCandidateWith(
+  runId: string, stateDir: string, id: string, opts: { suppressedBy?: string; reproduced?: boolean },
+): Promise<void> {
+  const candidate: Candidate = {
+    id, runId, sessionId: 'sess-1', target: '/a', title: 't', expected: 'e', actual: 'a',
+    signalIds: [], signature: `sig-${id}`, steps: [], artifacts: [], status: 'unprocessed', createdAt,
+    reproduction: opts.reproduced ? { status: 'reproduced', attempts: 1 } : { status: 'unreproduced', attempts: 0 },
+    ...(opts.suppressedBy === undefined ? {} : { suppressedBy: opts.suppressedBy }),
+  };
+  const directory = join(stateDir, 'runs', runId, 'candidates');
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${id}.json`), `${JSON.stringify(candidate, null, 2)}\n`, 'utf8');
+}
+
+test('hinted candidate can be rejected without reproduce', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeCandidateWith(run.id, stateDir, 'cand-h', { suppressedBy: 'sup-1' });
+  const updated = await triageCandidate({ runId: run.id, candidateId: 'cand-h', verdict: 'rejected', reason: 'same dev-stand artifact', suppress: true, stateDir });
+  assert.equal(updated.status, 'rejected');
+}));
+
+test('confirmed still requires reproduced even with hint', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeCandidateWith(run.id, stateDir, 'cand-h', { suppressedBy: 'sup-1' });
+  await assert.rejects(
+    triageCandidate({ runId: run.id, candidateId: 'cand-h', verdict: 'confirmed', reason: 'x', stateDir }),
+    /CANDIDATE_UNREPRODUCED/,
+  );
+}));
+
+test('rejected without hint still requires reproduced', () => withStateDir(async (stateDir) => {
+  const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeCandidateWith(run.id, stateDir, 'cand-n', {});
+  await assert.rejects(
+    triageCandidate({ runId: run.id, candidateId: 'cand-n', verdict: 'rejected', reason: 'x', stateDir }),
+    /CANDIDATE_UNREPRODUCED/,
+  );
+}));
+
 test('rejected-revokes-own-known-bug', () => withStateDir(async (stateDir) => {
   const run = await createRun('full', undefined, { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
   await writeReproducedCandidate(run.id, stateDir, 'cand-a', 'sig-shared');
