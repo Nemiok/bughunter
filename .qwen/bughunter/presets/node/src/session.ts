@@ -242,7 +242,7 @@ function normalizeBody(body: unknown): unknown {
 export async function reportNodeCandidate(
   handle: NodeSessionHandle,
   input: { title: string; expected: string; actual: string; signalIds: string[]; check?: Check & { pointer?: string } },
-): Promise<{ candidateId: string; duplicateOf?: string }> {
+): Promise<{ candidateId: string; duplicateOf?: string; suppressedBy?: string }> {
   const state = stateOf(handle);
   const candidateCount = await countRunCandidates(state.runId, state.stateDir);
   if (candidateCount >= state.config.limits.candidatesPerRun) {

@@ -490,7 +490,7 @@ export class SessionManager {
     return this.presentState(session, result, options);
   }
 
-  async reportCandidate(sessionId: string, input: CandidateInput): Promise<{ candidateId: string; duplicateOf?: string }> {
+  async reportCandidate(sessionId: string, input: CandidateInput): Promise<{ candidateId: string; duplicateOf?: string; suppressedBy?: string }> {
     const session = this.session(sessionId);
     const candidateCount = await countRunCandidates(session.runId, this.stateDir);
     if (candidateCount >= this.config.limits.candidatesPerRun) {
@@ -516,7 +516,7 @@ export class SessionManager {
         }
       }
     }
-    const { candidateId, duplicateOf } = await reportCoreCandidate({
+    const { candidateId, duplicateOf, suppressedBy } = await reportCoreCandidate({
       runId: session.runId,
       sessionId,
       target: route,
@@ -530,7 +530,11 @@ export class SessionManager {
       stateDir: this.stateDir,
     });
     session.candidateIds.push(candidateId);
-    return { candidateId, ...(duplicateOf === undefined ? {} : { duplicateOf }) };
+    return {
+      candidateId,
+      ...(duplicateOf === undefined ? {} : { duplicateOf }),
+      ...(suppressedBy === undefined ? {} : { suppressedBy }),
+    };
   }
 
   async close(sessionId: string): Promise<void> {

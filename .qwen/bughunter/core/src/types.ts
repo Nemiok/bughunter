@@ -158,6 +158,8 @@ export type Candidate = {
   createdAt: string;
   check?: Check;
   duplicateOf?: string;
+  /** Подсказка подавления по симптому: запись suppressions.json, чей signalSignature совпал. */
+  suppressedBy?: string;
   reproduction?: {
     status: 'unreproduced' | 'reproduced';
     attempts: number;

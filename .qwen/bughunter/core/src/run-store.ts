@@ -340,6 +340,7 @@ export async function recordTargetExploration(
 export type SharedMemoryEntry = {
   id: string;
   signature: string;
+  signalSignature?: string;
   title?: string;
   target?: string;
   reason: string;
@@ -527,6 +528,7 @@ function memoryEntry(candidate: Candidate, reason: string, previous?: SharedMemo
   return {
     id: previous?.id ?? candidate.id,
     signature: candidate.signature,
+    ...(candidate.signalSignature === undefined ? {} : { signalSignature: candidate.signalSignature }),
     title: candidate.title,
     target: candidate.target,
     reason,

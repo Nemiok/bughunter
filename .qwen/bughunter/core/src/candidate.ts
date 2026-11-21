@@ -38,23 +38,36 @@ export function candidateSignature(input: {
  * Записи общей памяти читаются терпимо: в файлах встречаются и `id`, и устаревший `candidateId`,
  * поэтому форма здесь слабее строгого `SharedMemoryEntry`.
  */
-type MemoryEntry = { id?: string; candidateId?: string; sourceCandidate?: string; signature?: string };
+type MemoryEntry = { id?: string; candidateId?: string; sourceCandidate?: string; signature?: string; signalSignature?: string };
 
-async function findKnownSignature(signature: string, stateDir: string): Promise<string | undefined> {
-  for (const file of ['known-bugs.json', 'suppressions.json']) {
-    let entries: MemoryEntry[];
-    try {
-      entries = JSON.parse(await readFile(join(stateDir, file), 'utf8')) as MemoryEntry[];
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw error;
-    }
+async function readMemory(file: string, stateDir: string): Promise<MemoryEntry[]> {
+  try {
+    const entries = JSON.parse(await readFile(join(stateDir, file), 'utf8')) as MemoryEntry[];
     if (!Array.isArray(entries)) throw new Error(`SHARED_MEMORY_INVALID: ${file}`);
-    const match = entries.find((entry) => entry.signature === signature);
-    const id = match?.id ?? match?.candidateId ?? match?.sourceCandidate;
-    if (id) return id;
+    return entries;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
   }
-  return undefined;
+}
+
+async function findKnownBug(signature: string, stateDir: string): Promise<string | undefined> {
+  const entries = await readMemory('known-bugs.json', stateDir);
+  const match = entries.find((entry) => entry.signature === signature);
+  return match?.id ?? match?.candidateId ?? match?.sourceCandidate;
+}
+
+/**
+ * Подавление матчится по симптому (signalSignature), а не только по композитной сигнатуре:
+ * переформулированный check того же средового артефакта не должен ускользать от памяти.
+ * Жёсткий блок подтверждения остаётся точным по candidate.signature (см. triageCandidate).
+ */
+async function findSuppression(input: { signature: string; signalSignature?: string }, stateDir: string): Promise<string | undefined> {
+  const entries = await readMemory('suppressions.json', stateDir);
+  const match = entries.find((entry) =>
+    (input.signalSignature !== undefined && entry.signalSignature === input.signalSignature)
+    || entry.signature === input.signature);
+  return match?.id ?? match?.candidateId ?? match?.sourceCandidate;
 }
 
 export async function reportCandidate(input: {
@@ -70,7 +83,7 @@ export async function reportCandidate(input: {
   checkSignature?: string;
   check?: Check;
   stateDir: string;
-}): Promise<{ candidateId: string; duplicateOf?: string }> {
+}): Promise<{ candidateId: string; duplicateOf?: string; suppressedBy?: string }> {
   let run;
   try {
     run = await readRun(input.runId, input.stateDir);
@@ -78,7 +91,8 @@ export async function reportCandidate(input: {
   if (run?.status === 'finished') throw new Error('RUN_FINISHED');
   const signature = candidateSignature(input);
   const candidateId = randomUUID();
-  const duplicateOf = await findKnownSignature(signature, input.stateDir);
+  const duplicateOf = await findKnownBug(signature, input.stateDir);
+  const suppressedBy = await findSuppression({ signature, signalSignature: input.signalSignature }, input.stateDir);
   const candidate: Candidate = {
     id: candidateId,
     runId: input.runId,
@@ -96,10 +110,15 @@ export async function reportCandidate(input: {
     createdAt: new Date().toISOString(),
     ...(input.check === undefined ? {} : { check: input.check }),
     ...(duplicateOf === undefined ? {} : { duplicateOf }),
+    ...(suppressedBy === undefined ? {} : { suppressedBy }),
     reproduction: { status: 'unreproduced', attempts: 0 },
   };
   await writeJsonAtomic(candidatePath(input.runId, candidateId, input.stateDir), candidate);
-  return { candidateId, ...(duplicateOf === undefined ? {} : { duplicateOf }) };
+  return {
+    candidateId,
+    ...(duplicateOf === undefined ? {} : { duplicateOf }),
+    ...(suppressedBy === undefined ? {} : { suppressedBy }),
+  };
 }
 
 /** Артефакты сессии становятся известны только при её закрытии, поэтому дописываются отдельным проходом. */

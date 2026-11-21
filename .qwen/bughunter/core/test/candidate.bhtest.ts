@@ -6,7 +6,11 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { attachCandidateArtifacts, candidateSignature, reportCandidate } from '../src/candidate.ts';
-import type { Check } from '../src/types.ts';
+import { createRun, triageCandidate } from '../src/run-store.ts';
+import type { Check, Config } from '../src/types.ts';
+
+const config = { targetMap: {}, baseBranch: 'main' } as unknown as Config;
+const stamp = '2026-11-21T00:00:00.000Z';
 
 const check: Check = { kind: 'invariant', target: 'Итого 42' };
 
@@ -142,7 +146,8 @@ test('a known or suppressed signature is marked as a duplicate', () => withState
     runId: 'run-1', sessionId: 'sess-2', target: '/a', title: 'т', expected: 'е', actual: 'а',
     steps: [], signalIds: ['s2'], signalSignature: 'sig-suppressed', stateDir,
   });
-  assert.equal(suppressed.duplicateOf, 'sup-1');
+  assert.equal(suppressed.suppressedBy, 'sup-1', 'подавление даёт подсказку suppressedBy, а не дубль');
+  assert.equal(suppressed.duplicateOf, undefined);
 }));
 
 test('artifacts are attached to every candidate of the session', () => withStateDir(async (stateDir) => {
@@ -177,4 +182,53 @@ test('attachCandidateArtifacts merges with existing artifacts', () => withStateD
   });
   const raw = JSON.parse(await readFile(path, 'utf8')) as { artifacts: string[] };
   assert.deepEqual(raw.artifacts, ['runs/run-1/replay-x/trace.zip', 'runs/run-1/artifacts/a/trace.zip']);
+}));
+
+test('suppression matches by signalSignature across different checks', () => withStateDir(async (stateDir) => {
+  await writeMemory(stateDir, 'suppressions.json', [{
+    id: 'sup-1', signature: 'old-composite', signalSignature: 'sym-1', reason: 'dev-stand',
+    sourceCandidate: 'c0', createdAt: stamp, updatedAt: stamp,
+  }]);
+  const base = {
+    runId: 'run-1', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: ['s1'], signalSignature: 'sym-1', stateDir,
+  };
+  const a = await reportCandidate({ ...base, check: { kind: 'elementCount', target: '#x', expected: 0 } });
+  const b = await reportCandidate({ ...base, check: { kind: 'elementCount', target: '#y', expected: 1 } });
+  assert.equal(a.suppressedBy, 'sup-1');
+  assert.equal(b.suppressedBy, 'sup-1', 'иной check → иной candidate.signature, но тот же симптом подавлен');
+  assert.notEqual(a.candidateId, b.candidateId);
+}));
+
+test('suppression without signalSignature falls back to signature', () => withStateDir(async (stateDir) => {
+  const legacyCheck: Check = { kind: 'elementCount', target: '#x', expected: 0 };
+  const signature = candidateSignature({ check: legacyCheck, target: '/a' });
+  await writeMemory(stateDir, 'suppressions.json', [{
+    id: 'sup-2', signature, reason: 'легально', sourceCandidate: 'c0', createdAt: stamp, updatedAt: stamp,
+  }]);
+  const r = await reportCandidate({
+    runId: 'run-1', sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: [], check: legacyCheck, stateDir,
+  });
+  assert.equal(r.suppressedBy, 'sup-2');
+}));
+
+test('suppressed symptom does not block confirming a different-check real bug', () => withStateDir(async (stateDir) => {
+  const run = await createRun('target', '/a', { config, projectRoot: stateDir, stateDir, personas: ['p'], targets: ['/a'] });
+  await writeMemory(stateDir, 'suppressions.json', [{
+    id: 'sup-1', signature: 'old-composite', signalSignature: 'sym-1', reason: 'dev-stand',
+    sourceCandidate: 'c0', createdAt: stamp, updatedAt: stamp,
+  }]);
+  const r = await reportCandidate({
+    runId: run.id, sessionId: 'sess-1', target: '/a', title: 'т', expected: 'е', actual: 'а',
+    steps: [], signalIds: ['s1'], signalSignature: 'sym-1',
+    check: { kind: 'visibleText', target: 'body', expected: 'ok' }, stateDir,
+  });
+  assert.equal(r.suppressedBy, 'sup-1', 'подсказка есть');
+  const path = join(stateDir, 'runs', run.id, 'candidates', `${r.candidateId}.json`);
+  const stored = JSON.parse(await readFile(path, 'utf8'));
+  stored.reproduction = { status: 'reproduced', attempts: 3 };
+  await writeFile(path, JSON.stringify(stored));
+  const updated = await triageCandidate({ runId: run.id, candidateId: r.candidateId, verdict: 'confirmed', reason: 'real app bug', stateDir });
+  assert.equal(updated.status, 'confirmed', 'жёсткий блок только по candidate.signature, которого нет в suppressions');
 }));
