@@ -494,3 +494,28 @@ test('elementCount rejects non-finite, string, negative, and fractional expected
     }), config()), /ELEMENT_COUNT_EXPECTED_INVALID/);
   }
 });
+
+test('export-with-auth-storage-state', () => {
+  const source = generatePlaywrightTest(candidate(), config(), '/profile', null,
+    { storageStatePath: '/state/auth/storage-state.json' });
+  assert.ok(source.includes('test.use({ storageState: process.env.BH_STORAGE_STATE ?? "/state/auth/storage-state.json" });'));
+});
+
+test('export-without-auth', () => {
+  assert.ok(!generatePlaywrightTest(candidate(), config()).includes('storageState'));
+});
+
+test('export-with-reset-endpoint', () => {
+  const source = generatePlaywrightTest(candidate(), config(), '/profile', null,
+    { reset: { kind: 'mock-endpoint', url: '/__reset' } });
+  assert.ok(source.includes('await page.request.post(new URL("/__reset", "https://example.test/app/").href);'));
+  assert.ok(source.indexOf('page.request.post') < source.indexOf('page.goto'), 'reset обязан быть до первого перехода');
+});
+
+test('export-with-reset-storage-flag', () => {
+  const source = generatePlaywrightTest(candidate(), config(), '/profile', null,
+    { reset: { kind: 'storage-flag', key: 'bh_reset' } });
+  assert.ok(source.includes('localStorage.setItem(key'));
+  assert.ok(source.includes('}, "bh_reset");'));
+  assert.ok(source.indexOf('page.addInitScript((key)') < source.indexOf('page.goto'));
+});

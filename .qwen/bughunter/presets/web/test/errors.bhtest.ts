@@ -21,8 +21,10 @@ test('neutral core codes are translated and preset codes pass through', () => {
 
 test('every error code the preset card promises is recognized by the entry point', async () => {
   const card = await readFile(join(projectRoot, '.qwen/skills/bughunter-preset-card/SKILL.md'), 'utf8');
+  // Имена env-переменных — не коды ошибок: карта называет их рядом со словом env.
+  const withoutEnvNames = card.replace(/\benv\s+`?[A-Z][A-Z0-9_]*`?/g, '');
   const codes = [...new Set(
-    [...card.matchAll(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g)].map((match) => match[0]),
+    [...withoutEnvNames.matchAll(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g)].map((match) => match[0]),
   )].sort();
   assert.ok(codes.length >= 5, `карта пресета не называет кодов ошибок: ${codes.length}`);
   for (const code of codes) {

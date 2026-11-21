@@ -1,4 +1,5 @@
-import { resolve } from 'node:path';
+import { access } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 import { exportTest as exportCoreTest } from '@bughunter/core';
 import type { Candidate, ExportTarget, TestGenerator } from '@bughunter/core';
@@ -10,8 +11,24 @@ import { isValidScroll, scrollDeltas } from './browser/point.ts';
 import { loadConfig } from './config.ts';
 import { defaultStateDir } from './paths.ts';
 import { loadActiveProfile, resolveTestDataFile } from './profile/load.ts';
-import type { Profile } from './profile/types.ts';
+import type { Profile, ResetRecipe } from './profile/types.ts';
 import { webTestRunner } from './test-runner.ts';
+
+/** Предусловия сессии, которые экспортированный тест обязан наследовать. */
+export type ExportPreconditions = { storageStatePath?: string; reset?: ResetRecipe };
+
+function preconditionSetup(preconditions: ExportPreconditions | undefined, config: Config): { use: string; body: string } {
+  const use = preconditions?.storageStatePath === undefined ? '' :
+    `test.use({ storageState: process.env.BH_STORAGE_STATE ?? ${JSON.stringify(preconditions.storageStatePath)} });\n`;
+  let body = '';
+  const reset = preconditions?.reset;
+  if (reset?.kind === 'mock-endpoint' && reset.url !== undefined) {
+    body += `  const resetResponse = await page.request.post(new URL(${JSON.stringify(reset.url)}, ${JSON.stringify(config.baseUrl)}).href);\n  expect(resetResponse.ok()).toBeTruthy();\n`;
+  } else if (reset?.kind === 'storage-flag' && reset.key !== undefined) {
+    body += `  await page.addInitScript((key) => { try { localStorage.setItem(key, new Date().toISOString()); sessionStorage.setItem(key, new Date().toISOString()); } catch { /* закрытое хранилище */ } }, ${JSON.stringify(reset.key)});\n`;
+  }
+  return { use, body };
+}
 
 const jsonString = '"(?:\\\\.|[^"\\\\])*"';
 
@@ -207,13 +224,13 @@ function checkAssertion(candidate: Candidate): string {
   }
 }
 
-function signalSource(candidate: Candidate, config: Config, initialRoute: string, replay: string): string {
+function signalSource(candidate: Candidate, config: Config, initialRoute: string, replay: string, setup: { use: string; body: string }): string {
   const signature = JSON.stringify(candidate.signature);
   return `import { createHash } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 
-test(${JSON.stringify(candidate.title)}, async ({ page }) => {
-${dialogSignalSetupSource(signature)}  let matched = false;
+${setup.use}test(${JSON.stringify(candidate.title)}, async ({ page }) => {
+${setup.body}${dialogSignalSetupSource(signature)}  let matched = false;
   const normalize = (value: string): string => value
     .replace(/([?&][^=\\s&]+)=([^&\\s]*)/g, '$1=<value>')
     .replace(/\\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\b/gi, '<uuid>')
@@ -310,17 +327,19 @@ export function generatePlaywrightTest(
   config: Config,
   initialRoute = candidate.target,
   profile: Profile | null = null,
+  preconditions?: ExportPreconditions,
 ): string {
   allowedUrl(initialRoute, config);
   const replay = replaySource(candidate, config, profile);
   for (const step of stepsOf(candidate)) {
     if (step.kind === 'navigate' && step.path) allowedUrl(step.path, config);
   }
-  if (candidate.signalIds.length > 0) return signalSource(candidate, config, initialRoute, replay);
+  const setup = preconditionSetup(preconditions, config);
+  if (candidate.signalIds.length > 0) return signalSource(candidate, config, initialRoute, replay, setup);
   return `import { test, expect } from '@playwright/test';
 
-test(${JSON.stringify(candidate.title)}, async ({ page }) => {
-${dialogSetupSource(stepsOf(candidate))}  await page.goto(new URL(${JSON.stringify(initialRoute)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });
+${setup.use}test(${JSON.stringify(candidate.title)}, async ({ page }) => {
+${setup.body}${dialogSetupSource(stepsOf(candidate))}  await page.goto(new URL(${JSON.stringify(initialRoute)}, ${JSON.stringify(config.baseUrl)}).href, { waitUntil: 'domcontentloaded' });
 ${replay}  ${checkAssertion(candidate)}
 });
 `;
@@ -336,7 +355,18 @@ export const webExportTarget: ExportTarget = {
 export const webTestGenerator: TestGenerator = {
   async generate({ candidate, initialTarget, stateDir }) {
     const [config, profile] = await Promise.all([loadConfig(stateDir), loadActiveProfile(stateDir)]);
-    return generatePlaywrightTest(candidate, config, initialTarget, profile);
+    const storageStatePath = join(stateDir, 'auth', 'storage-state.json');
+    let auth: string | undefined;
+    try {
+      await access(storageStatePath);
+      auth = storageStatePath;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return generatePlaywrightTest(candidate, config, initialTarget, profile, {
+      ...(auth === undefined ? {} : { storageStatePath: auth }),
+      ...(profile?.reset === undefined ? {} : { reset: profile.reset }),
+    });
   },
 };
 
