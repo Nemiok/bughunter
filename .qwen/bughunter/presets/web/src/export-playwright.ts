@@ -234,7 +234,7 @@ ${setup.body}${dialogSignalSetupSource(signature)}  let matched = false;
   const normalize = (value: string): string => value
     .replace(/([?&][^=\\s&]+)=([^&\\s]*)/g, '$1=<value>')
     .replace(/\\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\b/gi, '<uuid>')
-    .replace(/\\d+(?:\\.\\d+)?/g, '<number>')
+    .replace(/\\d+(?:\\.\\d+)?/g, (match: string, offset: number, source: string) => /[vV]$/.test(source.slice(0, offset)) || /HTTP $/i.test(source.slice(0, offset)) ? match : '<number>')
     .replace(/\\s+/g, ' ')
     .trim();
   const signature = (input: { kind: string; message: string; target: string; stack?: string }): string => {

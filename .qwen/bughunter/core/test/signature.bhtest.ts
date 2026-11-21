@@ -42,3 +42,10 @@ test('signatures ignore dynamic IDs but include signal type and top stack frame'
     stack: 'Error: Order 42 failed\n    at submit (/app.js:10:2)',
   }));
 });
+
+test('version-and-status-segments-survive', () => {
+  assert.notEqual(normalizeMessage('/api/v1/x'), normalizeMessage('/api/v2/x'));
+  assert.notEqual(normalizeMessage('HTTP 404'), normalizeMessage('HTTP 500'));
+  assert.equal(normalizeMessage('order 12'), normalizeMessage('order 34'));
+  assert.equal(normalizeMessage('/orders/12?x=5'), normalizeMessage('/orders/34?x=9'));
+});

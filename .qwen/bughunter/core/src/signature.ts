@@ -15,7 +15,11 @@ export function normalizeMessage(message: string): string {
   return message
     .replace(/([?&][^=\s&]+)=([^&\s]*)/g, '$1=<value>')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '<uuid>')
-    .replace(/\d+(?:\.\d+)?/g, '<number>')
+    // Версии (/v1 ≠ /v2) и коды ответов (404 ≠ 500) — разные симптомы, числа в них сохраняются.
+    .replace(/\d+(?:\.\d+)?/g, (match, offset: number, source: string) => {
+      const before = source.slice(0, offset);
+      return /[vV]$/.test(before) || /[Hh][Tt][Tt][Pp] $/.test(before) ? match : '<number>';
+    })
     .replace(/\s+/g, ' ')
     .trim();
 }
