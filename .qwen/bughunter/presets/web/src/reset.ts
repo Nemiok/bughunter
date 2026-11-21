@@ -36,9 +36,16 @@ export async function applyReset(page: Page, profile: Profile | null, baseUrl?: 
     return;
   }
   if (reset.url === undefined) throw new Error('RESET_UNSUPPORTED');
+  // Reset — действие со стендом: чужой origin запрещён, а отказ endpoint'а обязан быть виден,
+  // иначе «состояние сброшено» заявляется молча на неотвеченный запрос.
+  const target = new URL(reset.url, baseUrl ?? 'http://localhost');
+  if (baseUrl !== undefined && target.origin !== new URL(baseUrl).origin) {
+    throw new Error(`RESET_FAILED: foreign origin ${target.origin}`);
+  }
   await page.evaluate(async (url) => {
-    await fetch(url, { method: 'POST' });
-  }, reset.url);
+    const response = await fetch(url, { method: 'POST' });
+    if (!response.ok) throw new Error(`RESET_FAILED: HTTP ${response.status}`);
+  }, target.href);
 }
 
 export const webReset: Reset = {

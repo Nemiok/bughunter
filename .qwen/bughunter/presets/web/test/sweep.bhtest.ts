@@ -49,6 +49,10 @@ before(async () => {
       response.writeHead(204).end();
       return;
     }
+    if (url.pathname === '/__reset-fail') {
+      response.writeHead(500).end();
+      return;
+    }
     if (url.pathname === '/api/rows') {
       seeds.push(url.searchParams.get('seed') ?? 'none');
       response.writeHead(200, { 'Content-Type': 'application/json' });
@@ -366,4 +370,30 @@ test('an empty inventory tells the model to crawl first', async () => {
     () => runSweep({ runId: run.id, stateDir }),
     /SCREEN_NOT_FOUND: пустой инвентарь — сначала bh_crawl/,
   );
+});
+
+test('reset failure is reported, not claimed as success', async () => {
+  const { stateDir, run } = await setup({ profile: 'sweep', screens: [{ template: '/', sampleUrl: `${origin}/` }] });
+  await mkdir(join(stateDir, 'profiles', 'sweep'), { recursive: true });
+  await writeFile(join(stateDir, 'profiles', 'sweep', 'index.ts'), `export default {
+    name: 'sweep', extractors: [], oracles: [],
+    reset: { kind: 'mock-endpoint', url: '/__reset-fail' },
+  };\n`);
+  await runSweep({ runId: run.id, stateDir });
+  const findings = await readFindings(run.id, stateDir);
+  const resetFinding = findings.find((finding) => finding.kind === 'reset-unsupported');
+  assert.match(resetFinding?.detail ?? '', /RESET_FAILED: HTTP 500/);
+});
+
+test('reset url outside the stand origin is refused', async () => {
+  const { stateDir, run } = await setup({ profile: 'sweep', screens: [{ template: '/', sampleUrl: `${origin}/` }] });
+  await mkdir(join(stateDir, 'profiles', 'sweep'), { recursive: true });
+  await writeFile(join(stateDir, 'profiles', 'sweep', 'index.ts'), `export default {
+    name: 'sweep', extractors: [], oracles: [],
+    reset: { kind: 'mock-endpoint', url: 'https://example.invalid/__reset' },
+  };\n`);
+  await runSweep({ runId: run.id, stateDir });
+  const findings = await readFindings(run.id, stateDir);
+  const resetFinding = findings.find((finding) => finding.kind === 'reset-unsupported');
+  assert.match(resetFinding?.detail ?? '', /RESET_FAILED/);
 });
